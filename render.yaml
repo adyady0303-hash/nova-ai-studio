@@ -3,6 +3,8 @@ services:
     name: nova-ai-studio
     runtime: docker
     plan: starter
+    domains:
+      - www.nova-ai-studio.eu
     healthCheckPath: /healthz
     envVars:
       - key: HOST

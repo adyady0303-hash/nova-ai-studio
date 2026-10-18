@@ -6,8 +6,8 @@ ENV NODE_ENV=production \
     NOVA_DATA_DIR=/data
 
 WORKDIR /app
-COPY package.json server.js ./
-COPY public ./public
+COPY --chown=node:node package.json server.js ./
+COPY --chown=node:node public ./public
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 EXPOSE 10000
