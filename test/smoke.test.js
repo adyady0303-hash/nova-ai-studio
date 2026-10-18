@@ -19,6 +19,9 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="sendBtn"/);
   assert.match(html, /id="editor"/);
   assert.match(html, /id="providerDialog"/);
+  assert.match(html, /id="voiceDialog"/);
+  assert.match(html, /id="generateVoiceBtn"/);
+  assert.match(html, /id="voiceComposerBtn"/);
   assert.match(html, /id="adminDashboardLink"/);
   assert.match(html, /id="projectDrawer"/);
 });
@@ -78,6 +81,13 @@ test('production defaults to OpenAI and reports a missing API key clearly', asyn
     error: 'Cheia API OpenAI lipsește din configurarea serverului.',
     models: []
   });
+  const aiTest = await fetch(`${baseUrl}/api/ai/test`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'gpt-4.1-mini' })
+  });
+  assert.equal(aiTest.status, 503);
+  assert.deepEqual(await aiTest.json(), {
+    connected: false, provider: 'openai', error: 'Cheia API OpenAI lipsește din configurarea serverului.'
+  });
 });
 
 test('authenticated HTTP flows protect settings, projects, files and exports', async t => {
@@ -87,6 +97,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let expectedAuthorization = `Bearer ${fakeApiKey}`;
   let mockChatModel = '';
   let mockChatPrompt = '';
+  let mockChatLimit = null;
+  let mockSpeechBody = null;
   const providerServer = http.createServer((req, res) => {
     if (req.headers.authorization !== expectedAuthorization) {
       res.writeHead(401, { 'content-type': 'application/json' });
@@ -103,8 +115,19 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
         mockChatModel = body.model;
         mockChatPrompt = body.messages?.at(-1)?.content || '';
+        mockChatLimit = body.max_completion_tokens || null;
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Răspuns verificat de test.' } }], model: body.model }));
+      });
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/v1/audio/speech') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        mockSpeechBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        res.writeHead(200, { 'content-type': 'audio/mpeg' });
+        res.end(Buffer.from('fake-mp3-audio'));
       });
       return;
     }
@@ -199,6 +222,24 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(mockChatModel, 'gpt-4.1-mini');
   assert.equal(mockChatPrompt, 'Salut Nova');
 
+  const aiTest = await post('/api/ai/test', { model: 'gpt-4.1-mini' });
+  assert.equal(aiTest.status, 200);
+  assert.deepEqual(await aiTest.json(), {
+    connected: true, provider: 'openai', model: 'gpt-4.1-mini', reply: 'Răspuns verificat de test.'
+  });
+  assert.equal(mockChatPrompt, 'Răspunde doar cu: Nova este conectată.');
+  assert.equal(mockChatLimit, 24);
+
+  const voice = await post('/api/media/speech', { text: 'Bun venit la Nova AI Studio.' });
+  assert.equal(voice.status, 200);
+  const voiceResult = await voice.json();
+  assert.equal(voiceResult.model, 'gpt-4o-mini-tts');
+  assert.equal(voiceResult.dataUrl, `data:audio/mpeg;base64,${Buffer.from('fake-mp3-audio').toString('base64')}`);
+  assert.deepEqual(mockSpeechBody, {
+    model: 'gpt-4o-mini-tts', voice: 'nova', input: 'Bun venit la Nova AI Studio.', response_format: 'mp3',
+    instructions: 'Vorbește clar, natural și expresiv în limba textului.'
+  });
+
   expectedAuthorization = 'Bearer valid-test-key';
   const invalidKeySettings = await post('/api/settings', {
     provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`,
@@ -210,6 +251,12 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(rejectedAiStatus.connected, false, JSON.stringify(rejectedAiStatus));
   assert.equal(rejectedAiStatus.error, 'OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render.');
   assert.doesNotMatch(JSON.stringify(rejectedAiStatus), /invalid-test-key/);
+  const rejectedAiTest = await post('/api/ai/test', { model: 'gpt-4.1-mini' });
+  assert.equal(rejectedAiTest.status, 502);
+  const rejectedAiTestStatus = await rejectedAiTest.json();
+  assert.equal(rejectedAiTestStatus.connected, false);
+  assert.equal(rejectedAiTestStatus.error, 'OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render.');
+  assert.doesNotMatch(JSON.stringify(rejectedAiTestStatus), /invalid-test-key/);
 
   const unsafeSettings = await post('/api/settings', {
     provider: 'openai', baseUrl: 'https://user:pass@example.com/v1', textModel: 'model'
