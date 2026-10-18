@@ -23,9 +23,8 @@ Nu sunt necesare pachete npm. Proiectele se salvează în `projects/`, copiile d
 ## Publicare GitHub
 
 1. Creează repo-ul public `nova-ai-studio` și împinge fișierele acestui director pe ramura `main`.
-2. În **Settings → Pages**, selectează **GitHub Actions** ca sursă de publicare.
-3. Workflow-ul `Publish website` va publica pagina la `https://adyady0303-hash.github.io/nova-ai-studio/`.
-4. Pentru o versiune nouă, actualizează `version` în `package.json`, apoi creează și împinge tag-ul, de exemplu `v0.3.0`. Workflow-ul va publica `Nova-AI-Studio.zip` și `Nova-AI-Studio.zip.sha256` ca assets de release.
+2. Workflow-ul `Publish website` activează GitHub Pages cu sursa GitHub Actions și publică pagina la `https://adyady0303-hash.github.io/nova-ai-studio/`.
+3. Pentru o versiune nouă, actualizează `version` în `package.json`, apoi pornește manual workflow-ul `Build and publish Nova release` cu tag-ul (de exemplu `v0.3.0`) sau împinge un tag `v*`. Workflow-ul publică `Nova-AI-Studio.zip` și `Nova-AI-Studio.zip.sha256` ca assets de release.
 
 Pagina folosește URL-ul „latest release”, așa că butonul de descărcare funcționează după apariția primului release.
 
@@ -35,3 +34,4 @@ Pagina folosește URL-ul „latest release”, așa că butonul de descărcare f
 - `PORT` — implicit `4173`.
 
 Nova nu oferă terminal, nu rulează cod și nu sincronizează proiecte în cloud. Modificările agentului sunt limitate la fișierele proiectului deschis.
+
