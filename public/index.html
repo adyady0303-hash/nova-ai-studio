@@ -276,7 +276,7 @@ input,textarea,select {accent-color:#9767ff}
 .nova-tool:hover,.nova-tool:focus-visible {transform:translateY(-3px);border-color:#9b72ff;box-shadow:0 12px 28px #3e2a9c44}
 .nova-tool strong {font-size:12px;margin-top:5px}.nova-tool small {color:#a2afd0;font-size:10px}
 .nova-tool-icon {display:grid;place-items:center;width:33px;height:33px;border-radius:10px;font-size:18px;font-weight:800;color:white}
-.nova-tool-icon.blue {background:linear-gradient(135deg,#139efa,#3754ff)}.nova-tool-icon.teal {background:linear-gradient(135deg,#02c5b7,#06768b)}.nova-tool-icon.purple {background:linear-gradient(135deg,#9658ff,#5932e0)}.nova-tool-icon.pink {background:linear-gradient(135deg,#fa65a5,#ac267e)}.nova-tool-icon.orange {background:linear-gradient(135deg,#ffae5e,#f16b43)}.nova-tool-icon.cyan {background:linear-gradient(135deg,#4ac8ff,#3050e8)}.nova-tool-icon.violet {background:linear-gradient(135deg,#cb76ff,#7c45b5)}.nova-tool-icon.green {background:linear-gradient(135deg,#26d5a1,#118d77)}
+.nova-tool-icon.blue {background:linear-gradient(135deg,#139efa,#3754ff)}.nova-tool-icon.teal {background:linear-gradient(135deg,#02c5b7,#06768b)}.nova-tool-icon.purple {background:linear-gradient(135deg,#9658ff,#5932e0)}.nova-tool-icon.pink {background:linear-gradient(135deg,#fa65a5,#ac267e)}.nova-tool-icon.orange {background:linear-gradient(135deg,#ffae5e,#f16b43)}.nova-tool-icon.cyan {background:linear-gradient(135deg,#4ac8ff,#3050e8)}.nova-tool-icon.violet {background:linear-gradient(135deg,#cb76ff,#7c45b5)}.nova-tool-icon.business {background:linear-gradient(135deg,#f8c052,#b56eec)}.nova-tool-icon.green {background:linear-gradient(135deg,#26d5a1,#118d77)}
 .nova-inspiration {margin-top:19px}
 @media(max-width:1000px){.nova-tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.nova-hero-content{max-width:85%}.nova-orbit{opacity:.5}}
 @media(max-width:520px){.nova-hero{padding:20px;min-height:170px}.nova-hero-content{max-width:100%}.nova-orbit{right:-35px;opacity:.2}.nova-tool-grid{gap:8px}.nova-tool{padding:10px;min-height:100px}.nova-tool-heading span{display:none}}
@@ -344,6 +344,7 @@ input,textarea,select {accent-color:#9767ff}
 <button type="button" class="nova-tool" data-nova-action="music"><span class="nova-tool-icon orange">♫</span><strong>Muzică</strong><small>Compoziții și idei</small></button>
 <button type="button" class="nova-tool" data-nova-action="voice"><span class="nova-tool-icon cyan">◉</span><strong>Voce & audio</strong><small>Voice-over AI</small></button>
 <button type="button" class="nova-tool" data-nova-action="lyrics"><span class="nova-tool-icon violet">✎</span><strong>Texte & versuri</strong><small>Scriere creativă</small></button>
+<button type="button" class="nova-tool" data-nova-action="business"><span class="nova-tool-icon business">◆</span><strong>Business online</strong><small>Brand, site, magazin și lansare</small></button>
 <button type="button" class="nova-tool" data-nova-action="projects"><span class="nova-tool-icon green">▤</span><strong>Proiecte</strong><small>Fișiere și editor</small></button>
 </div><div class="nova-tool-heading nova-inspiration"><strong>Începe cu o idee</strong><span>Alege un exemplu sau scrie propria cerere</span></div><div class="suggestions">
             <button class="suggestion" data-task="code"><span class="suggestion-icon">{ }</span><span><strong>Creează o aplicație pentru PC</strong><small>Pornește de la o idee și construiește proiectul</small></span></button>
@@ -415,6 +416,12 @@ input,textarea,select {accent-color:#9767ff}
 document.addEventListener("click",function(event){
  var button=event.target.closest("[data-nova-action]"); if(!button)return;
  var action=button.getAttribute("data-nova-action");
+ if(action==="business"){
+ document.querySelector('.create-item[data-task="code"]')?.click();
+ var prompt=document.getElementById("prompt");
+ if(prompt){prompt.value="Acționează ca un consultant de business online și dezvoltator web. Ajută-mă să construiesc un business online real, etapă cu etapă: identifică nișa și clientul ideal, propune oferta și numele brandului, validează ipotezele, creează planul de afaceri, structura site-ului sau magazinului online, textele de vânzare, strategia de marketing, bugetul și lista de verificare pentru lansare. Începe prin a-mi pune 3 întrebări: ce vreau să vând, în ce țară și ce buget am. Nu pretinde că ai lansat site-ul, conectat plăți sau înregistrat firma fără confirmare.";prompt.focus();}
+ return;
+ }
  if(action==="image"){document.getElementById("generateImageBtn")?.click();return}
  if(action==="projects"){document.getElementById("openWorkspaceBtn")?.click();return}
  if(action==="voice"){document.getElementById("providerSettingsBtn")?.click();return}
