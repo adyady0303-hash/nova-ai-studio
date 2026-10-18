@@ -233,6 +233,30 @@
       .workspace-open .chat { grid-row: 3; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+  
+/* NOVA SIGNATURE UI — visual refresh, no changes to authentication or AI logic */
+:root {--bg:#070b18;--sidebar:#080e21;--surface:#10182e;--surface-raised:#151e39;--surface-hover:#1b2750;--line:#26365a;--text:#f4f6ff;--muted:#a7b5d4;--muted-2:#7688ae;--accent:#aa78ff;--accent-strong:#825bff;--accent-wash:rgba(132,91,255,.17);--mint:#48e1c3}
+body {background:radial-gradient(circle at 55% -20%,#243b88 0,transparent 45%),#070b18}
+.app {background:transparent}
+.topbar {background:linear-gradient(100deg,rgba(8,13,32,.98),rgba(16,20,49,.96));border-bottom:1px solid #32416d;box-shadow:0 8px 28px #0004}
+.brand-lockup {font-size:15px;letter-spacing:.07em;text-transform:uppercase}
+.logo {border:1px solid #a878ff77;background:linear-gradient(135deg,#54dfff 5%,#7e5dff 45%,#e45df6 95%);color:white;box-shadow:0 0 26px #764aff80;transform:skew(-8deg)}
+.sidebar {background:linear-gradient(180deg,#0a1129,#090e1f 70%);border-right:1px solid #26365a}
+.create-item {border-radius:12px;transition:background .18s,border-color .18s,transform .18s}
+.create-item:hover {transform:translateX(3px);background:#1c2451}
+.create-item.active {border:1px solid #845bff80;background:linear-gradient(100deg,#283c98a8,#51269b88);box-shadow:inset 3px 0 #a95aff,0 4px 20px #5729dd33;color:#fff}
+.create-icon {background:#1b2148;border-color:#4852a0;color:#d4aaff}
+.btn {border-color:#34426c;background:#151d37;border-radius:12px}
+.btn.primary,.new-chat {background:linear-gradient(115deg,#315cf4,#8746ee 65%,#cc45e7);color:white;border-color:transparent;box-shadow:0 6px 24px #5d3ff344}
+.btn.primary:hover,.new-chat:hover {background:linear-gradient(115deg,#4775ff,#9d5dff,#df62ef)}
+.project-card,.top-status {border-color:#354575;background:#101933}
+.badge {background:#3c278355;border-color:#7456cf;color:#d3bbff}
+.workspace,.chat,.editor,.panel,.card {border-color:#2a3964}
+input,textarea,select {accent-color:#9767ff}
+::selection {background:#8057df;color:white}
+::-webkit-scrollbar {width:9px;height:9px}::-webkit-scrollbar-thumb {background:#384778;border:2px solid #0b1226;border-radius:20px}
+@media(max-width:700px){.brand-lockup{font-size:12px;letter-spacing:0}.logo{box-shadow:0 0 15px #764aff55}}
+
   </style>
 </head>
 <body>
