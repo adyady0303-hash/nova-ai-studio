@@ -257,7 +257,31 @@ input,textarea,select {accent-color:#9767ff}
 ::-webkit-scrollbar {width:9px;height:9px}::-webkit-scrollbar-thumb {background:#384778;border:2px solid #0b1226;border-radius:20px}
 @media(max-width:700px){.brand-lockup{font-size:12px;letter-spacing:0}.logo{box-shadow:0 0 15px #764aff55}}
 
-  </style>
+  
+/* NOVA Studio dashboard */
+.messages {background:radial-gradient(ellipse at 48% 0%,#24356b44,transparent 58%)}
+.welcome {max-width:1050px;width:100%;padding:12px 16px 28px}
+.nova-hero {position:relative;overflow:hidden;min-height:180px;border:1px solid #54418b;border-radius:23px;padding:26px 32px;background:radial-gradient(circle at 82% 40%,#6739e5a0,transparent 34%),radial-gradient(circle at 60% 120%,#0e81c988,transparent 50%),linear-gradient(110deg,#101638,#171041 68%,#0b1532);box-shadow:0 18px 48px #0005}
+.nova-hero:after {content:"";position:absolute;inset:auto -10% -110px 32%;height:170px;border-top:2px solid #5bcaff8a;border-radius:50%;transform:rotate(-12deg);pointer-events:none}
+.nova-hero-content {position:relative;z-index:1;max-width:74%}
+.nova-hero-title {font-size:clamp(23px,3vw,40px);font-weight:850;letter-spacing:-.055em;line-height:1.1;margin:17px 0 10px;background:linear-gradient(100deg,#fff 10%,#c79bff 60%,#62d5ff);color:transparent;background-clip:text}
+.nova-hero p {font-size:13px;line-height:1.65;color:#d3dcff;margin:0}
+.nova-orbit {position:absolute;right:7%;top:16%;width:132px;height:132px;border:2px solid #8068ff99;border-radius:50%;display:grid;place-items:center;box-shadow:0 0 60px #7846ff99,inset 0 0 35px #2869ff88;background:radial-gradient(circle,#34268a,#101b4c 65%,#070e29)}
+.nova-orbit:before {content:"";position:absolute;inset:-16px;border:1px solid #60caff88;border-radius:50%;transform:rotate(-24deg) scaleY(.5)}
+.nova-orbit span {font-size:72px;font-weight:950;font-style:italic;line-height:1;background:linear-gradient(140deg,#5cf4ff,#8a70ff,#ec6dff);background-clip:text;color:transparent;text-shadow:0 0 38px #9c5aff55}
+.nova-tool-heading {display:flex;justify-content:space-between;gap:10px;align-items:center;margin:22px 0 11px;color:#f3f2ff;font-size:15px}
+.nova-tool-heading span {font-size:11px;color:#91a2cc}
+.nova-tool-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.nova-tool {min-width:0;min-height:111px;padding:14px;border:1px solid #344477;border-radius:15px;background:linear-gradient(135deg,#141c3c,#10152b);text-align:left;color:#f4f5ff;display:flex;flex-direction:column;gap:3px;transition:transform .18s,border-color .18s,box-shadow .18s;cursor:pointer}
+.nova-tool:hover,.nova-tool:focus-visible {transform:translateY(-3px);border-color:#9b72ff;box-shadow:0 12px 28px #3e2a9c44}
+.nova-tool strong {font-size:12px;margin-top:5px}.nova-tool small {color:#a2afd0;font-size:10px}
+.nova-tool-icon {display:grid;place-items:center;width:33px;height:33px;border-radius:10px;font-size:18px;font-weight:800;color:white}
+.nova-tool-icon.blue {background:linear-gradient(135deg,#139efa,#3754ff)}.nova-tool-icon.teal {background:linear-gradient(135deg,#02c5b7,#06768b)}.nova-tool-icon.purple {background:linear-gradient(135deg,#9658ff,#5932e0)}.nova-tool-icon.pink {background:linear-gradient(135deg,#fa65a5,#ac267e)}.nova-tool-icon.orange {background:linear-gradient(135deg,#ffae5e,#f16b43)}.nova-tool-icon.cyan {background:linear-gradient(135deg,#4ac8ff,#3050e8)}.nova-tool-icon.violet {background:linear-gradient(135deg,#cb76ff,#7c45b5)}.nova-tool-icon.green {background:linear-gradient(135deg,#26d5a1,#118d77)}
+.nova-inspiration {margin-top:19px}
+@media(max-width:1000px){.nova-tool-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.nova-hero-content{max-width:85%}.nova-orbit{opacity:.5}}
+@media(max-width:520px){.nova-hero{padding:20px;min-height:170px}.nova-hero-content{max-width:100%}.nova-orbit{right:-35px;opacity:.2}.nova-tool-grid{gap:8px}.nova-tool{padding:10px;min-height:100px}.nova-tool-heading span{display:none}}
+
+</style>
 </head>
 <body>
   <div class="app" id="app">
@@ -309,10 +333,19 @@ input,textarea,select {accent-color:#9767ff}
       </div>
       <div class="messages" id="messages">
         <div class="welcome" id="welcome">
-          <div class="welcome-kicker"><span class="spark">✦</span><span>UN SINGUR CHAT. IDEI FĂRĂ LIMITE.</span></div>
+          <div class="nova-hero"><div class="nova-orbit" aria-hidden="true"><span>N</span></div><div class="nova-hero-content"><div class="welcome-kicker"><span class="spark">✦</span><span>NOVA AI STUDIO · UNIVERSUL TĂU CREATIV</span></div><div class="nova-hero-title">Imaginează. Creează. Construiește.</div><p>Un singur spațiu pentru ideile tale, asistat de inteligență artificială reală.</p></div></div>
           <h1>Ce vrei să <span>creezi</span> astăzi?</h1>
           <p>Scrie o idee în cuvintele tale. Nova te ajută să construiești aplicații și cod pentru PC, să scrii texte, să creezi imagini și să pregătești muzică sau videoclipuri.</p>
-          <div class="suggestions">
+          <div class="nova-tool-heading"><strong>Explorează studioul</strong><span>Instrumente disponibile în Nova</span></div><div class="nova-tool-grid" aria-label="Instrumente Nova">
+<button type="button" class="nova-tool" data-nova-action="chat"><span class="nova-tool-icon blue">✦</span><strong>Chat AI</strong><small>Conversații și idei</small></button>
+<button type="button" class="nova-tool" data-nova-action="code"><span class="nova-tool-icon teal">&lt;/&gt;</span><strong>Programare</strong><small>Cod și aplicații</small></button>
+<button type="button" class="nova-tool" data-nova-action="image"><span class="nova-tool-icon purple">▧</span><strong>Imagini AI</strong><small>Generare vizuală</small></button>
+<button type="button" class="nova-tool" data-nova-action="video"><span class="nova-tool-icon pink">▶</span><strong>Video</strong><small>Scene și montaj</small></button>
+<button type="button" class="nova-tool" data-nova-action="music"><span class="nova-tool-icon orange">♫</span><strong>Muzică</strong><small>Compoziții și idei</small></button>
+<button type="button" class="nova-tool" data-nova-action="voice"><span class="nova-tool-icon cyan">◉</span><strong>Voce & audio</strong><small>Voice-over AI</small></button>
+<button type="button" class="nova-tool" data-nova-action="lyrics"><span class="nova-tool-icon violet">✎</span><strong>Texte & versuri</strong><small>Scriere creativă</small></button>
+<button type="button" class="nova-tool" data-nova-action="projects"><span class="nova-tool-icon green">▤</span><strong>Proiecte</strong><small>Fișiere și editor</small></button>
+</div><div class="nova-tool-heading nova-inspiration"><strong>Începe cu o idee</strong><span>Alege un exemplu sau scrie propria cerere</span></div><div class="suggestions">
             <button class="suggestion" data-task="code"><span class="suggestion-icon">{ }</span><span><strong>Creează o aplicație pentru PC</strong><small>Pornește de la o idee și construiește proiectul</small></span></button>
             <button class="suggestion" data-task="lyrics"><span class="suggestion-icon">✎</span><span><strong>Scrie versuri originale</strong><small>Alege subiectul, stilul și atmosfera</small></span></button>
             <button class="suggestion" data-task="music"><span class="suggestion-icon">♫</span><span><strong>Compune o schiță muzicală</strong><small>Generează o compoziție instrumentală WAV</small></span></button>
@@ -377,7 +410,21 @@ input,textarea,select {accent-color:#9767ff}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js"></script>
+  <script src="/app.js"></script><script>
+/* Navigation bridges to existing, tested Nova actions. */
+document.querySelectorAll("[data-nova-action]").forEach(function(button){
+ button.addEventListener("click",function(){
+  var action=button.getAttribute("data-nova-action");
+  if(action==="image"){document.getElementById("generateImageBtn")?.click();return}
+  if(action==="projects"){document.getElementById("openWorkspaceBtn")?.click();return}
+  if(action==="voice"){document.getElementById("providerSettingsBtn")?.click();return}
+  var task=action==="chat"?"auto":action;
+  var control=document.querySelector('.create-item[data-task="'+task+'"]');
+  if(control)control.click();
+  document.getElementById("prompt")?.focus();
+ });
+});
+</script>
 </body>
 </html>
 
