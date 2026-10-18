@@ -16,6 +16,7 @@ function chatKey(project = state.project) { return `nova-chat-${project}`; }
 
 async function refreshHealth() {
   const badge = el("statusBadge"), dot = el("connectionDot"), label = el("connectionText"), select = el("modelSelect");
+  const sideDot = el("sidebarConnectionDot"), sideLabel = el("sidebarConnectionText");
   const localInstance = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
   el("instanceBadge").textContent = localInstance ? "LOCAL" : "ONLINE PRIVAT";
   el("projectStorageLabel").textContent = localInstance ? "Fișiere pe acest calculator" : "Fișiere pe serverul privat";
@@ -23,6 +24,7 @@ async function refreshHealth() {
     const data = await api("/api/health");
     if (!data.connected) throw new Error(data.error || (data.provider === "openai" ? "Cheia API lipsește" : "Ollama nu este disponibil"));
     dot.classList.add("on"); label.textContent = data.provider === "openai" ? `OpenAI · ${data.version}` : `Ollama ${data.version}`;
+    sideDot.classList.add("on"); sideLabel.textContent = data.provider === "openai" ? "OpenAI conectat" : "Ollama conectat";
     badge.textContent = data.provider === "openai" ? "API cloud configurat" : "Ollama conectat";
     badge.style.color = "var(--green)"; badge.style.borderColor = "#364131";
     const previous = select.value; select.replaceChildren();
@@ -30,6 +32,7 @@ async function refreshHealth() {
     else { data.models.forEach(model => select.add(new Option(model, model))); if (data.models.includes(previous)) select.value = previous; }
   } catch (error) {
     dot.classList.remove("on"); label.textContent = state.settings?.provider === "openai" ? "API cloud neconfigurat" : "Ollama deconectat"; badge.textContent = "AI neconectat";
+    sideDot.classList.remove("on"); sideLabel.textContent = state.settings?.provider === "openai" ? "Configurează API-ul" : "Conectează un model AI";
     badge.style.color = "#e4a69b"; badge.style.borderColor = "#583b35";
     select.replaceChildren(new Option(state.settings?.provider === "openai" ? "Configurează cheia API" : "Pornește Ollama și reîncarcă", ""));
   }
@@ -99,13 +102,39 @@ function renderChat() {
   const box = el("messages"); box.replaceChildren();
   if (!state.chat.length) {
     const welcome = document.createElement("div"); welcome.className = "welcome"; welcome.id = "welcome";
-    welcome.innerHTML = `<div class="welcome-mark">N</div><h1>Ce creăm azi?</h1><p>Construiește aplicații PC, scrie versuri, generează imagini și voice-over, apoi compune un videoclip — totul din același spațiu de lucru.</p><div class="suggestions"><button class="suggestion" data-task="code">Creează o aplicație Windows pentru lista mea de sarcini</button><button class="suggestion" data-task="lyrics">Scrie versuri pop despre un nou început</button><button class="suggestion" data-task="music">Compune o piesă lo-fi: tempo, acorduri și structură</button><button class="suggestion" data-task="video">Scrie un storyboard cu imagini și voice-over</button></div>`;
+    welcome.innerHTML = `<div class="welcome-kicker"><span class="spark">✦</span><span>UN SINGUR CHAT. IDEI FĂRĂ LIMITE.</span></div><h1>Ce vrei să <span>creezi</span> astăzi?</h1><p>Scrie o idee în cuvintele tale. Nova te ajută să construiești aplicații și cod pentru PC, să scrii texte, să creezi imagini și să pregătești muzică sau videoclipuri.</p><div class="suggestions"><button class="suggestion" data-task="code"><span class="suggestion-icon">{ }</span><span><strong>Creează o aplicație pentru PC</strong><small>Pornește de la o idee și construiește proiectul</small></span></button><button class="suggestion" data-task="lyrics"><span class="suggestion-icon">✎</span><span><strong>Scrie versuri originale</strong><small>Alege subiectul, stilul și atmosfera</small></span></button><button class="suggestion" data-task="music"><span class="suggestion-icon">♫</span><span><strong>Compune o schiță muzicală</strong><small>Generează o compoziție instrumentală WAV</small></span></button><button class="suggestion" data-task="video"><span class="suggestion-icon">▶</span><span><strong>Pregătește un videoclip</strong><small>Scenariu, imagini, voice-over și export WebM</small></span></button></div>`;
     box.append(welcome);
-    welcome.querySelectorAll(".suggestion").forEach(button => button.addEventListener("click", () => { el("taskSelect").value = button.dataset.task || "auto"; el("prompt").value = button.textContent; el("prompt").focus(); }));
+    welcome.querySelectorAll(".suggestion").forEach(button => button.addEventListener("click", () => {
+      setTask(button.dataset.task || "auto");
+      el("prompt").value = button.querySelector("strong")?.textContent || button.textContent.trim();
+      el("prompt").focus();
+      resizePrompt();
+    }));
     return;
   }
   for (const message of state.chat) addBubble(message.role, message.content, message.events);
   box.scrollTop = box.scrollHeight;
+}
+
+function setTask(task) {
+  const supported = ["auto", "code", "lyrics", "music", "video"];
+  const selected = supported.includes(task) ? task : "auto";
+  el("taskSelect").value = selected;
+  document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
+  const prompts = {
+    auto: "Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)",
+    code: "Descrie aplicația sau unealta pe care vrei să o construiești…",
+    lyrics: "Descrie tema, stilul și atmosfera textului sau a versurilor…",
+    music: "Descrie genul, tempo-ul și starea compoziției…",
+    video: "Descrie ideea, publicul și stilul videoclipului…"
+  };
+  el("prompt").placeholder = prompts[selected];
+}
+
+function resizePrompt() {
+  const prompt = el("prompt");
+  prompt.style.height = "auto";
+  prompt.style.height = `${Math.min(prompt.scrollHeight, 190)}px`;
 }
 
 function parseCreativeSpec(content) {
@@ -574,15 +603,13 @@ el("providerSettingsBtn").addEventListener("click", async () => {
 el("providerSelect").addEventListener("change", event => { el("openAiFields").hidden = event.target.value !== "openai"; });
 el("saveProviderSettings").addEventListener("click", () => saveProviderSettings().catch(error => toast(error.message)));
 el("taskSelect").addEventListener("change", event => {
-  const prompts = {
-    auto: "Cere cod, versuri, o compoziție sau un scenariu video… (Enter trimite)",
-    code: "Descrie aplicația sau unealta pentru Windows/PC… (Enter trimite)",
-    lyrics: "Descrie tema, genul și tonul versurilor… (Enter trimite)",
-    music: "Descrie genul și atmosfera compoziției… (Enter trimite)",
-    video: "Descrie ideea, publicul și durata videoclipului… (Enter trimite)"
-  };
-  el("prompt").placeholder = prompts[event.target.value] || prompts.auto;
+  setTask(event.target.value);
 });
+document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.addEventListener("click", () => {
+  setTask(button.dataset.task);
+  el("prompt").focus();
+}));
+el("prompt").addEventListener("input", resizePrompt);
 el("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } });
 el("refreshModels").addEventListener("click", refreshHealth);
 el("refreshModelsTop").addEventListener("click", refreshHealth);
@@ -598,7 +625,23 @@ el("newFileBtn").addEventListener("click", createFile);
 el("deleteFileBtn").addEventListener("click", deleteFile);
 el("undoBtn").addEventListener("click", undoFile);
 el("projectSelect").addEventListener("change", async event => { try { await loadProject(event.target.value); localStorage.setItem("nova-project", event.target.value); } catch (error) { toast(error.message); } });
-el("clearChat").addEventListener("click", () => { state.chat = []; localStorage.setItem(chatKey(), "[]"); renderChat(); });
+el("clearChat").addEventListener("click", () => {
+  state.chat = [];
+  localStorage.setItem(chatKey(), "[]");
+  setTask("auto");
+  el("prompt").value = "";
+  resizePrompt();
+  renderChat();
+  el("prompt").focus();
+});
+el("openWorkspaceBtn").addEventListener("click", () => {
+  const app = el("app");
+  const open = !app.classList.contains("workspace-open");
+  app.classList.toggle("workspace-open", open);
+  el("openWorkspaceBtn").setAttribute("aria-pressed", String(open));
+  el("openWorkspaceBtn").lastElementChild.textContent = open ? "Închide editorul" : "Spațiu de lucru";
+  if (open) renderFiles();
+});
 el("copyBtn").addEventListener("click", async () => { try { await navigator.clipboard.writeText(el("editor").value); toast("Cod copiat"); } catch { toast("Clipboard indisponibil în acest context"); } });
 el("downloadBtn").addEventListener("click", () => {
   const blob = new Blob([el("editor").value], { type: "text/plain;charset=utf-8" });
@@ -610,3 +653,4 @@ window.addEventListener("beforeunload", event => { if (state.dirty) { event.prev
 Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);
 });
+
