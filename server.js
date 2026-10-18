@@ -13,7 +13,7 @@ const configuredAiProvider = String(process.env.AI_PROVIDER || "").trim().toLowe
 const aiProvider = {
   provider: configuredAiProvider === "ollama"
     ? "ollama"
-    : configuredAiProvider === "openai" || Boolean(process.env.OPENAI_API_KEY)
+    : configuredAiProvider === "openai" || Boolean(process.env.OPENAI_API_KEY) || process.env.NODE_ENV === "production"
       ? "openai"
       : "ollama",
   baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",

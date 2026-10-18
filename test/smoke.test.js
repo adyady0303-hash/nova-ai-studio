@@ -32,6 +32,54 @@ test('server uses environment-provided credentials and does not ship secrets', (
   assert.doesNotMatch(fs.readFileSync(path.join(root, '.env.example'), 'utf8'), /sk-[A-Za-z0-9]{20,}/);
 });
 
+test('production defaults to OpenAI and reports a missing API key clearly', async t => {
+  const dataDir = fs.mkdtempSync(path.join(root, '.nova-production-test-'));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: root,
+    env: {
+      ...process.env,
+      NODE_ENV: 'production',
+      HOST: '127.0.0.1',
+      PORT: String(port),
+      NOVA_DATA_DIR: dataDir,
+      NOVA_ACCESS_USER: 'nova-test-user',
+      NOVA_ACCESS_PASSWORD: 'local-test-password-at-least-20',
+      AI_PROVIDER: '',
+      OPENAI_API_KEY: ''
+    },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+  let output = '';
+  child.stdout.setEncoding('utf8').on('data', value => { output += value; });
+  child.stderr.setEncoding('utf8').on('data', value => { output += value; });
+  t.after(async () => {
+    child.kill();
+    await Promise.race([
+      new Promise(resolve => child.once('exit', resolve)),
+      new Promise(resolve => setTimeout(resolve, 1500))
+    ]);
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  });
+
+  await waitForServer(baseUrl, child, () => output);
+  const login = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'nova-test-user', password: 'local-test-password-at-least-20' })
+  });
+  assert.equal(login.status, 200);
+  const cookie = login.headers.get('set-cookie').split(';', 1)[0];
+  const health = await fetch(`${baseUrl}/api/health`, { headers: { cookie } });
+  assert.deepEqual(await health.json(), {
+    connected: false,
+    provider: 'openai',
+    error: 'Cheia API OpenAI lipsește din configurarea serverului.',
+    models: []
+  });
+});
+
 test('authenticated HTTP flows protect settings, projects, files and exports', async t => {
   const dataDir = fs.mkdtempSync(path.join(root, '.nova-http-test-'));
   const providerPort = await getFreePort();
