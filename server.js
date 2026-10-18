@@ -203,7 +203,11 @@ async function openAiJson(route, options = {}, timeout = 180000) {
     }
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`);
+  if (!response.ok) {
+    const error = new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -642,11 +646,33 @@ async function handle(req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/health") {
     if (aiProvider.provider === "openai") {
+      if (!aiProvider.apiKey) {
+        return json(res, 200, {
+          connected: false,
+          provider: "openai",
+          error: "Cheia API OpenAI lipsește din configurarea serverului.",
+          models: []
+        });
+      }
+      try {
+        // Validate the server-side credential without generating content or using model tokens.
+        await openAiJson("/models", {}, 10000);
+      } catch (error) {
+        const status = error.status;
+        const message = status === 401 || status === 403
+          ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
+          : status === 429
+            ? "OpenAI a limitat verificarea. Verifică limitele și facturarea API, apoi reîncearcă."
+            : status === 404
+              ? "Adresa API nu oferă ruta /models. Verifică OPENAI_BASE_URL."
+              : "Serverul nu a putut valida conexiunea OpenAI. Verifică rețeaua și configurarea API.";
+        return json(res, 200, { connected: false, provider: "openai", error: message, models: [] });
+      }
       return json(res, 200, {
-        connected: Boolean(aiProvider.apiKey),
+        connected: true,
         provider: "openai",
-        version: aiProvider.apiKey ? "API configurat" : "Cheia API lipsește",
-        models: aiProvider.apiKey && aiProvider.textModel ? [aiProvider.textModel] : []
+        version: "Conexiune verificată",
+        models: aiProvider.textModel ? [aiProvider.textModel] : []
       });
     }
     try {
@@ -759,3 +785,4 @@ appServer.listen(PORT, HOST, () => {
   console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
   console.log(`Ollama: ${OLLAMA}`);
 });
+

@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const net = require('node:net');
+const http = require('node:http');
 
 const root = path.join(__dirname, '..');
 
@@ -35,7 +36,22 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const dataDir = fs.mkdtempSync(path.join(root, '.nova-http-test-'));
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
+  const providerPort = await getFreePort();
   const fakeApiKey = 'unit-test-secret-never-return-this';
+  let expectedAuthorization = `Bearer ${fakeApiKey}`;
+  const providerServer = http.createServer((req, res) => {
+    if (req.url !== '/v1/models') {
+      res.writeHead(404, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: { message: 'not found' } }));
+    }
+    if (req.headers.authorization !== expectedAuthorization) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ error: { message: 'invalid api key' } }));
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ data: [{ id: 'gpt-4.1-mini' }] }));
+  });
+  await new Promise((resolve, reject) => providerServer.once('error', reject).listen(providerPort, '127.0.0.1', resolve));
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {
@@ -46,7 +62,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       NOVA_ACCESS_USER: 'nova-test-user',
       NOVA_ACCESS_PASSWORD: 'local-test-password-at-least-20',
       AI_PROVIDER: 'openai',
-      OPENAI_API_KEY: fakeApiKey
+      OPENAI_API_KEY: fakeApiKey,
+      OPENAI_BASE_URL: `http://127.0.0.1:${providerPort}/v1`
     },
     stdio: ['ignore', 'pipe', 'pipe']
   });
@@ -59,6 +76,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       new Promise(resolve => child.once('exit', resolve)),
       new Promise(resolve => setTimeout(resolve, 1500))
     ]);
+    await new Promise(resolve => providerServer.close(resolve));
     fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
@@ -107,8 +125,20 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.doesNotMatch(settingsText, new RegExp(fakeApiKey));
   const aiHealth = await request('/api/health');
   assert.deepEqual(await aiHealth.json(), {
-    connected: true, provider: 'openai', version: 'API configurat', models: ['gpt-4.1-mini']
+    connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-4.1-mini']
   });
+
+  expectedAuthorization = 'Bearer valid-test-key';
+  const invalidKeySettings = await post('/api/settings', {
+    provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`,
+    apiKey: 'invalid-test-key', textModel: 'gpt-4.1-mini'
+  });
+  assert.equal(invalidKeySettings.status, 200);
+  const rejectedAiHealth = await request('/api/health');
+  const rejectedAiStatus = await rejectedAiHealth.json();
+  assert.equal(rejectedAiStatus.connected, false, JSON.stringify(rejectedAiStatus));
+  assert.equal(rejectedAiStatus.error, 'OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render.');
+  assert.doesNotMatch(JSON.stringify(rejectedAiStatus), /invalid-test-key/);
 
   const unsafeSettings = await post('/api/settings', {
     provider: 'openai', baseUrl: 'https://user:pass@example.com/v1', textModel: 'model'

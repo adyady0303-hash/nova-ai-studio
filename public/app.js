@@ -22,7 +22,13 @@ async function refreshHealth() {
   el("projectStorageLabel").textContent = localInstance ? "Fișiere pe acest calculator" : "Fișiere pe serverul privat";
   try {
     const data = await api("/api/health");
-    if (!data.connected) throw new Error(data.error || (data.provider === "openai" ? "Cheia API lipsește" : "Ollama nu este disponibil"));
+    if (!data.connected) {
+      const message = data.error || (data.provider === "openai" ? "Cheia API lipsește" : "Ollama nu este disponibil");
+      label.title = message;
+      sideLabel.title = message;
+      throw new Error(message);
+    }
+    label.removeAttribute("title"); sideLabel.removeAttribute("title");
     dot.classList.add("on"); label.textContent = data.provider === "openai" ? `OpenAI · ${data.version}` : `Ollama ${data.version}`;
     sideDot.classList.add("on"); sideLabel.textContent = data.provider === "openai" ? "OpenAI conectat" : "Ollama conectat";
     badge.textContent = data.provider === "openai" ? "API cloud configurat" : "Ollama conectat";
@@ -31,8 +37,11 @@ async function refreshHealth() {
     if (!data.models.length) select.add(new Option(data.provider === "openai" ? "Setează modelul cloud" : "Niciun model instalat", ""));
     else { data.models.forEach(model => select.add(new Option(model, model))); if (data.models.includes(previous)) select.value = previous; }
   } catch (error) {
-    dot.classList.remove("on"); label.textContent = state.settings?.provider === "openai" ? "API cloud neconfigurat" : "Ollama deconectat"; badge.textContent = "AI neconectat";
-    sideDot.classList.remove("on"); sideLabel.textContent = state.settings?.provider === "openai" ? "Configurează API-ul" : "Conectează un model AI";
+    dot.classList.remove("on"); label.textContent = state.settings?.provider === "openai" ? "OpenAI neconectat" : "Ollama deconectat"; badge.textContent = "AI neconectat";
+    sideDot.classList.remove("on");
+    const reason = error?.message || (state.settings?.provider === "openai" ? "Verifică OPENAI_API_KEY în Render." : "Pornește Ollama și reîncarcă.");
+    sideLabel.textContent = reason;
+    label.title = reason; sideLabel.title = reason; badge.title = reason;
     badge.style.color = "#e4a69b"; badge.style.borderColor = "#583b35";
     select.replaceChildren(new Option(state.settings?.provider === "openai" ? "Configurează cheia API" : "Pornește Ollama și reîncarcă", ""));
   }
