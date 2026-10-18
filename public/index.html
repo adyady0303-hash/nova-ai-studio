@@ -4,10 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d0f14">
-  <meta name="nova-version" content="0.6.0">
-  <meta name="nova-build" content="NOVA_VISUAL_REDESIGN_2026_10_18">
+  <meta name="nova-version" content="0.7.1">
+  <meta name="nova-build" content="NOVA_CHAT_REDESIGN_2026_10_18B">
   <meta name="description" content="Nova AI Studio: creează și construiește într-un singur spațiu de lucru AI.">
   <title>Nova AI Studio</title>
+  <link rel="stylesheet" href="/studio.css?v=0.7.1">
   <style>
     :root {
       color-scheme: dark;
@@ -421,27 +422,20 @@ body {background:#080b13;}
         <button class="btn subtle workspace-toggle" id="openWorkspaceBtn" aria-pressed="false" title="Deschide editorul proiectului"><span>⌘</span><span>Spațiu de lucru</span></button>
       </div>
       <div class="messages" id="messages">
-        <div class="welcome" id="welcome">
-          <div class="nova-hero"><div class="nova-orbit" aria-hidden="true"><span>N</span></div><div class="nova-hero-content"><div class="welcome-kicker"><span class="spark">✦</span><span>NOVA AI STUDIO · UNIVERSUL TĂU CREATIV</span></div><div class="nova-hero-title">Imaginează. Creează. Construiește.</div><p>Un singur spațiu pentru ideile tale, asistat de inteligență artificială reală.</p></div></div>
-          <h1>Ce vrei să <span>creezi</span> astăzi?</h1>
-          <p>Scrie o idee în cuvintele tale. Nova te ajută să construiești aplicații și cod pentru PC, să scrii texte, să creezi imagini și să pregătești muzică sau videoclipuri.</p>
-          <div class="nova-tool-heading"><strong>Explorează studioul</strong><span>Instrumente disponibile în Nova</span></div><div class="nova-tool-grid" aria-label="Instrumente Nova">
-<button type="button" class="nova-tool" data-nova-action="chat"><span class="nova-tool-icon blue">✦</span><strong>Chat AI</strong><small>Conversații și idei</small></button>
-<button type="button" class="nova-tool" data-nova-action="code"><span class="nova-tool-icon teal">&lt;/&gt;</span><strong>Programare</strong><small>Cod și aplicații</small></button>
-<button type="button" class="nova-tool" data-nova-action="image"><span class="nova-tool-icon purple">▧</span><strong>Imagini AI</strong><small>Generare vizuală</small></button>
-<button type="button" class="nova-tool" data-nova-action="video"><span class="nova-tool-icon pink">▶</span><strong>Video</strong><small>Scene și montaj</small></button>
-<button type="button" class="nova-tool" data-nova-action="music"><span class="nova-tool-icon orange">♫</span><strong>Muzică</strong><small>Compoziții și idei</small></button>
-<button type="button" class="nova-tool" data-nova-action="voice"><span class="nova-tool-icon cyan">◉</span><strong>Voce & audio</strong><small>Voice-over AI</small></button>
-<button type="button" class="nova-tool" data-nova-action="lyrics"><span class="nova-tool-icon violet">✎</span><strong>Texte & versuri</strong><small>Scriere creativă</small></button>
-<button type="button" class="nova-tool" data-nova-action="business"><span class="nova-tool-icon business">◆</span><strong>Business online</strong><small>Brand, site, magazin și lansare</small></button>
-<button type="button" class="nova-tool" data-nova-action="projects"><span class="nova-tool-icon green">▤</span><strong>Proiecte</strong><small>Fișiere și editor</small></button>
-</div><div class="nova-tool-heading nova-inspiration"><strong>Începe cu o idee</strong><span>Alege un exemplu sau scrie propria cerere</span></div><div class="suggestions">
-            <button class="suggestion" data-task="code"><span class="suggestion-icon">{ }</span><span><strong>Creează o aplicație pentru PC</strong><small>Pornește de la o idee și construiește proiectul</small></span></button>
-            <button class="suggestion" data-task="lyrics"><span class="suggestion-icon">✎</span><span><strong>Scrie versuri originale</strong><small>Alege subiectul, stilul și atmosfera</small></span></button>
-            <button class="suggestion" data-task="music"><span class="suggestion-icon">♫</span><span><strong>Compune o schiță muzicală</strong><small>Generează o compoziție instrumentală WAV</small></span></button>
-            <button class="suggestion" data-task="video"><span class="suggestion-icon">▶</span><span><strong>Pregătește un videoclip</strong><small>Scenariu, imagini, voice-over și export WebM</small></span></button>
+        <template id="welcomeTemplate"><div class="welcome" id="welcome">
+          <div class="nova-hero"><div class="nova-hero-content"><div class="welcome-kicker"><span class="spark">✦</span><span>NOVA AI STUDIO · SPAȚIUL TĂU CREATIV</span></div><div class="nova-hero-title">Ce vrei să <span>creezi</span> astăzi?</div><p>Scrie o idee în chat. Nova te ajută cu cod, texte, imagini, muzică, video și voce.</p></div></div>
+          <div class="nova-tool-heading"><strong>Începe cu un mod</strong><span>Totul continuă în același chat</span></div>
+          <div class="nova-tool-grid" aria-label="Moduri de creație Nova">
+            <button type="button" class="nova-tool" data-nova-action="chat"><span class="nova-tool-icon blue">✦</span><span class="tool-copy"><strong>Chat AI</strong><small>Idei, explicații și planuri</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="code"><span class="nova-tool-icon teal">&lt;/&gt;</span><span class="tool-copy"><strong>Cod & aplicații</strong><small>Programe pentru PC și web</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="image"><span class="nova-tool-icon purple">▧</span><span class="tool-copy"><strong>Imagini AI</strong><small>Vizuale generate cu OpenAI</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="video"><span class="nova-tool-icon pink">▶</span><span class="tool-copy"><strong>Video</strong><small>Scenariu și export WebM</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="music"><span class="nova-tool-icon orange">♫</span><span class="tool-copy"><strong>Muzică</strong><small>Schițe audio WAV locale</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="voice"><span class="nova-tool-icon cyan">◉</span><span class="tool-copy"><strong>Voice-over</strong><small>Voce AI și export MP3</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="lyrics"><span class="nova-tool-icon violet">✎</span><span class="tool-copy"><strong>Texte & versuri</strong><small>Scriere în stilul dorit</small></span><span class="tool-arrow">↗</span></button>
+            <button type="button" class="nova-tool" data-nova-action="projects"><span class="nova-tool-icon green">▤</span><span class="tool-copy"><strong>Proiecte</strong><small>Fișiere, cod și editor</small></span><span class="tool-arrow">↗</span></button>
           </div>
-        </div>
+        </div></template>
       </div>
       <div class="composer-wrap">
         <div class="composer">
@@ -532,5 +526,6 @@ document.addEventListener("click",function(event){
 </script>
 </body>
 </html>
+
 
 
