@@ -1,0 +1,37 @@
+name: Build and publish Nova release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish (for example v0.3.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Build release archive
+        run: |
+          mkdir -p dist
+          zip -r dist/Nova-AI-Studio.zip server.js package.json README.md Start_Nova_AI_Studio.bat public
+          sha256sum dist/Nova-AI-Studio.zip > dist/Nova-AI-Studio.zip.sha256
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/Nova-AI-Studio.zip dist/Nova-AI-Studio.zip.sha256 \
+            --title "Nova AI Studio $RELEASE_TAG" \
+            --generate-notes
