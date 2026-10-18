@@ -29,6 +29,89 @@ if (!new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) && (!ACCESS_USER || AC
   throw new Error("Public binding needs NOVA_ACCESS_USER and a unique NOVA_ACCESS_PASSWORD of at least 20 characters; replace the example value first.");
 }
 
+const AUTH_COOKIE = "nova_session";
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const sessions = new Map();
+const LOGIN_PAGE = "<!doctype html><html lang=\"ro\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"referrer\" content=\"no-referrer\"><title>Autentificare · Nova AI Studio</title><style>\n:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",sans-serif;background:#080b12;color:#eef2ff}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 15%,#1d2948 0,transparent 55%),#080b12}.card{width:min(100%,420px);padding:36px;border:1px solid #30394d;border-radius:24px;background:rgba(17,22,34,.96);box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#8b7cff,#4bd8c2);color:#080b12;font-weight:900;font-size:23px}h1{margin:22px 0 8px;font-size:26px;letter-spacing:-.04em}p{margin:0 0 24px;color:#a9b3c8;line-height:1.5}label{display:block;margin:18px 0 8px;font-size:13px;color:#c7d0e2}input{width:100%;height:48px;padding:0 14px;border:1px solid #38445b;border-radius:12px;background:#0d121e;color:#fff;font:inherit;outline:none}input:focus{border-color:#8b7cff;box-shadow:0 0 0 3px #8b7cff33}button{width:100%;height:48px;margin-top:22px;border:0;border-radius:12px;background:#8b7cff;color:#0b0c15;font:700 15px inherit;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.status{min-height:22px;margin:14px 0 0;color:#ffaaa9;font-size:13px}footer{margin-top:24px;color:#8490a7;font-size:12px;text-align:center}\n</style></head><body><main class=\"card\"><div class=\"mark\" aria-hidden=\"true\">N</div><h1>Nova AI Studio</h1><p>Conectează-te pentru a deschide spațiul tău de lucru.</p><form id=\"login-form\"><label for=\"username\">Utilizator</label><input id=\"username\" name=\"username\" autocomplete=\"username\" required autofocus><label for=\"password\">Parolă</label><input id=\"password\" name=\"password\" type=\"password\" autocomplete=\"current-password\" required><button id=\"submit\" type=\"submit\">Autentificare</button><div id=\"status\" class=\"status\" role=\"status\" aria-live=\"polite\"></div></form><footer>Sesiune protejată · Nova AI Studio</footer></main><script>\nconst form=document.getElementById(\"login-form\"),button=document.getElementById(\"submit\"),status=document.getElementById(\"status\"),password=document.getElementById(\"password\");form.addEventListener(\"submit\",async event=>{event.preventDefault();button.disabled=true;status.textContent=\"\";try{const response=await fetch(\"/api/auth/login\",{method:\"POST\",credentials:\"same-origin\",headers:{\"content-type\":\"application/json\"},body:JSON.stringify({username:document.getElementById(\"username\").value,password:password.value})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||\"Autentificarea a eșuat.\");password.value=\"\";window.location.replace(\"/\");}catch(error){status.textContent=error.message||\"Nu s-a putut realiza autentificarea.\";button.disabled=false;password.focus();}});\n</script></body></html>";
+
+function digestText(value) {
+  return crypto.createHash("sha256").update(String(value)).digest();
+}
+
+function constantTimeTextEqual(value, expected) {
+  return crypto.timingSafeEqual(digestText(value), digestText(expected));
+}
+
+function readCookie(req, name) {
+  const header = String(req.headers.cookie || "");
+  for (const item of header.split(";")) {
+    const separator = item.indexOf("=");
+    if (separator < 0) continue;
+    if (item.slice(0, separator).trim() === name) return item.slice(separator + 1).trim();
+  }
+  return "";
+}
+
+function hasValidSession(req) {
+  const token = readCookie(req, AUTH_COOKIE);
+  const expiresAt = token ? sessions.get(token) : 0;
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    sessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+function cookieSecurityAttribute() {
+  return new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) ? "" : "; Secure";
+}
+
+function sendLoginPage(res, headOnly = false) {
+  res.writeHead(200, {
+    "content-type": "text/html; charset=utf-8",
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+  });
+  res.end(headOnly ? "" : LOGIN_PAGE);
+}
+
+async function login(req, res) {
+  let originHost = "";
+  try { originHost = new URL(req.headers.origin || "").host; } catch {}
+  if (!originHost || originHost !== req.headers.host) {
+    return json(res, 403, { error: "Cerere de autentificare respinsă." });
+  }
+
+  let body;
+  try { body = await readJson(req); }
+  catch { return json(res, 400, { error: "Cererea de autentificare nu este validă." }); }
+
+  if (typeof body.username !== "string" || typeof body.password !== "string" ||
+      body.username.length > 300 || body.password.length > 1000 ||
+      !constantTimeTextEqual(body.username, ACCESS_USER) ||
+      !constantTimeTextEqual(body.password, ACCESS_PASSWORD)) {
+    return json(res, 401, { error: "Utilizatorul sau parola nu sunt corecte." });
+  }
+
+  for (const [token, expiresAt] of sessions) {
+    if (expiresAt <= Date.now()) sessions.delete(token);
+  }
+  if (sessions.size >= 1000) return json(res, 503, { error: "Sunt prea multe sesiuni active. Încearcă mai târziu." });
+
+  const token = crypto.randomBytes(32).toString("base64url");
+  sessions.set(token, Date.now() + SESSION_TTL_MS);
+  res.setHeader("set-cookie", AUTH_COOKIE + "=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200" + cookieSecurityAttribute());
+  return json(res, 200, { ok: true });
+}
+
+if (!new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) && (!ACCESS_USER || ACCESS_PASSWORD.length < 20 || /^(replace-|change-me|changeme)/i.test(ACCESS_PASSWORD))) {
+  throw new Error("Public binding needs NOVA_ACCESS_USER and a unique NOVA_ACCESS_PASSWORD of at least 20 characters; replace the example value first.");
+}
+
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 fs.mkdirSync(PROJECT_TRASH_DIR, { recursive: true });
@@ -309,24 +392,19 @@ async function handle(req, res) {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
 
   if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, { ok: true });
-  if (ACCESS_PASSWORD) {
-    const authorization = req.headers.authorization || "";
-    let providedUser = "", providedPassword = "";
-    try {
-      if (authorization.startsWith("Basic ")) {
-        const credentials = Buffer.from(authorization.slice(6), "base64").toString("utf8");
-        const separator = credentials.indexOf(":");
-        if (separator >= 0) { providedUser = credentials.slice(0, separator); providedPassword = credentials.slice(separator + 1); }
-      }
-    } catch {}
-    const digest = value => crypto.createHash("sha256").update(value).digest();
-    const valid = crypto.timingSafeEqual(digest(providedUser), digest(ACCESS_USER)) && crypto.timingSafeEqual(digest(providedPassword), digest(ACCESS_PASSWORD));
-    if (!valid) {
-      res.writeHead(401, { "www-authenticate": 'Basic realm="Nova AI Studio", charset="UTF-8"', "cache-control": "no-store" });
-      return res.end("Authentication required.");
-    }
-  }
 
+  if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/login") return login(req, res);
+  if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/logout") {
+    const token = readCookie(req, AUTH_COOKIE);
+    if (token) sessions.delete(token);
+    res.setHeader("set-cookie", AUTH_COOKIE + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + cookieSecurityAttribute());
+    return json(res, 200, { ok: true });
+  }
+  if (ACCESS_PASSWORD && !hasValidSession(req)) {
+    if (url.pathname.startsWith("/api/")) return json(res, 401, { error: "Sesiunea a expirat. Autentifică-te din nou." });
+    if (req.method === "GET" || req.method === "HEAD") return sendLoginPage(res, req.method === "HEAD");
+    return json(res, 401, { error: "Sesiunea a expirat. Autentifică-te din nou." });
+  }
   if (req.method === "GET" && url.pathname === "/api/settings") {
     return json(res, 200, { settings: publicProviderSettings() });
   }
