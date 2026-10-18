@@ -1,41 +1,64 @@
 # Nova AI Studio
 
-Nova AI Studio este un studio local pentru cod și creație asistată de modele Ollama. Același chat ajută la aplicații pentru Windows/PC, versuri originale, planuri de compoziție muzicală și scenarii/storyboard-uri video. Aplicația poate scrie cod și fișiere text în proiectul local atunci când utilizatorul permite.
+Nova AI Studio pune chatul, programarea pentru PC, versurile, schițele muzicale și proiectele video în același spațiu. Agentul poate citi și scrie fișierele proiectului când îi activezi explicit permisiunea.
 
-Ollama furnizează text și specificații. În browser, Nova poate sintetiza o melodie simplă fără voce în WAV și poate exporta un videoclip tipografic cu scene colorate în WebM. Aceste funcții nu generează voci cântate, imagini sau filmări; exporturile MP3/MP4 și media fotorealistă cer motoare externe.
+## Ce poate genera
 
-## Ce publică proiectul
+- **Chat și cod:** folosește Ollama local sau un model OpenAI / compatibil. Agentul are unelte limitate la fișierele proiectului.
+- **Versuri și compoziție:** scrie versuri și schițe muzicale originale. Exportul WAV folosește un sintetizator simplu de note; nu cântă versurile.
+- **Imagini:** modelul de imagini configurat poate genera ilustrații PNG.
+- **Voice-over:** modelul de vorbire poate genera un MP3 din text.
+- **Video:** Nova compune scene în WebM din text și, opțional, imagini AI; poate adăuga voice-over ca pistă audio. Nu generează încă filmări AI fotorealiste.
 
-- `site/` — pagină publică cu funcții, cerințe, descărcare și politica de confidențialitate.
-- `server.js`, `public/` — aplicația locală Nova AI Studio.
-- `.github/workflows/pages.yml` — publică automat `site/` pe GitHub Pages la actualizările din `main`.
-- `.github/workflows/release.yml` — creează arhiva aplicației și suma SHA-256 la publicarea unui tag `v*`.
+Apelurile către modele cloud pot fi tarifate de furnizor. Nova nu include chei API și nu le trimite în repository.
 
-Pagina publică este doar prezentare și distribuție. Aplicația AI nu este expusă pe internet: rulează pe calculatorul utilizatorului, iar modelul este apelat prin Ollama local.
+## Publicare online personală
 
-## Pornire locală
+`site/` este pagina publică GitHub Pages pentru prezentare, confidențialitate și descărcare. GitHub Pages nu rulează serverul AI. Pentru aplicația funcțională online, proiectul include un serviciu Docker pentru Render și un deployment Docker Compose.
 
-1. Instalează Node.js 18+ și Ollama.
-2. Pornește Ollama și instalează un model cu suport pentru tool calling, de exemplu `ollama pull qwen3`.
-3. Pe Windows, deschide `Start_Nova_AI_Studio.bat`. Scriptul redeschide Nova v0.5.0 dacă rulează deja; altfel caută un port liber între 4173 și 4190 și pornește versiunea nouă acolo.
-4. Deschide `http://127.0.0.1:4173`.
+### Deploy pe Render
 
-În chat, selectează automat, cod Windows/PC, versuri, compoziție muzicală sau scenariu video. Răspunsurile de muzică au buton de export WAV, iar scenele video pot fi randate în WebM. Pentru a salva fișiere în proiect, activează „Permite agentului să scrie fișiere în proiect”.
+1. Deschide [Deploy Nova AI Studio pe Render](https://render.com/deploy?repo=https://github.com/adyady0303-hash/nova-ai-studio) și conectează contul GitHub.
+2. Blueprint-ul `render.yaml` configurează serverul Node, autentificarea cu parolă, un volum persistent pentru proiecte și configurarea API OpenAI.
+3. Introdu cheia API numai în formularul privat Render. Nu o adăuga în GitHub, în pagina publică sau în conversații.
+4. După deploy, intră pe URL-ul Render; browserul cere utilizatorul `nova` și parola generată în dashboard.
 
-Nu sunt necesare pachete npm. Proiectele se salvează în `projects/`, copiile de rezervă în `data/`, iar conversațiile în profilul browserului. Aceste directoare nu intră în arhiva de release.
+Serviciul online este protejat cu un singur cont partajat. Este destinat unei instanțe personale, nu unei platforme cu utilizatori separați. Planul Render și discul persistent pot necesita plată; folosirea API-ului AI poate costa separat. Nu am lansat serviciul cloud în contul tău.
 
-## Publicare GitHub
+### Deploy cu Docker
 
-1. Creează repo-ul public `nova-ai-studio` și împinge fișierele acestui director pe ramura `main`.
-2. Workflow-ul `Publish website` activează GitHub Pages cu sursa GitHub Actions și publică pagina la `https://adyady0303-hash.github.io/nova-ai-studio/`.
-3. Pentru o versiune nouă, actualizează `version` în `package.json`, apoi pornește manual workflow-ul `Build and publish Nova release` cu tag-ul (de exemplu `v0.3.0`) sau împinge un tag `v*`. Workflow-ul publică `Nova-AI-Studio.zip` și `Nova-AI-Studio.zip.sha256` ca assets de release.
+1. Instalează Docker cu suport pentru Compose.
+2. Copiază `.env.example` în `.env` și setează o parolă aleatoare de cel puțin 20 de caractere. Adaugă cheia furnizorului AI în `.env` sau lasă cheia necompletată și configureaz-o din fereastra Nova.
+3. Din directorul proiectului rulează `docker compose up -d --build`.
+4. Deschide `http://localhost:4173`. Pentru expunere pe internet, pune containerul în spatele unui proxy HTTPS (de exemplu Caddy) și păstrează autentificarea pornită.
 
-Arhiva publică v0.5.0 este păstrată în `downloads/Nova-AI-Studio-v0.5.0.zip`, iar suma de verificare lângă ea. Pagina publică trimite direct la această arhivă.
+Volumul Docker `nova-data` păstrează proiectele și copiile de rezervă la repornire. Fără un disk persistent montat, datele locale ale unui serviciu cloud pot dispărea la redeploy.
 
-## Configurare
+## Pornire locală pe Windows
 
-- `OLLAMA_URL` — implicit `http://127.0.0.1:11434`.
-- `PORT` — implicit `4173`; dacă portul este ocupat de alt serviciu, setează o valoare liberă, de exemplu `4174`.
+1. Instalează Node.js 18+ și pornește Ollama.
+2. Rulează `ollama pull qwen3` sau descarcă un alt model local cu tool calling.
+3. Deschide `Start_Nova_AI_Studio.bat`. Nova caută un port liber între 4173 și 4190.
+4. În Nova, deschide **Configurare AI** și selectează Ollama sau un endpoint cloud.
 
-Nova nu oferă terminal, nu rulează cod și nu sincronizează proiecte în cloud. Modificările agentului sunt limitate la fișierele proiectului deschis.
+Nu sunt necesare pachete npm. Proiectele și backup-urile rămân în dosarul aplicației când rulezi local.
 
+## Configurare server
+
+| Variabilă | Scop |
+| --- | --- |
+| `HOST` / `PORT` | Adresa și portul serverului. Pentru publicare folosește `0.0.0.0` și portul dat de hosting. |
+| `NOVA_ACCESS_USER` / `NOVA_ACCESS_PASSWORD` | Autentificare HTTP Basic; parola trebuie să aibă cel puțin 20 de caractere pe host public. |
+| `NOVA_DATA_DIR` | Rădăcina proiectelor, backup-urilor și coșului de gunoi. Montează aici storage persistent. |
+| `AI_PROVIDER` | `ollama` sau `openai`. |
+| `OLLAMA_URL` | Endpoint-ul Ollama accesibil serverului; implicit `http://127.0.0.1:11434`. |
+| `OPENAI_BASE_URL` / `OPENAI_API_KEY` | Endpoint și cheie API pentru serviciu OpenAI compatibil. |
+| `OPENAI_MODEL` / `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` | Modelele pentru chat, generare de imagini și voce. |
+
+Cheia setată prin interfața Nova se păstrează numai în memoria procesului. Pentru instanțe găzduite, configureaz-o în secretele furnizorului de hosting, ca să supraviețuiască repornirilor.
+
+## Pagina publică și versiuni
+
+- GitHub Pages publică automat directorul `site/` la `https://adyady0303-hash.github.io/nova-ai-studio/`.
+- Schimbarea versiunii din `package.json` pe ramura `main` creează automat o arhivă Windows/Linux și suma SHA-256 în GitHub Releases. Workflow-ul poate fi pornit și manual din Actions.
+- Pentru sursă, bug-uri și actualizări: [repository Nova AI Studio](https://github.com/adyady0303-hash/nova-ai-studio).

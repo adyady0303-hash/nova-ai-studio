@@ -1,0 +1,12 @@
+services:
+  nova:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${NOVA_PORT:-4173}:4173"
+    volumes:
+      - nova-data:/data
+
+volumes:
+  nova-data:

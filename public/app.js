@@ -1,5 +1,5 @@
 const el = id => document.getElementById(id);
-const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "" };
+const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null };
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 
 async function api(url, options = {}) {
@@ -16,19 +16,57 @@ function chatKey(project = state.project) { return `nova-chat-${project}`; }
 
 async function refreshHealth() {
   const badge = el("statusBadge"), dot = el("connectionDot"), label = el("connectionText"), select = el("modelSelect");
+  const localInstance = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+  el("instanceBadge").textContent = localInstance ? "LOCAL" : "ONLINE PRIVAT";
+  el("projectStorageLabel").textContent = localInstance ? "Fișiere pe acest calculator" : "Fișiere pe serverul privat";
   try {
     const data = await api("/api/health");
-    if (!data.connected) throw new Error(data.error || "Ollama nu este disponibil");
-    dot.classList.add("on"); label.textContent = `Ollama ${data.version}`; badge.textContent = "Ollama conectat";
+    if (!data.connected) throw new Error(data.error || (data.provider === "openai" ? "Cheia API lipsește" : "Ollama nu este disponibil"));
+    dot.classList.add("on"); label.textContent = data.provider === "openai" ? `OpenAI · ${data.version}` : `Ollama ${data.version}`;
+    badge.textContent = data.provider === "openai" ? "API cloud configurat" : "Ollama conectat";
     badge.style.color = "var(--green)"; badge.style.borderColor = "#364131";
     const previous = select.value; select.replaceChildren();
-    if (!data.models.length) select.add(new Option("Niciun model instalat", ""));
+    if (!data.models.length) select.add(new Option(data.provider === "openai" ? "Setează modelul cloud" : "Niciun model instalat", ""));
     else { data.models.forEach(model => select.add(new Option(model, model))); if (data.models.includes(previous)) select.value = previous; }
   } catch (error) {
-    dot.classList.remove("on"); label.textContent = "Ollama deconectat"; badge.textContent = "Ollama indisponibil";
+    dot.classList.remove("on"); label.textContent = state.settings?.provider === "openai" ? "API cloud neconfigurat" : "Ollama deconectat"; badge.textContent = "AI neconectat";
     badge.style.color = "#e4a69b"; badge.style.borderColor = "#583b35";
-    select.replaceChildren(new Option("Pornește Ollama și reîncarcă", ""));
+    select.replaceChildren(new Option(state.settings?.provider === "openai" ? "Configurează cheia API" : "Pornește Ollama și reîncarcă", ""));
   }
+}
+
+async function loadProviderSettings() {
+  const { settings } = await api("/api/settings"); state.settings = settings;
+  el("providerSelect").value = settings.provider;
+  el("apiBaseUrl").value = settings.baseUrl;
+  el("textModel").value = settings.textModel;
+  el("imageModel").value = settings.imageModel;
+  el("speechModel").value = settings.speechModel;
+  el("voiceSelect").value = settings.voice;
+  el("apiKey").value = "";
+  el("clearApiKey").checked = false;
+  el("apiKeyState").textContent = settings.apiKeyConfigured
+    ? "O cheie este deja configurată. Lasă câmpul gol pentru a o păstra. Cheia nu este returnată în browser."
+    : "Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.";
+  el("openAiFields").hidden = settings.provider !== "openai";
+  await refreshHealth();
+}
+
+async function saveProviderSettings() {
+  const settings = {
+    provider: el("providerSelect").value,
+    baseUrl: el("apiBaseUrl").value.trim(),
+    apiKey: el("apiKey").value,
+    clearApiKey: el("clearApiKey").checked,
+    textModel: el("textModel").value.trim(),
+    imageModel: el("imageModel").value.trim(),
+    speechModel: el("speechModel").value.trim(),
+    voice: el("voiceSelect").value
+  };
+  const result = await api("/api/settings", jsonBody(settings));
+  state.settings = result.settings; el("apiKey").value = "";
+  el("providerDialog").close(); await refreshHealth();
+  toast(settings.provider === "openai" ? "Conexiunea AI cloud a fost salvată" : "Ollama local a fost selectat");
 }
 
 function renderProjects() {
@@ -61,7 +99,7 @@ function renderChat() {
   const box = el("messages"); box.replaceChildren();
   if (!state.chat.length) {
     const welcome = document.createElement("div"); welcome.className = "welcome"; welcome.id = "welcome";
-    welcome.innerHTML = `<div class="welcome-mark">N</div><h1>Ce creăm azi?</h1><p>Scrie cod pentru Windows/PC, versuri originale, compoziții și scenarii video în aceeași conversație. Scrierea fișierelor cere permisiunea ta.</p><div class="suggestions"><button class="suggestion" data-task="code">Creează o aplicație Windows pentru lista mea de sarcini</button><button class="suggestion" data-task="lyrics">Scrie versuri pop despre un nou început</button><button class="suggestion" data-task="music">Compune o piesă lo-fi: tempo, acorduri și structură</button><button class="suggestion" data-task="video">Scrie un videoclip de 30 de secunde cu storyboard și voice-over</button></div>`;
+    welcome.innerHTML = `<div class="welcome-mark">N</div><h1>Ce creăm azi?</h1><p>Construiește aplicații PC, scrie versuri, generează imagini și voice-over, apoi compune un videoclip — totul din același spațiu de lucru.</p><div class="suggestions"><button class="suggestion" data-task="code">Creează o aplicație Windows pentru lista mea de sarcini</button><button class="suggestion" data-task="lyrics">Scrie versuri pop despre un nou început</button><button class="suggestion" data-task="music">Compune o piesă lo-fi: tempo, acorduri și structură</button><button class="suggestion" data-task="video">Scrie un storyboard cu imagini și voice-over</button></div>`;
     box.append(welcome);
     welcome.querySelectorAll(".suggestion").forEach(button => button.addEventListener("click", () => { el("taskSelect").value = button.dataset.task || "auto"; el("prompt").value = button.textContent; el("prompt").focus(); }));
     return;
@@ -154,9 +192,16 @@ function drawVideoFrame(ctx, spec, elapsed, width, height) {
   let cursor = 0, index = 0;
   for (; index < spec.scenes.length - 1; index++) { if (time < cursor + spec.scenes[index].seconds) break; cursor += spec.scenes[index].seconds; }
   const scene = spec.scenes[index], progress = Math.min(1, (time - cursor) / scene.seconds);
-  ctx.fillStyle = scene.background; ctx.fillRect(0, 0, width, height);
-  const glow = ctx.createRadialGradient(width * 0.76, height * 0.16, 2, width * 0.76, height * 0.16, width * 0.8);
-  glow.addColorStop(0, "rgba(255,255,255,.13)"); glow.addColorStop(1, "rgba(0,0,0,.3)"); ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
+  const image = spec.sceneImages?.[index];
+  if (image) {
+    const scale = Math.max(width / image.width, height / image.height), drawWidth = image.width * scale, drawHeight = image.height * scale;
+    ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
+    const shade = ctx.createLinearGradient(0, 0, 0, height); shade.addColorStop(0, "rgba(0,0,0,.22)"); shade.addColorStop(.5, "rgba(0,0,0,.48)"); shade.addColorStop(1, "rgba(0,0,0,.65)"); ctx.fillStyle = shade; ctx.fillRect(0, 0, width, height);
+  } else {
+    ctx.fillStyle = scene.background; ctx.fillRect(0, 0, width, height);
+    const glow = ctx.createRadialGradient(width * 0.76, height * 0.16, 2, width * 0.76, height * 0.16, width * 0.8);
+    glow.addColorStop(0, "rgba(255,255,255,.13)"); glow.addColorStop(1, "rgba(0,0,0,.3)"); ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
+  }
   ctx.fillStyle = "rgba(255,255,255,.72)"; ctx.font = "600 22px Segoe UI, sans-serif"; ctx.textAlign = "left"; ctx.fillText(spec.title, 72, 72);
   ctx.fillStyle = "#f5f5f0"; ctx.font = "700 52px Segoe UI, sans-serif"; ctx.textAlign = "center";
   const words = scene.text.split(/\s+/), lines = []; let line = "";
@@ -172,19 +217,68 @@ function drawVideoFrame(ctx, spec, elapsed, width, height) {
 
 async function exportVideo(spec) {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Browserul nu acceptă export video WebM local.");
+  spec.sceneImages = await Promise.all(spec.scenes.map(scene => scene.image ? new Promise(resolve => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => resolve(null); image.src = scene.image; }) : null));
   const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 720;
   const ctx = canvas.getContext("2d"), stream = canvas.captureStream(24);
+  let voice = null, audioContext = null;
+  if (spec.voiceDataUrl && window.AudioContext) {
+    audioContext = new AudioContext(); voice = new Audio(spec.voiceDataUrl); voice.preload = "auto";
+    const source = audioContext.createMediaElementSource(voice), destination = audioContext.createMediaStreamDestination();
+    source.connect(destination); stream.addTrack(destination.stream.getAudioTracks()[0]);
+    await new Promise(resolve => { if (voice.readyState >= 1) resolve(); else { voice.onloadedmetadata = resolve; voice.onerror = resolve; } });
+  }
   const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type));
   if (!mime) throw new Error("Browserul nu oferă un format WebM compatibil.");
   const chunks = [], recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2500000 });
   const stopped = new Promise((resolve, reject) => { recorder.onstop = resolve; recorder.onerror = () => reject(new Error("Exportul video a eșuat.")); });
-  const total = Math.min(60, spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0));
+  const sceneDuration = Math.min(60, spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0));
+  const total = Math.min(120, Math.max(sceneDuration, Number(voice?.duration) || 0));
   drawVideoFrame(ctx, spec, 0, canvas.width, canvas.height);
   recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
   recorder.start(250);
+  if (voice) { await audioContext.resume(); await voice.play(); }
   await new Promise(resolve => { const start = performance.now(); const frame = now => { const elapsed = (now - start) / 1000; drawVideoFrame(ctx, spec, elapsed, canvas.width, canvas.height); if (elapsed >= total) { recorder.stop(); resolve(); } else requestAnimationFrame(frame); }; requestAnimationFrame(frame); });
-  await stopped; stream.getTracks().forEach(track => track.stop());
+  await stopped; stream.getTracks().forEach(track => track.stop()); voice?.pause(); if (audioContext) await audioContext.close();
   return new Blob(chunks, { type: mime });
+}
+
+async function generateSpeech(text) {
+  return api("/api/media/speech", jsonBody({ text: text.trim().slice(0, 4000) }));
+}
+
+function addSpeechButton(node, text, label = "Ascultă cu voce AI") {
+  const button = document.createElement("button"); button.className = "btn small"; button.textContent = label;
+  const output = document.createElement("div"); output.className = "creative-output";
+  button.addEventListener("click", async () => {
+    button.disabled = true; button.textContent = "Se generează vocea…";
+    try {
+      const speech = await generateSpeech(text), player = document.createElement("audio"); player.controls = true; player.src = speech.dataUrl;
+      const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = speech.dataUrl; link.download = "nova-voice-over.mp3";
+      output.replaceChildren(player, link); button.textContent = "Generează din nou";
+    } catch (error) { toast(error.message); button.textContent = label; }
+    finally { button.disabled = false; }
+  });
+  node.append(button, output);
+}
+
+function addImageCard(prompt, result) {
+  const node = document.createElement("div"); node.className = "message assistant";
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = `Imagine AI · ${result.model}`;
+  const caption = document.createElement("div"); caption.textContent = prompt;
+  const img = document.createElement("img"); img.className = "creative-image"; img.alt = prompt; img.src = result.dataUrl;
+  const link = document.createElement("a"); link.className = "btn small"; link.textContent = `Descarcă ${(result.format || "png").toUpperCase()}`; link.href = result.dataUrl; link.download = safeMediaName(prompt.slice(0, 48), result.format || "png");
+  node.append(meta, caption, img, link); el("messages").append(node); el("messages").scrollTop = el("messages").scrollHeight;
+}
+
+async function generateImageFromPrompt() {
+  const prompt = el("prompt").value.trim(); if (!prompt) { toast("Descrie imaginea în caseta de chat."); return; }
+  const button = el("generateImageBtn"); button.disabled = true;
+  addBubble("user", `Creează imagine: ${prompt}`);
+  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = "Se generează imaginea…"; el("messages").append(pending);
+  el("prompt").value = "";
+  try { const result = await api("/api/media/image", jsonBody({ prompt })); addImageCard(prompt, result); }
+  catch (error) { addBubble("assistant", error.message); }
+  finally { pending.remove(); button.disabled = false; }
 }
 
 function addCreativeCard(node, spec) {
@@ -198,9 +292,41 @@ function addCreativeCard(node, spec) {
     action.textContent = "Generează WAV";
     action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se sintetizează audio local…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = "Audio sintetizat local · fără voce cântată"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
   } else {
-    detail.textContent = `${spec.scenes.length} scene · video tipografic WebM`;
+    detail.textContent = `${spec.scenes.length} scene · videoclip WebM compus local${spec.scenes.some(scene => scene.image) ? " cu imagini AI" : " cu fundaluri animate"}`;
+    const images = document.createElement("button"); images.className = "btn small"; images.textContent = "Generează imagini pentru scene";
+    images.addEventListener("click", async () => {
+      if (!confirm(`Se va genera câte o imagine AI pentru ${spec.scenes.length} scene. Furnizorul API poate taxa fiecare imagine. Continui?`)) return;
+      images.disabled = true;
+      const gallery = document.createElement("div"); gallery.className = "creative-output"; output.replaceChildren(gallery);
+      try {
+        for (let i = 0; i < spec.scenes.length; i++) {
+          detail.textContent = `Se generează imaginea ${i + 1}/${spec.scenes.length}…`;
+          const scene = spec.scenes[i];
+          if (!scene.image) {
+            const result = await api("/api/media/image", jsonBody({ prompt: `${scene.text}. Cinematic storyboard frame, expressive composition, no text, no letters.` }));
+            scene.image = result.dataUrl;
+          }
+          const img = document.createElement("img"); img.className = "creative-image"; img.alt = scene.text; img.src = scene.image; gallery.append(img);
+        }
+        detail.textContent = `${spec.scenes.length} imagini AI pregătite · următorul export include voice-over, dacă l-ai generat.`;
+      } catch (error) { detail.textContent = error.message; }
+      finally { images.disabled = false; }
+    });
+    const voice = document.createElement("button"); voice.className = "btn small"; voice.textContent = "Generează voice-over MP3";
+    voice.addEventListener("click", async () => {
+      voice.disabled = true; detail.textContent = "Se generează voice-over…";
+      try {
+        const result = await generateSpeech(spec.scenes.map(scene => scene.text).join(". "));
+        spec.voiceDataUrl = result.dataUrl;
+        const player = document.createElement("audio"); player.controls = true; player.src = result.dataUrl;
+        const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = result.dataUrl; link.download = safeMediaName(spec.title, "mp3");
+        output.replaceChildren(player, link); detail.textContent = "Voice-over creat · exportul video îl va include ca pistă audio.";
+      } catch (error) { detail.textContent = error.message; }
+      finally { voice.disabled = false; }
+    });
     action.textContent = "Exportă WebM";
-    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se randează videoclipul în browser…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat local · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se randează videoclipul în browser…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat local${spec.voiceDataUrl ? " cu voice-over" : ""} · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+    card.append(heading, detail, images, voice, action, output); node.append(card); return;
   }
   card.append(heading, detail, action, output); node.append(card);
 }
@@ -215,6 +341,9 @@ function addBubble(role, content, events = []) {
   if (events?.length) {
     const activity = document.createElement("div"); activity.className = "agent-events";
     activity.textContent = events.map(event => `${event.ok ? "✓" : "!"} ${event.summary}`).join("\n"); node.append(activity);
+  }
+  if (role === "assistant" && creative.text.trim() && state.settings?.provider === "openai") {
+    const row = document.createElement("div"); row.className = "apply-row"; addSpeechButton(row, creative.text); node.append(row);
   }
   el("messages").append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
@@ -402,7 +531,7 @@ async function send() {
   if (state.busy) return;
   const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
   if (!promptText) return;
-  if (!model) { toast("Alege un model Ollama instalat."); return; }
+  if (!model) { toast("Configurează furnizorul AI și alege un model."); return; }
   const mode = el("modeSelect").value;
   const task = el("taskSelect").value;
   const allowChanges = mode === "build" && el("allowChanges").checked;
@@ -437,6 +566,13 @@ el("editor").addEventListener("input", () => { state.dirty = true; el("dirtyMark
 el("editor").addEventListener("scroll", () => { el("gutter").scrollTop = el("editor").scrollTop; });
 el("saveBtn").addEventListener("click", () => saveFile(true).catch(error => toast(error.message)));
 el("sendBtn").addEventListener("click", send);
+el("generateImageBtn").addEventListener("click", generateImageFromPrompt);
+el("providerSettingsBtn").addEventListener("click", async () => {
+  try { await loadProviderSettings(); el("providerDialog").showModal(); }
+  catch (error) { toast(error.message); }
+});
+el("providerSelect").addEventListener("change", event => { el("openAiFields").hidden = event.target.value !== "openai"; });
+el("saveProviderSettings").addEventListener("click", () => saveProviderSettings().catch(error => toast(error.message)));
 el("taskSelect").addEventListener("change", event => {
   const prompts = {
     auto: "Cere cod, versuri, o compoziție sau un scenariu video… (Enter trimite)",
@@ -471,7 +607,6 @@ el("downloadBtn").addEventListener("click", () => {
 });
 window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
 
-Promise.all([refreshHealth(), loadProjects()]).catch(error => {
+Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);
 });
-

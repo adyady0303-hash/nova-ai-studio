@@ -1,16 +1,33 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
-const HOST = "127.0.0.1";
+const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
 const OLLAMA = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
+const DATA_DIR = process.env.NOVA_DATA_DIR || __dirname;
+const ACCESS_USER = process.env.NOVA_ACCESS_USER || "";
+const ACCESS_PASSWORD = process.env.NOVA_ACCESS_PASSWORD || "";
+const aiProvider = {
+  provider: process.env.AI_PROVIDER === "openai" ? "openai" : "ollama",
+  baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
+  apiKey: process.env.OPENAI_API_KEY || "",
+  textModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+  imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
+  speechModel: process.env.OPENAI_SPEECH_MODEL || "gpt-4o-mini-tts",
+  voice: "nova"
+};
 const PUBLIC_DIR = path.join(__dirname, "public");
-const PROJECTS_DIR = path.join(__dirname, "projects");
-const BACKUPS_DIR = path.join(__dirname, "data", "backups");
-const PROJECT_TRASH_DIR = path.join(__dirname, "data", "project-trash");
+const PROJECTS_DIR = path.join(DATA_DIR, "projects");
+const BACKUPS_DIR = path.join(DATA_DIR, "data", "backups");
+const PROJECT_TRASH_DIR = path.join(DATA_DIR, "data", "project-trash");
 const MAX_BODY = 1024 * 1024;
 const MAX_FILE = 512 * 1024;
+
+if (!new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) && (!ACCESS_USER || ACCESS_PASSWORD.length < 20 || /^(replace-|change-me|changeme)/i.test(ACCESS_PASSWORD))) {
+  throw new Error("Public binding needs NOVA_ACCESS_USER and a unique NOVA_ACCESS_PASSWORD of at least 20 characters; replace the example value first.");
+}
 
 fs.mkdirSync(PROJECTS_DIR, { recursive: true });
 fs.mkdirSync(BACKUPS_DIR, { recursive: true });
@@ -73,6 +90,68 @@ async function ollamaJson(route, options = {}) {
     throw new Error(data.error || `Ollama a răspuns cu HTTP ${response.status}.`);
   }
   return data;
+}
+
+function publicProviderSettings() {
+  return {
+    provider: aiProvider.provider,
+    baseUrl: aiProvider.baseUrl,
+    textModel: aiProvider.textModel,
+    imageModel: aiProvider.imageModel,
+    speechModel: aiProvider.speechModel,
+    voice: aiProvider.voice,
+    apiKeyConfigured: Boolean(aiProvider.apiKey)
+  };
+}
+
+function configuredAiUrl(route) {
+  return `${aiProvider.baseUrl.replace(/\/+$/, "")}${route}`;
+}
+
+async function openAiJson(route, options = {}, timeout = 180000) {
+  if (!aiProvider.apiKey) throw new Error("Adaugă cheia API în Configurare AI înainte să folosești acest furnizor.");
+  const response = await fetch(configuredAiUrl(route), {
+    ...options,
+    signal: AbortSignal.timeout(timeout),
+    headers: {
+      authorization: `Bearer ${aiProvider.apiKey}`,
+      ...(options.body ? { "content-type": "application/json" } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`);
+  return data;
+}
+
+async function openAiBytes(route, body, timeout = 180000) {
+  if (!aiProvider.apiKey) throw new Error("Adaugă cheia API în Configurare AI înainte să folosești acest furnizor.");
+  const response = await fetch(configuredAiUrl(route), {
+    method: "POST",
+    headers: { authorization: `Bearer ${aiProvider.apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeout)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`);
+  }
+  return { mime: response.headers.get("content-type") || "audio/mpeg", base64: Buffer.from(await response.arrayBuffer()).toString("base64") };
+}
+
+async function providerChat(model, messages, tools) {
+  if (aiProvider.provider === "ollama") {
+    const result = await ollamaJson("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ model, stream: false, messages, tools, options: { temperature: 0.2 } })
+    });
+    return { message: result.message || {}, model: result.model || model };
+  }
+  const result = await openAiJson("/chat/completions", {
+    method: "POST",
+    body: JSON.stringify({ model, messages, tools })
+  });
+  return { message: result.choices?.[0]?.message || {}, model: result.model || model };
 }
 
 function validProjectId(value) {
@@ -200,10 +279,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
   const events = [];
   const maxRounds = 8;
   for (let round = 0; round < maxRounds; round++) {
-    const response = await ollamaJson("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ model, stream: false, messages, tools, options: { temperature: 0.2 } })
-    });
+    const response = await providerChat(model, messages, tools);
     const message = response.message || {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     messages.push(message);
@@ -215,10 +291,14 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges);
         events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
-        messages.push({ role: "tool", tool_name: name, content: String(result).slice(0, 30000) });
+        messages.push(aiProvider.provider === "openai"
+          ? { role: "tool", tool_call_id: call.id, content: String(result).slice(0, 30000) }
+          : { role: "tool", tool_name: name, content: String(result).slice(0, 30000) });
       } catch (error) {
         events.push({ tool: name || "unknown", ok: false, summary: error.message });
-        messages.push({ role: "tool", tool_name: name || "unknown", content: `Eroare: ${error.message}` });
+        messages.push(aiProvider.provider === "openai"
+          ? { role: "tool", tool_call_id: call.id, content: `Eroare: ${error.message}` }
+          : { role: "tool", tool_name: name || "unknown", content: `Eroare: ${error.message}` });
       }
     }
   }
@@ -227,6 +307,86 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
 
 async function handle(req, res) {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
+
+  if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, { ok: true });
+  if (ACCESS_PASSWORD) {
+    const authorization = req.headers.authorization || "";
+    let providedUser = "", providedPassword = "";
+    try {
+      if (authorization.startsWith("Basic ")) {
+        const credentials = Buffer.from(authorization.slice(6), "base64").toString("utf8");
+        const separator = credentials.indexOf(":");
+        if (separator >= 0) { providedUser = credentials.slice(0, separator); providedPassword = credentials.slice(separator + 1); }
+      }
+    } catch {}
+    const digest = value => crypto.createHash("sha256").update(value).digest();
+    const valid = crypto.timingSafeEqual(digest(providedUser), digest(ACCESS_USER)) && crypto.timingSafeEqual(digest(providedPassword), digest(ACCESS_PASSWORD));
+    if (!valid) {
+      res.writeHead(401, { "www-authenticate": 'Basic realm="Nova AI Studio", charset="UTF-8"', "cache-control": "no-store" });
+      return res.end("Authentication required.");
+    }
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/settings") {
+    return json(res, 200, { settings: publicProviderSettings() });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/settings") {
+    const body = await readJson(req);
+    if (!["ollama", "openai"].includes(body.provider)) return json(res, 400, { error: "Alege Ollama sau OpenAI / compatibil." });
+    if (body.clearApiKey === true) aiProvider.apiKey = "";
+    else if (typeof body.apiKey === "string" && body.apiKey.trim()) aiProvider.apiKey = body.apiKey.trim().slice(0, 500);
+    if (body.provider === "openai") {
+      let endpoint;
+      try { endpoint = new URL(String(body.baseUrl || "")); }
+      catch { return json(res, 400, { error: "Adresa API nu este validă." }); }
+      if (!["https:", "http:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
+        return json(res, 400, { error: "Adresa API trebuie să fie HTTP(S), fără autentificare în URL." });
+      }
+      aiProvider.baseUrl = endpoint.toString().replace(/\/+$/, "");
+      aiProvider.textModel = String(body.textModel || "gpt-4.1-mini").trim().slice(0, 120);
+      aiProvider.imageModel = String(body.imageModel || "gpt-image-1-mini").trim().slice(0, 120);
+      aiProvider.speechModel = String(body.speechModel || "gpt-4o-mini-tts").trim().slice(0, 120);
+      aiProvider.voice = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"].includes(body.voice) ? body.voice : "nova";
+      if (!aiProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
+    }
+    aiProvider.provider = body.provider;
+    return json(res, 200, { settings: publicProviderSettings(), notice: "Cheia API rămâne numai în memoria acestui proces și nu este returnată în interfață." });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/media/image") {
+    try {
+      if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru generarea imaginilor.");
+      const body = await readJson(req);
+      const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
+      if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
+      const result = await openAiJson("/images/generations", {
+        method: "POST",
+        body: JSON.stringify({ model: aiProvider.imageModel, prompt, size: "1024x1024", n: 1 })
+      }, 300000);
+      const image = result.data?.[0];
+      if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
+      const format = image.output_format || "png";
+      return json(res, 200, { dataUrl: image.b64_json ? `data:image/${format};base64,${image.b64_json}` : image.url, format, model: aiProvider.imageModel });
+    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea imaginii a eșuat." }); }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/media/speech") {
+    try {
+      if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru sinteza vocală.");
+      const body = await readJson(req);
+      const input = typeof body.text === "string" ? body.text.trim().slice(0, 4096) : "";
+      if (!input) return json(res, 400, { error: "Adaugă text pentru voice-over." });
+      const speech = await openAiBytes("/audio/speech", {
+        model: aiProvider.speechModel,
+        voice: aiProvider.voice,
+        input,
+        response_format: "mp3",
+        instructions: "Vorbește clar, natural și expresiv în limba textului."
+      }, 300000);
+      return json(res, 200, { dataUrl: `data:${speech.mime};base64,${speech.base64}`, model: aiProvider.speechModel });
+    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea vocii a eșuat." }); }
+  }
 
   if (req.method === "GET" && url.pathname === "/api/projects") {
     const projects = [];
@@ -379,7 +539,7 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/agent") {
     const body = await readJson(req);
-    if (typeof body.model !== "string" || !body.model.trim()) return json(res, 400, { error: "Alege un model Ollama." });
+    if (typeof body.model !== "string" || !body.model.trim()) return json(res, 400, { error: "Alege un model AI în bara de chat." });
     if (!validProjectId(body.project)) return json(res, 400, { error: "Alege un proiect." });
     if (!Array.isArray(body.messages) || !body.messages.length) return json(res, 400, { error: "Trimite o cerere agentului." });
     const mode = ["build", "plan", "review"].includes(body.mode) ? body.mode : "build";
@@ -393,6 +553,14 @@ async function handle(req, res) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
+    if (aiProvider.provider === "openai") {
+      return json(res, 200, {
+        connected: Boolean(aiProvider.apiKey),
+        provider: "openai",
+        version: aiProvider.apiKey ? "API configurat" : "Cheia API lipsește",
+        models: aiProvider.apiKey && aiProvider.textModel ? [aiProvider.textModel] : []
+      });
+    }
     try {
       const [version, tags] = await Promise.all([
         ollamaJson("/api/version"),
@@ -400,6 +568,7 @@ async function handle(req, res) {
       ]);
       return json(res, 200, {
         connected: true,
+        provider: "ollama",
         version: version.version || "local",
         models: (tags.models || []).map(item => item.name)
       });
@@ -425,25 +594,17 @@ async function handle(req, res) {
         return { role: message.role, content: message.content.slice(0, 24000) };
       });
 
-      const result = await ollamaJson("/api/chat", {
-        method: "POST",
-        body: JSON.stringify({
-          model: body.model.trim(),
-          stream: false,
-          messages: [
+      const result = await providerChat(body.model.trim(), [
             {
               role: "system",
               content: "Ești Nova, un asistent de programare care rulează local. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante. Răspunde în limba utilizatorului."
             },
             ...messages
-          ],
-          options: { temperature: 0.25 }
-        })
-      });
+          ], undefined);
       return json(res, 200, {
         content: result.message?.content || "Modelul nu a returnat text.",
         model: result.model || body.model,
-        done: result.done === true
+        done: true
       });
     } catch (error) {
       return json(res, error.status || 502, { error: error.message || "Nu am putut contacta Ollama." });
@@ -501,4 +662,3 @@ appServer.listen(PORT, HOST, () => {
   console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
   console.log(`Ollama: ${OLLAMA}`);
 });
-

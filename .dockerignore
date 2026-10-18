@@ -1,0 +1,11 @@
+.git
+.github
+.env
+.env.*
+node_modules
+projects
+data
+downloads
+outputs
+site
+README.md

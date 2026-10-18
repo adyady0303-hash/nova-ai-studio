@@ -1,8 +1,8 @@
 {
   "name": "nova-ai-studio",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "Studio local pentru cod, versuri, muzică WAV și video WebM asistate de Ollama",
+  "description": "Studio AI pentru chat, programare, imagini, voice-over, muzică și video",
   "scripts": {
     "start": "node server.js"
   },
@@ -10,4 +10,3 @@
     "node": ">=18"
   }
 }
-

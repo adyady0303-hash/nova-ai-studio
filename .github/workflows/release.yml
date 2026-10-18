@@ -2,13 +2,15 @@ name: Build and publish Nova release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
+    paths:
+      - package.json
   workflow_dispatch:
     inputs:
       tag:
-        description: Version tag to publish (for example v0.3.0); created from the selected branch if missing
-        required: true
+        description: Optional version tag; defaults to v plus package.json version
+        required: false
         type: string
 
 permissions:
@@ -20,18 +22,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Read version
+        id: version
+        run: |
+          value=$(node -p "require('./package.json').version")
+          echo "value=$value" >> "$GITHUB_OUTPUT"
       - name: Build release archive
         run: |
           mkdir -p dist
-          zip -r dist/Nova-AI-Studio.zip server.js package.json README.md Start_Nova_AI_Studio.bat public
+          zip -r dist/Nova-AI-Studio.zip server.js package.json README.md Start_Nova_AI_Studio.bat public Dockerfile docker-compose.yml .env.example render.yaml
           sha256sum dist/Nova-AI-Studio.zip > dist/Nova-AI-Studio.zip.sha256
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ inputs.tag || format('v{0}', steps.version.outputs.value) }}
         run: |
           gh release create "$RELEASE_TAG" dist/Nova-AI-Studio.zip dist/Nova-AI-Studio.zip.sha256 \
             --target "$GITHUB_SHA" \
             --title "Nova AI Studio $RELEASE_TAG" \
             --generate-notes
-
