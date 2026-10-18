@@ -169,7 +169,8 @@
     .provider-head h2 { margin: 4px 0 0; font-size: 22px; letter-spacing: -.03em; }
     .eyebrow { color: var(--accent); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
     .provider-panel label { color: #c6c9d4; font-size: 11px; font-weight: 600; }
-    .provider-panel input:not([type=checkbox]), .provider-panel select { width: 100%; border: 1px solid #343949; border-radius: 9px; background: #10131a; color: var(--text); padding: 10px; font-size: 12px; }
+    .provider-panel input:not([type=checkbox]), .provider-panel select, .provider-panel textarea { width: 100%; border: 1px solid #343949; border-radius: 9px; background: #10131a; color: var(--text); padding: 10px; font-size: 12px; }
+    .provider-panel textarea { min-height: 180px; resize: vertical; line-height: 1.6; }
     .provider-fields { display: grid; gap: 9px; }
     .provider-fields[hidden] { display: none; }
     .provider-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -452,6 +453,7 @@ body {background:#080b13;}
             <button class="mode-chip" data-task="video">Video</button>
             <span class="tool-divider"></span>
             <button class="btn small subtle composer-image" id="generateImageBtn" title="Creează o imagine AI pe baza descrierii">Imagine</button>
+            <button class="btn small subtle" id="voiceComposerBtn" type="button" title="Creează și descarcă un voice-over MP3">Voice-over</button>
           </div>
           <label class="sr-only" for="taskSelect">Tipul cererii</label>
           <select id="taskSelect" class="sr-only" aria-label="Tipul cererii">
@@ -498,6 +500,16 @@ body {background:#080b13;}
       <div class="provider-actions"><button class="btn" value="cancel">Anulează</button><button class="btn primary" type="button" id="saveProviderSettings">Salvează conexiunea</button></div>
     </form>
   </dialog>
+  <dialog class="provider-dialog" id="voiceDialog" aria-labelledby="voiceDialogTitle">
+    <form method="dialog" class="provider-panel">
+      <div class="provider-head"><div><div class="eyebrow">Instrument audio · MP3</div><h2 id="voiceDialogTitle">Creează un voice-over</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <label for="voiceText">Textul rostit</label>
+      <textarea id="voiceText" maxlength="4096" placeholder="Scrie sau lipește textul pe care vrei să-l rostească Nova…"></textarea>
+      <div class="provider-note">Folosește modelul vocal OpenAI configurat. Cererea poate fi tarifată de furnizor. Dacă nu ai configurat conexiunea, deschide setările AI.</div>
+      <div class="provider-actions"><button class="btn" type="button" id="voiceSettingsBtn">Configurare AI</button><button class="btn" value="cancel">Închide</button><button class="btn primary" type="button" id="generateVoiceBtn">Generează MP3</button></div>
+      <div class="provider-note" id="voiceStatus" role="status" aria-live="polite" hidden></div>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script><script>
 /* Navigation bridges to existing, tested Nova actions. */
@@ -512,7 +524,7 @@ document.addEventListener("click",function(event){
  }
  if(action==="image"){document.getElementById("generateImageBtn")?.click();return}
  if(action==="projects"){document.getElementById("openWorkspaceBtn")?.click();return}
- if(action==="voice"){document.getElementById("providerSettingsBtn")?.click();return}
+ if(action==="voice"){document.getElementById("voiceComposerBtn")?.click();return}
  var task=action==="chat"?"auto":action;
  document.querySelector('.create-item[data-task="'+task+'"]')?.click();
  document.getElementById("prompt")?.focus();
