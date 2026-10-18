@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d0f14">
   <meta name="nova-version" content="0.6.0">
-  <meta name="nova-build" content="NOVA_VERSION_0.6.0">
+  <meta name="nova-build" content="NOVA_VISUAL_REDESIGN_2026_10_18">
   <meta name="description" content="Nova AI Studio: creează și construiește într-un singur spațiu de lucru AI.">
   <title>Nova AI Studio</title>
   <style>
@@ -314,6 +314,36 @@ html, body { min-width: 0; }
   .nova-tool-grid { grid-template-columns: minmax(0,1fr); }
   .model-row select { max-width: 120px; }
 }
+
+
+/* NOVA 2026: full visual redesign, not merely breakpoint adjustments. */
+:root { --bg:#080b13;--sidebar:#0d1321;--surface:#121b2d;--surface-raised:#18233a;--line:#273651;--accent:#66e0f5;--accent-strong:#42c6e8;--accent-wash:rgba(76,211,241,.13);--text:#f1f7ff;--muted:#a1b0c7; }
+body {background:#080b13;}
+.app {background:linear-gradient(140deg,#080d1a,#0b1122 65%,#0d1224);}
+.topbar {background:rgba(12,20,37,.98);border-bottom:1px solid #304460;box-shadow:0 10px 35px #0003;}
+.logo {background:linear-gradient(145deg,#71f2ff,#467eff);color:#071226;border:0;box-shadow:0 0 25px #34bfff55;}
+.brand-lockup {font-weight:800;letter-spacing:-.025em;}
+.sidebar {background:linear-gradient(180deg,#111d31,#0a1120);border-right:1px solid #30405e;}
+.new-chat.btn.primary,.btn.primary {background:linear-gradient(105deg,#56d8ed,#779bff);color:#071526;border-color:transparent;font-weight:750;}
+.create-item {font-size:13px;border-radius:12px;min-height:42px;}
+.create-item.active {background:#193c53;color:#dffbff;border:1px solid #397d9b;}
+.create-item:hover {background:#192a41;}
+.chat {background:radial-gradient(ellipse at 60% 0%,#173c6559,transparent 55%),#0a101e;}
+.chat-head {background:#0f192b;border-bottom:1px solid #273c5a;}
+.messages {background:none;}
+.welcome {max-width:1120px;}
+.nova-hero {min-height:235px;padding:36px 40px;border:1px solid #31799a;border-radius:26px;background:radial-gradient(circle at 83% 38%,#2f7eab80,transparent 30%),linear-gradient(115deg,#0d2740,#173354 53%,#132447);box-shadow:0 22px 70px #0008;}
+.nova-hero-title {font-size:clamp(29px,3.6vw,52px);background:linear-gradient(90deg,#fff,#91eeff 55%,#91a8ff);background-clip:text;}
+.nova-orbit {border-color:#54d7ed;background:radial-gradient(circle,#205f85,#102b4e 65%,#071b2b);box-shadow:0 0 60px #28c1e466;}
+.nova-tool-grid {gap:14px;}
+.nova-tool {min-height:136px;padding:18px;border:1px solid #345b7d;border-radius:18px;background:linear-gradient(145deg,#172a45,#0e1a30);box-shadow:0 9px 25px #0003;}
+.nova-tool:hover,.nova-tool:focus-visible {border-color:#62d9ef;box-shadow:0 12px 30px #1599ce44;}
+.composer {border:1px solid #345775;background:#111e32;box-shadow:0 16px 45px #0007;}
+.workspace {background:#0b1526;border-color:#355371;}
+.editor {background:#0b1526;}
+.btn:focus-visible,.create-item:focus-visible,.nova-tool:focus-visible {outline:2px solid #74edff;outline-offset:2px;}
+@media(max-width:1000px){.nova-tool-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.nova-hero{padding:25px;}}
+@media(max-width:620px){.topbar{gap:8px}.nova-hero{padding:19px;min-height:190px}.nova-hero-title{font-size:clamp(26px,8vw,38px)}.nova-tool{min-height:110px;padding:12px}.nova-orbit{opacity:.2;right:-20px}.top-actions .btn{font-size:11px}.welcome{padding:8px 0 20px}}
 
 </style>
 </head>
