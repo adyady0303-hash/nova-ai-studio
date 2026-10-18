@@ -412,17 +412,15 @@ input,textarea,select {accent-color:#9767ff}
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script><script>
 /* Navigation bridges to existing, tested Nova actions. */
-document.querySelectorAll("[data-nova-action]").forEach(function(button){
- button.addEventListener("click",function(){
-  var action=button.getAttribute("data-nova-action");
-  if(action==="image"){document.getElementById("generateImageBtn")?.click();return}
-  if(action==="projects"){document.getElementById("openWorkspaceBtn")?.click();return}
-  if(action==="voice"){document.getElementById("providerSettingsBtn")?.click();return}
-  var task=action==="chat"?"auto":action;
-  var control=document.querySelector('.create-item[data-task="'+task+'"]');
-  if(control)control.click();
-  document.getElementById("prompt")?.focus();
- });
+document.addEventListener("click",function(event){
+ var button=event.target.closest("[data-nova-action]"); if(!button)return;
+ var action=button.getAttribute("data-nova-action");
+ if(action==="image"){document.getElementById("generateImageBtn")?.click();return}
+ if(action==="projects"){document.getElementById("openWorkspaceBtn")?.click();return}
+ if(action==="voice"){document.getElementById("providerSettingsBtn")?.click();return}
+ var task=action==="chat"?"auto":action;
+ document.querySelector('.create-item[data-task="'+task+'"]')?.click();
+ document.getElementById("prompt")?.focus();
 });
 </script>
 </body>
