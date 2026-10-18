@@ -1,0 +1,25 @@
+name: Nova quality checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate JavaScript
+        run: |
+          node --check server.js
+          node --check public/app.js
+      - name: Run tests
+        run: npm test
+      - name: Validate Python DNS utility if present
+        run: |
+          if [ -f scripts/configure_namecheap_dns.py ]; then python3 -m py_compile scripts/configure_namecheap_dns.py; fi
