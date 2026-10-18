@@ -15,7 +15,7 @@ Pagina publică este doar prezentare și distribuție. Aplicația AI nu este exp
 
 1. Instalează Node.js 18+ și Ollama.
 2. Pornește Ollama și instalează un model cu suport pentru tool calling, de exemplu `ollama pull qwen3`.
-3. Pe Windows, deschide `Start_Nova_AI_Studio.bat`. Pe alte sisteme rulează `npm start`.
+3. Pe Windows, deschide `Start_Nova_AI_Studio.bat`. Dacă Nova rulează deja, scriptul deschide instanța existentă în browser fără să pornească un al doilea server. Pe alte sisteme rulează `npm start`.
 4. Deschide `http://127.0.0.1:4173`.
 
 Nu sunt necesare pachete npm. Proiectele se salvează în `projects/`, copiile de rezervă în `data/`, iar conversațiile în profilul browserului. Aceste directoare nu intră în arhiva de release.
@@ -31,7 +31,7 @@ Pagina folosește URL-ul „latest release”, așa că butonul de descărcare f
 ## Configurare
 
 - `OLLAMA_URL` — implicit `http://127.0.0.1:11434`.
-- `PORT` — implicit `4173`.
+- `PORT` — implicit `4173`; dacă portul este ocupat de alt serviciu, setează o valoare liberă, de exemplu `4174`.
 
 Nova nu oferă terminal, nu rulează cod și nu sincronizează proiecte în cloud. Modificările agentului sunt limitate la fișierele proiectului deschis.
 
