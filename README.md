@@ -21,7 +21,7 @@ Apelurile către modele cloud pot fi tarifate de furnizor. Nova nu include chei 
 1. Deschide [Deploy Nova AI Studio pe Render](https://render.com/deploy?repo=https://github.com/adyady0303-hash/nova-ai-studio) și conectează contul GitHub.
 2. Blueprint-ul `render.yaml` configurează serverul Node, autentificarea cu parolă, un volum persistent pentru proiecte și configurarea API OpenAI.
 3. Introdu cheia API numai în formularul privat Render. Nu o adăuga în GitHub, în pagina publică sau în conversații.
-4. După deploy, intră pe URL-ul Render; browserul cere utilizatorul `nova` și parola generată în dashboard.
+4. După deploy, deschide URL-ul Render; apare formularul de autentificare Nova. Introdu utilizatorul și parola generate în dashboard.
 
 Serviciul online este protejat cu un singur cont partajat. Este destinat unei instanțe personale, nu unei platforme cu utilizatori separați. Planul Render și discul persistent pot necesita plată; folosirea API-ului AI poate costa separat. Nu am lansat serviciul cloud în contul tău.
 
@@ -48,7 +48,7 @@ Nu sunt necesare pachete npm. Proiectele și backup-urile rămân în dosarul ap
 | Variabilă | Scop |
 | --- | --- |
 | `HOST` / `PORT` | Adresa și portul serverului. Pentru publicare folosește `0.0.0.0` și portul dat de hosting. |
-| `NOVA_ACCESS_USER` / `NOVA_ACCESS_PASSWORD` | Autentificare HTTP Basic; parola trebuie să aibă cel puțin 20 de caractere pe host public. |
+| `NOVA_ACCESS_USER` / `NOVA_ACCESS_PASSWORD` | Autentificare prin formular Nova și cookie de sesiune `HttpOnly`, `Secure` și `SameSite`; parola trebuie să aibă cel puțin 20 de caractere pe host public. |
 | `NOVA_DATA_DIR` | Rădăcina proiectelor, backup-urilor și coșului de gunoi. Montează aici storage persistent. |
 | `AI_PROVIDER` | `ollama` sau `openai`. |
 | `OLLAMA_URL` | Endpoint-ul Ollama accesibil serverului; implicit `http://127.0.0.1:11434`. |
