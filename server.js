@@ -626,8 +626,18 @@ async function handle(req, res) {
       return { role: message.role, content: message.content.slice(0, 24000) };
     });
     const task = ["auto", "code", "lyrics", "music", "video"].includes(body.task) ? body.task : "auto";
-    const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task);
-    return json(res, 200, result);
+    try {
+      const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task);
+      return json(res, 200, result);
+    } catch (error) {
+      console.error("Nova AI agent provider failed:", error);
+      const unavailable = aiProvider.provider === "ollama"
+        ? "Modelul AI local (Ollama) nu este disponibil pe server. Configurează furnizorul OpenAI în setările Nova."
+        : !aiProvider.apiKey
+          ? "Cheia API OpenAI lipsește. Configurează furnizorul AI în setările Nova."
+          : "Furnizorul AI nu a putut procesa cererea. Verifică modelul și configurarea API.";
+      return json(res, 503, { error: unavailable });
+    }
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
