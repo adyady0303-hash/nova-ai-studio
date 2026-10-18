@@ -722,7 +722,16 @@ async function handle(req, res) {
 }
 
 const appServer = http.createServer((req, res) => {
-  handle(req, res).catch(error => json(res, 500, { error: error.message || "Eroare internă." }));
+  handle(req, res).catch(error => {
+    // Keep internal paths, API credentials and provider details out of HTTP responses.
+    console.error("Nova request failed:", error);
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
+    const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+    json(res, status, { error: status === 500 ? "Eroare internă. Încearcă din nou." : (error.message || "Cerere invalidă.") });
+  });
 });
 
 appServer.on("error", error => {
