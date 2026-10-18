@@ -9,8 +9,13 @@ const OLLAMA = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
 const DATA_DIR = process.env.NOVA_DATA_DIR || __dirname;
 const ACCESS_USER = process.env.NOVA_ACCESS_USER || "";
 const ACCESS_PASSWORD = process.env.NOVA_ACCESS_PASSWORD || "";
+const configuredAiProvider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
 const aiProvider = {
-  provider: process.env.AI_PROVIDER === "openai" ? "openai" : "ollama",
+  provider: configuredAiProvider === "ollama"
+    ? "ollama"
+    : configuredAiProvider === "openai" || Boolean(process.env.OPENAI_API_KEY)
+      ? "openai"
+      : "ollama",
   baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
   apiKey: process.env.OPENAI_API_KEY || "",
   textModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",

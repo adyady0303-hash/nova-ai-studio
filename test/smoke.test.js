@@ -34,8 +34,6 @@ test('server uses environment-provided credentials and does not ship secrets', (
 
 test('authenticated HTTP flows protect settings, projects, files and exports', async t => {
   const dataDir = fs.mkdtempSync(path.join(root, '.nova-http-test-'));
-  const port = await getFreePort();
-  const baseUrl = `http://127.0.0.1:${port}`;
   const providerPort = await getFreePort();
   const fakeApiKey = 'unit-test-secret-never-return-this';
   let expectedAuthorization = `Bearer ${fakeApiKey}`;
@@ -52,6 +50,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     res.end(JSON.stringify({ data: [{ id: 'gpt-4.1-mini' }] }));
   });
   await new Promise((resolve, reject) => providerServer.once('error', reject).listen(providerPort, '127.0.0.1', resolve));
+  const port = await getFreePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {
@@ -61,7 +61,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       NOVA_DATA_DIR: dataDir,
       NOVA_ACCESS_USER: 'nova-test-user',
       NOVA_ACCESS_PASSWORD: 'local-test-password-at-least-20',
-      AI_PROVIDER: 'openai',
+      AI_PROVIDER: '',
       OPENAI_API_KEY: fakeApiKey,
       OPENAI_BASE_URL: `http://127.0.0.1:${providerPort}/v1`
     },
@@ -224,6 +224,6 @@ async function waitForServer(baseUrl, child, getOutput) {
     } catch (error) { lastError = error; }
     await new Promise(resolve => setTimeout(resolve, 60));
   }
-  throw new Error(`Nova did not start in time: ${lastError?.message || getOutput()}`);
+  throw new Error(`Nova did not start in time: ${lastError?.message || 'unknown error'}\n${getOutput()}`);
 }
 
