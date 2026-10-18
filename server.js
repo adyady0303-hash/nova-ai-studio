@@ -475,6 +475,41 @@ async function handle(req, res) {
     } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea vocii a eșuat." }); }
   }
 
+  if (req.method === "POST" && url.pathname === "/api/ai/test") {
+    const body = await readJson(req);
+    const model = String(body.model || aiProvider.textModel || "").trim().slice(0, 120);
+    if (!model) return json(res, 400, { connected: false, error: "Alege un model AI înainte de test." });
+    if (aiProvider.provider === "openai" && !aiProvider.apiKey) {
+      return json(res, 503, { connected: false, provider: "openai", error: "Cheia API OpenAI lipsește din configurarea serverului." });
+    }
+    try {
+      const messages = [{ role: "user", content: "Răspunde doar cu: Nova este conectată." }];
+      const response = aiProvider.provider === "openai"
+        ? await openAiJson("/chat/completions", {
+          method: "POST",
+          body: JSON.stringify({ model, messages, max_completion_tokens: 24 })
+        }, 30000)
+        : await ollamaJson("/api/chat", {
+          method: "POST",
+          body: JSON.stringify({ model, stream: false, messages, options: { num_predict: 24 } })
+        });
+      const message = aiProvider.provider === "openai" ? response.choices?.[0]?.message : response.message;
+      const reply = String(message?.content || "").trim();
+      if (!reply) throw new Error("Modelul nu a returnat text.");
+      return json(res, 200, { connected: true, provider: aiProvider.provider, model: response.model || model, reply: reply.slice(0, 240) });
+    } catch (error) {
+      console.error("Nova AI connection test failed:", error);
+      const status = error.status;
+      const message = aiProvider.provider === "openai"
+        ? status === 401 || status === 403
+          ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
+          : status === 429
+            ? "OpenAI a limitat cererea de test. Verifică limitele și facturarea API."
+            : "Modelul OpenAI nu a putut răspunde. Verifică modelul, accesul API și limitele contului."
+        : "Modelul Ollama nu a putut răspunde. Verifică dacă serviciul și modelul sunt pornite.";
+      return json(res, 502, { connected: false, provider: aiProvider.provider, error: message });
+    }
+  }
   if (req.method === "GET" && url.pathname === "/api/projects") {
     const projects = [];
     for (const entry of await fs.promises.readdir(PROJECTS_DIR, { withFileTypes: true })) {

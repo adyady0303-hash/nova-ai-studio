@@ -48,6 +48,9 @@
         <div class="row" style="margin-top:14px"><span class="label">Furnizor</span><span class="value" id="provider">—</span></div>
         <div class="row"><span class="label">Model chat</span><span class="value" id="model">—</span></div>
         <div class="row"><span class="label">Cheie API</span><span class="value" id="keyState">—</span></div>
+        <div class="notice" id="aiDiagnostic" role="status" aria-live="polite">Se verifică furnizorul și modelul…</div>
+        <div class="actions" style="margin-top:14px"><a class="btn" href="/?settings=ai">Configurează AI</a><button class="btn primary" type="button" id="testAi">Testează chatul AI</button></div>
+        <p class="muted" id="aiTestResult">Testul trimite un mesaj foarte scurt modelului selectat și poate fi tarifat de furnizor.</p>
       </article>
       <article class="card">
         <h2>Proiecte private</h2>
@@ -73,6 +76,7 @@
   </main>
   <script>
     const byId = function(id){ return document.getElementById(id); };
+    let aiTestModel = "";
     async function getJson(url, options){
       const response = await fetch(url, Object.assign({credentials:"same-origin",cache:"no-store"},options||{}));
       const data = await response.json().catch(function(){return {};});
@@ -107,9 +111,16 @@
         }
         if(health){
           const isOpenAI=health.provider==="openai";
-          setPill(isOpenAI?(health.connected?"Cheie prezentă":"Cheie lipsă"):(health.connected?"Ollama conectat":"Ollama neconectat"),Boolean(health.connected));
+          aiTestModel=(health.models&&health.models[0])||(settings&&settings.textModel)||"";
+          setPill(isOpenAI?(health.connected?"OpenAI · conexiune verificată":"OpenAI neconectat"):(health.connected?"Ollama conectat":"Ollama neconectat"),Boolean(health.connected));
+          byId("aiDiagnostic").textContent=health.connected
+            ? (isOpenAI?"Serverul a validat cheia OpenAI și a primit lista modelelor.":"Serverul a contactat Ollama și a citit modelele instalate.")
+            : (health.error||"Furnizorul AI nu a putut fi verificat.");
+          byId("aiDiagnostic").className="notice"+(health.connected?"":" error");
         }else{
           setPill("Nu s-a putut citi starea AI",false);
+          byId("aiDiagnostic").textContent="Nova nu a putut citi starea AI. Reîncarcă datele sau deschide configurarea AI.";
+          byId("aiDiagnostic").className="notice error";
         }
         if(projectData){
           const projects=projectData.projects||[];
@@ -131,6 +142,15 @@
       }
     }
     byId("refresh").addEventListener("click",refresh);
+    byId("testAi").addEventListener("click",async function(){
+      const button=byId("testAi"),result=byId("aiTestResult");button.disabled=true;button.textContent="Se testează…";result.className="muted";result.textContent="Aștept răspunsul modelului…";
+      try{
+        const data=await getJson("/api/ai/test",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({model:aiTestModel})});
+        result.textContent="Test reușit · "+data.model+": „"+data.reply+"”";result.className="muted";
+      }catch(error){result.textContent=error.message||"Modelul nu a putut răspunde.";result.className="muted error";}
+      finally{button.disabled=false;button.textContent="Testează chatul AI";}
+    });
+
     byId("logout").addEventListener("click",async function(){
       try{await getJson("/api/auth/logout",{method:"POST"});}catch{}
       window.location.replace("/");
