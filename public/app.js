@@ -1,5 +1,6 @@
 const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null };
+const welcomeTemplate = el("welcomeTemplate");
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 
 async function api(url, options = {}) {
@@ -108,17 +109,11 @@ function updateLines() {
 }
 
 function renderChat() {
-  const box = el("messages"); box.replaceChildren();
+  const box = el("messages");
+  box.replaceChildren();
   if (!state.chat.length) {
-    const welcome = document.createElement("div"); welcome.className = "welcome"; welcome.id = "welcome";
-    welcome.innerHTML = "<div class=\"nova-hero\"><div class=\"nova-orbit\" aria-hidden=\"true\"><span>N</span></div><div class=\"nova-hero-content\"><div class=\"welcome-kicker\"><span class=\"spark\">✦</span><span>NOVA AI STUDIO · UNIVERSUL TĂU CREATIV</span></div><div class=\"nova-hero-title\">Imaginează. Creează. Construiește.</div><p>Un singur spațiu pentru ideile tale, asistat de inteligență artificială reală.</p></div></div>\n          <h1>Ce vrei să <span>creezi</span> astăzi?</h1>\n          <p>Scrie o idee în cuvintele tale. Nova te ajută să construiești aplicații și cod pentru PC, să scrii texte, să creezi imagini și să pregătești muzică sau videoclipuri.</p>\n          <div class=\"nova-tool-heading\"><strong>Explorează studioul</strong><span>Instrumente disponibile în Nova</span></div><div class=\"nova-tool-grid\" aria-label=\"Instrumente Nova\">\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"chat\"><span class=\"nova-tool-icon blue\">✦</span><strong>Chat AI</strong><small>Conversații și idei</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"code\"><span class=\"nova-tool-icon teal\">&lt;/&gt;</span><strong>Programare</strong><small>Cod și aplicații</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"image\"><span class=\"nova-tool-icon purple\">▧</span><strong>Imagini AI</strong><small>Generare vizuală</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"video\"><span class=\"nova-tool-icon pink\">▶</span><strong>Video</strong><small>Scene și montaj</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"music\"><span class=\"nova-tool-icon orange\">♫</span><strong>Muzică</strong><small>Compoziții și idei</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"voice\"><span class=\"nova-tool-icon cyan\">◉</span><strong>Voce & audio</strong><small>Voice-over AI</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"lyrics\"><span class=\"nova-tool-icon violet\">✎</span><strong>Texte & versuri</strong><small>Scriere creativă</small></button>\n<button type=\"button\" class=\"nova-tool\" data-nova-action=\"business\"><span class=\"nova-tool-icon business\">◆</span><strong>Business online</strong><small>Brand, site, magazin și lansare</small></button><button type=\"button\" class=\"nova-tool\" data-nova-action=\"projects\"><span class=\"nova-tool-icon green\">▤</span><strong>Proiecte</strong><small>Fișiere și editor</small></button>\n</div><div class=\"nova-tool-heading nova-inspiration\"><strong>Începe cu o idee</strong><span>Alege un exemplu sau scrie propria cerere</span></div><div class=\"suggestions\">\n            <button class=\"suggestion\" data-task=\"code\"><span class=\"suggestion-icon\">{ }</span><span><strong>Creează o aplicație pentru PC</strong><small>Pornește de la o idee și construiește proiectul</small></span></button>\n            <button class=\"suggestion\" data-task=\"lyrics\"><span class=\"suggestion-icon\">✎</span><span><strong>Scrie versuri originale</strong><small>Alege subiectul, stilul și atmosfera</small></span></button>\n            <button class=\"suggestion\" data-task=\"music\"><span class=\"suggestion-icon\">♫</span><span><strong>Compune o schiță muzicală</strong><small>Generează o compoziție instrumentală WAV</small></span></button>\n            <button class=\"suggestion\" data-task=\"video\"><span class=\"suggestion-icon\">▶</span><span><strong>Pregătește un videoclip</strong><small>Scenariu, imagini, voice-over și export WebM</small></span></button>\n          </div>";
-    box.append(welcome);
-    welcome.querySelectorAll(".suggestion").forEach(button => button.addEventListener("click", () => {
-      setTask(button.dataset.task || "auto");
-      el("prompt").value = button.querySelector("strong")?.textContent || button.textContent.trim();
-      el("prompt").focus();
-      resizePrompt();
-    }));
+    const welcome = welcomeTemplate?.content?.firstElementChild?.cloneNode(true);
+    if (welcome) box.append(welcome);
     return;
   }
   for (const message of state.chat) addBubble(message.role, message.content, message.events);
@@ -710,5 +705,6 @@ Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
     el("providerSettingsBtn").click();
   }
 });
+
 
 
