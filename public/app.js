@@ -31,7 +31,7 @@ async function refreshHealth() {
     label.removeAttribute("title"); sideLabel.removeAttribute("title");
     dot.classList.add("on"); label.textContent = data.provider === "openai" ? `OpenAI · ${data.version}` : `Ollama ${data.version}`;
     sideDot.classList.add("on"); sideLabel.textContent = data.provider === "openai" ? "OpenAI conectat" : "Ollama conectat";
-    badge.textContent = data.provider === "openai" ? "API cloud configurat" : "Ollama conectat";
+    badge.textContent = data.provider === "openai" ? "OpenAI · conexiune verificată" : "Ollama conectat";
     badge.style.color = "var(--green)"; badge.style.borderColor = "#364131";
     const previous = select.value; select.replaceChildren();
     if (!data.models.length) select.add(new Option(data.provider === "openai" ? "Setează modelul cloud" : "Niciun model instalat", ""));
@@ -282,6 +282,39 @@ async function exportVideo(spec) {
 
 async function generateSpeech(text) {
   return api("/api/media/speech", jsonBody({ text: text.trim().slice(0, 4000) }));
+}
+
+function openVoiceDialog() {
+  const dialog = el("voiceDialog"), voiceText = el("voiceText"), status = el("voiceStatus");
+  if (!voiceText.value.trim() && el("prompt").value.trim()) voiceText.value = el("prompt").value.trim();
+  status.hidden = true; status.textContent = ""; status.classList.remove("error");
+  dialog.showModal(); voiceText.focus();
+}
+
+function addVoiceCard(text, result) {
+  const node = document.createElement("div"); node.className = "message assistant";
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = `Voice-over AI · ${result.model}`;
+  const transcript = document.createElement("div"); transcript.textContent = text;
+  const output = document.createElement("div"); output.className = "creative-output";
+  const player = document.createElement("audio"); player.controls = true; player.src = result.dataUrl;
+  const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = result.dataUrl; link.download = "nova-voice-over.mp3";
+  output.append(player, link); node.append(meta, transcript, output);
+  el("messages").append(node); el("messages").scrollTop = el("messages").scrollHeight;
+}
+
+async function generateVoiceFromDialog() {
+  const text = el("voiceText").value.trim(), status = el("voiceStatus"), button = el("generateVoiceBtn");
+  status.hidden = false; status.classList.remove("error");
+  if (!text) { status.textContent = "Scrie textul pentru voice-over."; el("voiceText").focus(); return; }
+  button.disabled = true; button.textContent = "Se generează MP3…"; status.textContent = "Trimit textul către furnizorul vocal configurat…";
+  try {
+    const result = await generateSpeech(text);
+    addBubble("user", `Creează un voice-over MP3: ${text}`);
+    addVoiceCard(text, result);
+    el("voiceDialog").close(); el("voiceText").value = ""; status.hidden = true;
+  } catch (error) {
+    status.classList.add("error"); status.textContent = error.message || "Generarea voice-over-ului a eșuat.";
+  } finally { button.disabled = false; button.textContent = "Generează MP3"; }
 }
 
 function addSpeechButton(node, text, label = "Ascultă cu voce AI") {
@@ -605,6 +638,9 @@ el("editor").addEventListener("scroll", () => { el("gutter").scrollTop = el("edi
 el("saveBtn").addEventListener("click", () => saveFile(true).catch(error => toast(error.message)));
 el("sendBtn").addEventListener("click", send);
 el("generateImageBtn").addEventListener("click", generateImageFromPrompt);
+el("voiceComposerBtn").addEventListener("click", openVoiceDialog);
+el("generateVoiceBtn").addEventListener("click", generateVoiceFromDialog);
+el("voiceSettingsBtn").addEventListener("click", () => { el("voiceDialog").close(); el("providerSettingsBtn").click(); });
 el("providerSettingsBtn").addEventListener("click", async () => {
   try { await loadProviderSettings(); el("providerDialog").showModal(); }
   catch (error) { toast(error.message); }
@@ -668,6 +704,11 @@ window.addEventListener("beforeunload", event => { if (state.dirty) { event.prev
 
 Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);
+}).then(() => {
+  if (new URLSearchParams(location.search).get("settings") === "ai") {
+    const url = new URL(location.href); url.searchParams.delete("settings"); history.replaceState(null, "", url);
+    el("providerSettingsBtn").click();
+  }
 });
 
 
