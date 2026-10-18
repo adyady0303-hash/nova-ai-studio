@@ -2,7 +2,7 @@
 
 Nova AI Studio este un studio local pentru cod și creație asistată de modele Ollama. Același chat ajută la aplicații pentru Windows/PC, versuri originale, planuri de compoziție muzicală și scenarii/storyboard-uri video. Aplicația poate scrie cod și fișiere text în proiectul local atunci când utilizatorul permite.
 
-Ollama furnizează răspunsuri text. Nova nu include momentan motoare de generare sau randare audio/video și nu produce direct fișiere MP3/MP4. Pentru exportul efectiv al unui videoclip sau al unei piese este necesar un motor media local separat; Nova poate pregăti codul și proiectul pentru acesta.
+Ollama furnizează text și specificații. În browser, Nova poate sintetiza o melodie simplă fără voce în WAV și poate exporta un videoclip tipografic cu scene colorate în WebM. Aceste funcții nu generează voci cântate, imagini sau filmări; exporturile MP3/MP4 și media fotorealistă cer motoare externe.
 
 ## Ce publică proiectul
 
@@ -17,10 +17,10 @@ Pagina publică este doar prezentare și distribuție. Aplicația AI nu este exp
 
 1. Instalează Node.js 18+ și Ollama.
 2. Pornește Ollama și instalează un model cu suport pentru tool calling, de exemplu `ollama pull qwen3`.
-3. Pe Windows, deschide `Start_Nova_AI_Studio.bat`. Dacă Nova rulează deja, scriptul deschide instanța existentă în browser fără să pornească un al doilea server. Pe alte sisteme rulează `npm start`.
+3. Pe Windows, deschide `Start_Nova_AI_Studio.bat`. Scriptul redeschide Nova v0.5.0 dacă rulează deja; altfel caută un port liber între 4173 și 4190 și pornește versiunea nouă acolo.
 4. Deschide `http://127.0.0.1:4173`.
 
-În chat, selectează automat, cod Windows/PC, versuri, compoziție muzicală sau scenariu video. Pentru a salva fișiere în proiect, activează „Permite agentului să scrie fișiere în proiect”.
+În chat, selectează automat, cod Windows/PC, versuri, compoziție muzicală sau scenariu video. Răspunsurile de muzică au buton de export WAV, iar scenele video pot fi randate în WebM. Pentru a salva fișiere în proiect, activează „Permite agentului să scrie fișiere în proiect”.
 
 Nu sunt necesare pachete npm. Proiectele se salvează în `projects/`, copiile de rezervă în `data/`, iar conversațiile în profilul browserului. Aceste directoare nu intră în arhiva de release.
 
@@ -30,7 +30,7 @@ Nu sunt necesare pachete npm. Proiectele se salvează în `projects/`, copiile d
 2. Workflow-ul `Publish website` activează GitHub Pages cu sursa GitHub Actions și publică pagina la `https://adyady0303-hash.github.io/nova-ai-studio/`.
 3. Pentru o versiune nouă, actualizează `version` în `package.json`, apoi pornește manual workflow-ul `Build and publish Nova release` cu tag-ul (de exemplu `v0.3.0`) sau împinge un tag `v*`. Workflow-ul publică `Nova-AI-Studio.zip` și `Nova-AI-Studio.zip.sha256` ca assets de release.
 
-Arhiva publică v0.4.0 este păstrată în `downloads/Nova-AI-Studio-v0.4.0.zip`, iar suma de verificare lângă ea. Pagina publică trimite direct la această arhivă.
+Arhiva publică v0.5.0 este păstrată în `downloads/Nova-AI-Studio-v0.5.0.zip`, iar suma de verificare lângă ea. Pagina publică trimite direct la această arhivă.
 
 ## Configurare
 

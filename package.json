@@ -1,8 +1,8 @@
 {
   "name": "nova-ai-studio",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "Studio local pentru cod asistat de modele Ollama",
+  "description": "Studio local pentru cod, versuri, muzică WAV și video WebM asistate de Ollama",
   "scripts": {
     "start": "node server.js"
   },

@@ -70,11 +70,148 @@ function renderChat() {
   box.scrollTop = box.scrollHeight;
 }
 
+function parseCreativeSpec(content) {
+  const match = content.match(/```nova-(music|video)\s*([\s\S]*?)```/i);
+  if (!match) return { text: content, spec: null };
+  try {
+    const raw = JSON.parse(match[2]);
+    const title = String(raw.title || (match[1] === "music" ? "Compoziție Nova" : "Video Nova")).slice(0, 100);
+    if (match[1].toLowerCase() === "music") {
+      const notes = (Array.isArray(raw.notes) ? raw.notes : []).slice(0, 128).map(item => ({
+        note: String(item.note || ""), beats: Math.min(4, Math.max(0.25, Number(item.beats) || 1))
+      })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
+      if (!notes.length) throw new Error("Nu există note valide.");
+      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes } };
+    }
+    const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).slice(0, 12).map(scene => ({
+      text: String(scene.text || "").slice(0, 280),
+      seconds: Math.min(8, Math.max(2, Number(scene.seconds) || 4)),
+      background: /^#[0-9a-f]{6}$/i.test(String(scene.background || "")) ? scene.background : "#18221a"
+    })).filter(scene => scene.text.trim());
+    if (scenes.length < 2) throw new Error("Videoclipul are nevoie de cel puțin două scene.");
+    return { text: content.replace(match[0], "").trim(), spec: { type: "video", title, scenes } };
+  } catch {
+    return { text: content, spec: null };
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url; link.download = filename; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+function safeMediaName(title, extension) {
+  const stem = title.normalize("NFKD").replace(/[^\w -]/g, "").trim().replace(/\s+/g, "-").slice(0, 48) || "nova-media";
+  return `${stem}.${extension}`;
+}
+
+function noteFrequency(note) {
+  const match = note.match(/^([A-G])(#?)([2-6])$/);
+  if (!match) return 220;
+  const semitone = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[match[1]] + (match[2] ? 1 : 0);
+  const midi = (Number(match[3]) + 1) * 12 + semitone;
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+async function createWav(spec) {
+  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!Offline) throw new Error("Browserul nu acceptă export audio local.");
+  const rate = 22050, beatSeconds = 60 / spec.bpm;
+  const duration = Math.min(90, spec.notes.reduce((sum, item) => sum + item.beats * beatSeconds, 0) + 0.2);
+  const audio = new Offline(1, Math.ceil(duration * rate), rate);
+  let cursor = 0;
+  for (const item of spec.notes) {
+    const start = cursor, end = Math.min(duration - 0.02, start + item.beats * beatSeconds);
+    if (end <= start) break;
+    const oscillator = audio.createOscillator(), gain = audio.createGain();
+    oscillator.type = "triangle"; oscillator.frequency.value = noteFrequency(item.note);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(0.12, Math.min(end, start + 0.025));
+    gain.gain.setValueAtTime(0.12, Math.max(start + 0.03, end - 0.04));
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    oscillator.connect(gain).connect(audio.destination); oscillator.start(start); oscillator.stop(end);
+    cursor += item.beats * beatSeconds;
+    if (cursor >= duration) break;
+  }
+  return audio.startRendering();
+}
+
+function audioBufferToWav(buffer) {
+  const samples = buffer.getChannelData(0), bytes = new ArrayBuffer(44 + samples.length * 2), view = new DataView(bytes);
+  const write = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
+  write(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); write(8, "WAVE"); write(12, "fmt ");
+  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * 2, true);
+  view.setUint16(32, 2, true); view.setUint16(34, 16, true); write(36, "data"); view.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) { const value = Math.max(-1, Math.min(1, samples[i])); view.setInt16(44 + i * 2, value < 0 ? value * 32768 : value * 32767, true); }
+  return new Blob([bytes], { type: "audio/wav" });
+}
+
+function drawVideoFrame(ctx, spec, elapsed, width, height) {
+  const total = spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
+  const time = Math.min(Math.max(elapsed, 0), Math.max(0, total - 0.001));
+  let cursor = 0, index = 0;
+  for (; index < spec.scenes.length - 1; index++) { if (time < cursor + spec.scenes[index].seconds) break; cursor += spec.scenes[index].seconds; }
+  const scene = spec.scenes[index], progress = Math.min(1, (time - cursor) / scene.seconds);
+  ctx.fillStyle = scene.background; ctx.fillRect(0, 0, width, height);
+  const glow = ctx.createRadialGradient(width * 0.76, height * 0.16, 2, width * 0.76, height * 0.16, width * 0.8);
+  glow.addColorStop(0, "rgba(255,255,255,.13)"); glow.addColorStop(1, "rgba(0,0,0,.3)"); ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "rgba(255,255,255,.72)"; ctx.font = "600 22px Segoe UI, sans-serif"; ctx.textAlign = "left"; ctx.fillText(spec.title, 72, 72);
+  ctx.fillStyle = "#f5f5f0"; ctx.font = "700 52px Segoe UI, sans-serif"; ctx.textAlign = "center";
+  const words = scene.text.split(/\s+/), lines = []; let line = "";
+  for (const word of words) { const candidate = line ? `${line} ${word}` : word; if (ctx.measureText(candidate).width > width - 180 && line) { lines.push(line); line = word; } else line = candidate; }
+  if (line) lines.push(line);
+  const shown = lines.slice(0, 5), lineHeight = 66, y = (height - shown.length * lineHeight) / 2;
+  ctx.globalAlpha = Math.min(1, progress * 5 + 0.1);
+  shown.forEach((text, i) => ctx.fillText(text, width / 2, y + i * lineHeight, width - 140));
+  ctx.globalAlpha = 1; ctx.fillStyle = "rgba(255,255,255,.24)"; ctx.fillRect(72, height - 54, width - 144, 5);
+  ctx.fillStyle = "#b4ed79"; ctx.fillRect(72, height - 54, (width - 144) * Math.min(1, time / total), 5);
+  ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.font = "16px Segoe UI, sans-serif"; ctx.textAlign = "right"; ctx.fillText(`${index + 1} / ${spec.scenes.length}`, width - 72, height - 72);
+}
+
+async function exportVideo(spec) {
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Browserul nu acceptă export video WebM local.");
+  const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 720;
+  const ctx = canvas.getContext("2d"), stream = canvas.captureStream(24);
+  const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type));
+  if (!mime) throw new Error("Browserul nu oferă un format WebM compatibil.");
+  const chunks = [], recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2500000 });
+  const stopped = new Promise((resolve, reject) => { recorder.onstop = resolve; recorder.onerror = () => reject(new Error("Exportul video a eșuat.")); });
+  const total = Math.min(60, spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0));
+  drawVideoFrame(ctx, spec, 0, canvas.width, canvas.height);
+  recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+  recorder.start(250);
+  await new Promise(resolve => { const start = performance.now(); const frame = now => { const elapsed = (now - start) / 1000; drawVideoFrame(ctx, spec, elapsed, canvas.width, canvas.height); if (elapsed >= total) { recorder.stop(); resolve(); } else requestAnimationFrame(frame); }; requestAnimationFrame(frame); });
+  await stopped; stream.getTracks().forEach(track => track.stop());
+  return new Blob(chunks, { type: mime });
+}
+
+function addCreativeCard(node, spec) {
+  const card = document.createElement("div"); card.className = "creative-card";
+  const heading = document.createElement("strong"); heading.textContent = spec.type === "music" ? `♫ ${spec.title}` : `▶ ${spec.title}`;
+  const detail = document.createElement("div"); detail.className = "creative-detail";
+  const action = document.createElement("button"); action.className = "btn small";
+  const output = document.createElement("div"); output.className = "creative-output";
+  if (spec.type === "music") {
+    detail.textContent = `${spec.bpm} BPM · ${spec.notes.length} note · sintetizator simplu`;
+    action.textContent = "Generează WAV";
+    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se sintetizează audio local…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = "Audio sintetizat local · fără voce cântată"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+  } else {
+    detail.textContent = `${spec.scenes.length} scene · video tipografic WebM`;
+    action.textContent = "Exportă WebM";
+    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se randează videoclipul în browser…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat local · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+  }
+  card.append(heading, detail, action, output); node.append(card);
+}
+
 function addBubble(role, content, events = []) {
   const node = document.createElement("div"); node.className = `message ${role}`;
   const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = role === "user" ? "Tu" : "Nova";
-  const body = document.createElement("div"); body.textContent = content;
+  const creative = role === "assistant" ? parseCreativeSpec(content) : { text: content, spec: null };
+  const body = document.createElement("div"); body.textContent = creative.text;
   node.append(meta, body);
+  if (creative.spec) addCreativeCard(node, creative.spec);
   if (events?.length) {
     const activity = document.createElement("div"); activity.className = "agent-events";
     activity.textContent = events.map(event => `${event.ok ? "✓" : "!"} ${event.summary}`).join("\n"); node.append(activity);
