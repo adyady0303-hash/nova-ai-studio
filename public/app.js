@@ -61,9 +61,9 @@ function renderChat() {
   const box = el("messages"); box.replaceChildren();
   if (!state.chat.length) {
     const welcome = document.createElement("div"); welcome.className = "welcome"; welcome.id = "welcome";
-    welcome.innerHTML = `<div class="welcome-mark">N</div><h1>Ce construim azi?</h1><p>Agentul poate explora proiectul. Scrierea fișierelor este oprită până când o permiți explicit.</p><div class="suggestions"><button class="suggestion">Explică structura proiectului</button><button class="suggestion">Planifică o funcție de autentificare</button><button class="suggestion">Revizuiește codul pentru probleme</button></div>`;
+    welcome.innerHTML = `<div class="welcome-mark">N</div><h1>Ce creăm azi?</h1><p>Scrie cod pentru Windows/PC, versuri originale, compoziții și scenarii video în aceeași conversație. Scrierea fișierelor cere permisiunea ta.</p><div class="suggestions"><button class="suggestion" data-task="code">Creează o aplicație Windows pentru lista mea de sarcini</button><button class="suggestion" data-task="lyrics">Scrie versuri pop despre un nou început</button><button class="suggestion" data-task="music">Compune o piesă lo-fi: tempo, acorduri și structură</button><button class="suggestion" data-task="video">Scrie un videoclip de 30 de secunde cu storyboard și voice-over</button></div>`;
     box.append(welcome);
-    welcome.querySelectorAll(".suggestion").forEach(button => button.addEventListener("click", () => { el("prompt").value = button.textContent; el("prompt").focus(); }));
+    welcome.querySelectorAll(".suggestion").forEach(button => button.addEventListener("click", () => { el("taskSelect").value = button.dataset.task || "auto"; el("prompt").value = button.textContent; el("prompt").focus(); }));
     return;
   }
   for (const message of state.chat) addBubble(message.role, message.content, message.events);
@@ -267,6 +267,7 @@ async function send() {
   if (!promptText) return;
   if (!model) { toast("Alege un model Ollama instalat."); return; }
   const mode = el("modeSelect").value;
+  const task = el("taskSelect").value;
   const allowChanges = mode === "build" && el("allowChanges").checked;
   const currentProject = state.projects.find(project => project.id === state.project);
   const activeContent = state.activePath ? el("editor").value : "";
@@ -279,7 +280,7 @@ async function send() {
   state.busy = true; el("sendBtn").disabled = true;
   try {
     if (state.dirty) await saveFile(false);
-    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, allowChanges, messages: state.chat }));
+    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, messages: state.chat }));
     state.chat.push({ role: "assistant", content: result.content });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
     addBubble("assistant", result.content, result.events);
@@ -299,6 +300,16 @@ el("editor").addEventListener("input", () => { state.dirty = true; el("dirtyMark
 el("editor").addEventListener("scroll", () => { el("gutter").scrollTop = el("editor").scrollTop; });
 el("saveBtn").addEventListener("click", () => saveFile(true).catch(error => toast(error.message)));
 el("sendBtn").addEventListener("click", send);
+el("taskSelect").addEventListener("change", event => {
+  const prompts = {
+    auto: "Cere cod, versuri, o compoziție sau un scenariu video… (Enter trimite)",
+    code: "Descrie aplicația sau unealta pentru Windows/PC… (Enter trimite)",
+    lyrics: "Descrie tema, genul și tonul versurilor… (Enter trimite)",
+    music: "Descrie genul și atmosfera compoziției… (Enter trimite)",
+    video: "Descrie ideea, publicul și durata videoclipului… (Enter trimite)"
+  };
+  el("prompt").placeholder = prompts[event.target.value] || prompts.auto;
+});
 el("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } });
 el("refreshModels").addEventListener("click", refreshHealth);
 el("refreshModelsTop").addEventListener("click", refreshHealth);
@@ -326,3 +337,4 @@ window.addEventListener("beforeunload", event => { if (state.dirty) { event.prev
 Promise.all([refreshHealth(), loadProjects()]).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);
 });
+

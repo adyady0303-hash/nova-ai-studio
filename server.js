@@ -179,12 +179,19 @@ async function callAgentTool(name, args, project, allowChanges) {
   throw new Error(`Unealtă necunoscută: ${name}`);
 }
 
-async function runAgent(model, inputMessages, project, mode, allowChanges) {
+async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto") {
+  const taskPrompts = {
+    auto: "Detectează intenția utilizatorului. Pentru cod, construiește sau explică proiecte pentru Windows și PC. Pentru versuri, scrie versuri originale complete și potrivite cererii. Pentru muzică, creează o compoziție descrisă clar: gen, tempo, tonalitate, acorduri, structură și instrumentație. Pentru video, creează concept, scenariu, cadre, narațiune și subtitrări. Poți salva texte, specificații și cod în proiect dacă scrierea este permisă.",
+    code: "Construiește aplicații și unelte pentru PC, cu prioritate pentru Windows 10/11. Oferă fișiere complete, instrucțiuni de instalare și dependențe; explorează proiectul înainte să scrii.",
+    lyrics: "Scrie versuri originale în limba utilizatorului, cu titlu și secțiuni clare (strofe, refren, punte). Respectă tema, genul, tonul și lungimea cerute. Nu imita versurile sau stilul exact al unui artist în viață; descrie trăsături muzicale generale. Dacă utilizatorul cere, salvează versurile într-un fișier text.",
+    music: "Creează un plan de compoziție original și practic: gen, tempo, măsură, tonalitate, progresie de acorduri, structură, instrumentație și indicații de interpretare. Poți scrie cod sau date pentru unelte de compoziție în proiect. Nu pretinde că ai produs ori redat un fișier audio: nu ai motor de generare sau export audio.",
+    video: "Creează un concept video original și practic: logline, scenariu, listă de cadre cu durată, voice-over, subtitrări, indicații de montaj și sunet. Poți scrie cod sau proiecte pentru unelte video în dosarul proiectului. Nu pretinde că ai randat ori exportat un fișier video: nu ai motor de generare sau export video."
+  };
   const prompt = mode === "review"
     ? "Ești Nova, agent de revizie de cod. Inspectează proiectul cu uneltele list_files și read_file. Nu modifica fișierele. Identifică probleme reale, ordonează-le după severitate și indică fișierele relevante."
     : mode === "plan"
       ? "Ești Nova, agent de planificare software. Explorează proiectul cu list_files și read_file, apoi prezintă un plan ordonat și clar. Nu modifica fișierele."
-      : `Ești Nova, agent de programare. Explorează proiectul, citește fișierele relevante și implementează cererea. Folosește write_file doar când este permis. Păstrează modificările la obiect și raportează fiecare fișier schimbat. Nu rula comenzi și nu pretinde că ai testat codul.`;
+      : `Ești Nova, asistent de creație și programare. ${taskPrompts[task] || taskPrompts.auto} Explorează proiectul și fișierele relevante când cererea depinde de ele. Implementează cererile de cod folosind write_file numai când este permis. Păstrează schimbările la obiect și raportează fiecare fișier schimbat. Nu rula comenzi și nu pretinde că ai testat codul.`;
   const messages = [
     { role: "system", content: `${prompt}\n\nAi acces numai la fișierele proiectului deschis, prin uneltele list_files, read_file și write_file. Nu ai terminal, acces la internet sau acces la alte dosare. ${allowChanges ? "Modificările sunt permise pentru această cerere." : "Modificările sunt dezactivate pentru această cerere."} Păstrează căile relative în proiect și nu șterge fișiere.` },
     ...inputMessages.slice(-12)
@@ -380,7 +387,8 @@ async function handle(req, res) {
       if (!(["user", "assistant"].includes(message.role)) || typeof message.content !== "string") throw Object.assign(new Error("Format de conversație invalid."), { status: 400 });
       return { role: message.role, content: message.content.slice(0, 24000) };
     });
-    const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build");
+    const task = ["auto", "code", "lyrics", "music", "video"].includes(body.task) ? body.task : "auto";
+    const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task);
     return json(res, 200, result);
   }
 
