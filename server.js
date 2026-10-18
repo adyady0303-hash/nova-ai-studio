@@ -474,9 +474,23 @@ async function handle(req, res) {
   });
 }
 
-http.createServer((req, res) => {
+const appServer = http.createServer((req, res) => {
   handle(req, res).catch(error => json(res, 500, { error: error.message || "Eroare internă." }));
-}).listen(PORT, HOST, () => {
+});
+
+appServer.on("error", error => {
+  if (error.code === "EADDRINUSE") {
+    console.error(`Portul ${PORT} este deja folosit.`);
+    console.error(`Dacă Nova rulează deja, deschide http://${HOST}:${PORT} în browser.`);
+    console.error(`Pentru a porni pe alt port, setează variabila PORT (de exemplu PORT=4174).`);
+  } else {
+    console.error("Nova AI Studio nu a putut porni:", error.message);
+  }
+  process.exitCode = 1;
+});
+
+appServer.listen(PORT, HOST, () => {
   console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
   console.log(`Ollama: ${OLLAMA}`);
 });
+
