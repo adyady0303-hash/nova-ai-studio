@@ -1,6 +1,6 @@
 {
   "name": "nova-ai-studio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Studio local pentru cod asistat de modele Ollama",
   "scripts": {
@@ -10,3 +10,4 @@
     "node": ">=18"
   }
 }
+
