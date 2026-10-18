@@ -37,17 +37,31 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const providerPort = await getFreePort();
   const fakeApiKey = 'unit-test-secret-never-return-this';
   let expectedAuthorization = `Bearer ${fakeApiKey}`;
+  let mockChatModel = '';
+  let mockChatPrompt = '';
   const providerServer = http.createServer((req, res) => {
-    if (req.url !== '/v1/models') {
-      res.writeHead(404, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ error: { message: 'not found' } }));
-    }
     if (req.headers.authorization !== expectedAuthorization) {
       res.writeHead(401, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ error: { message: 'invalid api key' } }));
     }
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ data: [{ id: 'gpt-4.1-mini' }] }));
+    if (req.method === 'GET' && req.url === '/v1/models') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ data: [{ id: 'gpt-4.1-mini' }] }));
+    }
+    if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        mockChatModel = body.model;
+        mockChatPrompt = body.messages?.at(-1)?.content || '';
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Răspuns verificat de test.' } }], model: body.model }));
+      });
+      return;
+    }
+    res.writeHead(404, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'not found' } }));
   });
   await new Promise((resolve, reject) => providerServer.once('error', reject).listen(providerPort, '127.0.0.1', resolve));
   const port = await getFreePort();
@@ -127,6 +141,15 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.deepEqual(await aiHealth.json(), {
     connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-4.1-mini']
   });
+  const aiChat = await post('/api/chat', {
+    model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut Nova' }]
+  });
+  assert.equal(aiChat.status, 200);
+  assert.deepEqual(await aiChat.json(), {
+    content: 'Răspuns verificat de test.', model: 'gpt-4.1-mini', done: true
+  });
+  assert.equal(mockChatModel, 'gpt-4.1-mini');
+  assert.equal(mockChatPrompt, 'Salut Nova');
 
   expectedAuthorization = 'Bearer valid-test-key';
   const invalidKeySettings = await post('/api/settings', {
