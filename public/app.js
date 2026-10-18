@@ -648,9 +648,17 @@ el("downloadBtn").addEventListener("click", () => {
   const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = state.activePath?.split("/").pop() || "nova.txt"; link.click();
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 });
+const projectDrawer = el("projectDrawer");
+if (projectDrawer) {
+  const compactNavigation = window.matchMedia("(max-width: 620px)");
+  const syncProjectDrawer = () => { projectDrawer.open = !compactNavigation.matches; };
+  syncProjectDrawer();
+  compactNavigation.addEventListener("change", syncProjectDrawer);
+}
 window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
 
 Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);
 });
+
 
