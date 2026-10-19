@@ -36,12 +36,12 @@ Volumul Docker `nova-data` păstrează proiectele și copiile de rezervă la rep
 
 ## Pornire locală pe Windows
 
-1. Instalează Node.js 18+ și pornește Ollama.
-2. Rulează `ollama pull qwen3` sau descarcă un alt model local cu tool calling.
+1. Instalează Node.js 22 sau mai nou. Dacă folosești modele locale, pornește Ollama.
+2. Rulează `npm ci` în directorul aplicației. Pentru Ollama, descarcă și modelul cu `ollama pull qwen3` sau alege un alt model cu tool calling.
 3. Deschide `Start_Nova_AI_Studio.bat`. Nova caută un port liber între 4173 și 4190.
 4. În Nova, deschide **Configurare AI** și selectează Ollama sau un endpoint cloud.
 
-Nu sunt necesare pachete npm. Proiectele și backup-urile rămân în dosarul aplicației când rulezi local.
+Înainte de prima pornire, rulează `npm ci` în directorul aplicației pentru instalarea dependențelor. Proiectele și backup-urile rămân în dosarul aplicației când rulezi local.
 
 ## Configurare server
 

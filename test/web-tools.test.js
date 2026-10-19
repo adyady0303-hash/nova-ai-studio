@@ -25,6 +25,7 @@ function transport({ status = 200, type = 'text/html', body = '<h1>Hello</h1>', 
       res.statusCode = status;
       res.headers = { 'content-type': type, location };
       res.resume = () => req.emit('close');
+      res.destroy = () => req.emit('close');
       callback(res);
       res.emit('data', Buffer.from(body));
       res.emit('end'); req.emit('close');
@@ -59,4 +60,45 @@ test('search returns source links and excerpts and page reader strips scripts', 
   assert.equal(page.text, 'Public text');
   await assert.rejects(callWebTool('web_search', { query:'' }), /500/);
   assert.throws(() => searchResults('<html>blocked</html>'), /RSS/);
+});
+
+test('search keeps valid HTTP sources, skips malformed entries and deduplicates URLs', () => {
+  const item = (link, title = 'Sursă') => `<item><title>${title}</title><link>${link}</link><description>Text</description></item>`;
+  const results = searchResults(`<rss>${item('not-a-url')}${item('http://example.com/news')}${item('https://127.0.0.1/')}${item('javascript:alert(1)')}${item('http://example.com/news')}${item('https://example.org/')}</rss>`);
+  assert.deepEqual(results.map(result => result.url), ['http://example.com/news', 'https://example.org/']);
+});
+
+test('DNS failure and timeout surface useful errors without contacting the destination', async () => {
+  await assert.rejects(downloadPage('https://example.com', {
+    lookup: async () => { throw Object.assign(new Error('temporary failure'), { code: 'EAI_AGAIN' }); },
+    request: () => assert.fail('No resolved destination')
+  }), /EAI_AGAIN.*DNS/);
+  await assert.rejects(downloadPage('https://example.com', {
+    lookup: () => new Promise(() => {}), request: () => assert.fail('DNS never resolved')
+  }, 0, Date.now() + 20), /DNS/);
+  await assert.rejects(downloadPage('https://example.com', {
+    lookup: async () => [{ address:'8.8.8.8' }, { address:'10.0.0.1' }],
+    request: () => assert.fail('Mixed public/private DNS must be rejected')
+  }), /rezervate/);
+});
+
+test('page downloads reject aborted bodies and decode declared legacy charsets', async () => {
+  await assert.rejects(downloadPage('https://example.com', {
+    lookup,
+    request: (_url, _options, callback) => {
+      const req = new EventEmitter();
+      req.end = () => queueMicrotask(() => {
+        const res = new EventEmitter();
+        res.statusCode = 200; res.headers = { 'content-type':'text/html' };
+        callback(res); res.emit('data', Buffer.from('partial')); res.emit('aborted'); req.emit('close');
+      });
+      return req;
+    }
+  }), /întrerupt/);
+  const page = await downloadPage('https://example.com', {
+    lookup, request: transport({ type:'text/html; charset=windows-1252', body: Buffer.from([0x63,0x61,0x66,0xe9]) })
+  });
+  assert.equal(page.body, 'café');
+  await assert.rejects(callWebTool('web_search', null), /invalide/);
+  await assert.rejects(callWebTool('read_web_page', []), /invalide/);
 });

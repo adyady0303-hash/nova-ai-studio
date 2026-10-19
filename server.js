@@ -624,7 +624,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges, principal);
         events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : name === "web_search" ? `Căutare web: ${args.query}` : name === "read_web_page" ? `Pagină web citită: ${args.url}` : `Fișier citit: ${args.path}` });
-        const toolResultLimit = principal === "owner" ? 30000 : 10000;
+        const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : principal === "owner" ? 30000 : 10000;
         messages.push(aiProvider.provider === "openai"
           ? { role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) }
           : { role: "tool", tool_name: name, content: String(result).slice(0, toolResultLimit) });

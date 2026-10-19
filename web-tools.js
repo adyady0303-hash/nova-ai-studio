@@ -28,10 +28,16 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
   const url = webUrl(value);
   const remaining = deadline - Date.now();
   if (remaining <= 0) throw new Error('Pagina web nu a răspuns la timp.');
-  const addresses = await Promise.race([
-    lookup(url.hostname),
-    new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('Rezolvarea DNS a expirat.')), remaining); timer.unref(); })
-  ]);
+  let dnsTimer;
+  let addresses;
+  try {
+    addresses = await Promise.race([
+      lookup(url.hostname),
+      new Promise((_, reject) => { dnsTimer = setTimeout(() => reject(new Error('Rezolvarea DNS a expirat.')), remaining); })
+    ]);
+  } catch (error) {
+    throw new Error(`Nu pot rezolva adresa site-ului (${error.code || error.message}). Verifică DNS și accesul la internet al serverului.`);
+  } finally { clearTimeout(dnsTimer); }
   if (!addresses.length || addresses.some(item => !publicIpv4(item.address))) throw new Error('Adresele locale sau rezervate nu sunt permise.');
   return new Promise((resolve, reject) => {
     // Pin the validated address so DNS cannot change between validation and connection.
@@ -41,14 +47,14 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
       headers: { 'user-agent': 'NovaAIStudio/1.0', accept: 'text/html, application/rss+xml, application/xml, text/plain', 'accept-encoding': 'identity' }
     }, res => {
       if ([301,302,303,307,308].includes(res.statusCode)) {
-        res.resume();
+        res.destroy();
         if (redirects >= 3 || !res.headers.location) return reject(new Error('Prea multe redirecționări.'));
         try { resolve(downloadPage(new URL(res.headers.location, url).href, { lookup, request }, redirects + 1, deadline)); } catch (error) { reject(error); }
         return;
       }
-      if (res.statusCode !== 200) { res.resume(); return reject(new Error(`Site-ul a răspuns cu HTTP ${res.statusCode}.`)); }
+      if (res.statusCode !== 200) { res.destroy(); return reject(new Error(`Site-ul a răspuns cu HTTP ${res.statusCode}.`)); }
       if (!/^(text\/(html|plain)|application\/(rss\+xml|xml|xhtml\+xml))(;|$)/i.test(res.headers['content-type'] || '')) {
-        res.resume(); return reject(new Error('Pagina nu este HTML, XML sau text.'));
+        res.destroy(); return reject(new Error('Pagina nu este HTML, XML sau text.'));
       }
       let bytes = 0;
       const chunks = [];
@@ -58,7 +64,12 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
         chunks.push(chunk);
       });
       res.on('error', reject);
-      res.on('end', () => resolve({ url: url.href, body: Buffer.concat(chunks).toString('utf8') }));
+      res.on('aborted', () => reject(new Error('Site-ul a întrerupt descărcarea paginii.')));
+      res.on('end', () => {
+        const charset = res.headers['content-type'].match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1] || 'utf-8';
+        try { resolve({ url: url.href, body: new TextDecoder(charset).decode(Buffer.concat(chunks)) }); }
+        catch { reject(new Error('Codificarea textului paginii nu este acceptată.')); }
+      });
     });
     const timer = setTimeout(() => req.destroy(new Error('Pagina web nu a răspuns la timp.')), Math.max(1, deadline - Date.now()));
     req.on('close', () => clearTimeout(timer));
@@ -80,12 +91,23 @@ function pageText(body) {
 }
 function searchResults(body) {
   if (!/<rss\b/i.test(body)) throw new Error('Serviciul de căutare nu a returnat rezultate RSS valide.');
-  return [...body.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].slice(0,5).map(item => {
+  const sources = [];
+  for (const item of body.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
     const field = name => decodeText(item[1].match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, 'i'))?.[1] || '');
-    return { title: field('title'), url: webUrl(field('link')).href, excerpt: field('description').slice(0,1500) };
-  });
+    try {
+      const link = new URL(field('link'));
+      // HTTP links can be cited; page downloads still require HTTPS.
+      const check = new URL(link.href);
+      if (check.protocol === 'http:') check.protocol = 'https:';
+      webUrl(check.href);
+      if (!sources.some(source => source.url === link.href)) sources.push({ title: field('title'), url: link.href, excerpt: field('description').slice(0,1500) });
+    } catch { continue; }
+    if (sources.length === 5) break;
+  }
+  return sources;
 }
 async function callWebTool(name, args, download = downloadPage) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Argumente web invalide.');
   if (name === 'web_search') {
     if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 500) throw new Error('Căutarea trebuie să conțină între 1 și 500 de caractere.');
     const url = new URL('https://www.bing.com/search');
