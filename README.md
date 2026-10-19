@@ -21,9 +21,9 @@ Apelurile către modele cloud pot fi tarifate de furnizor. Nova nu include chei 
 1. Deschide [Deploy Nova AI Studio pe Render](https://render.com/deploy?repo=https://github.com/adyady0303-hash/nova-ai-studio) și conectează contul GitHub.
 2. Blueprint-ul `render.yaml` configurează serverul Node, autentificarea cu parolă, un volum persistent pentru proiecte și configurarea API OpenAI.
 3. Introdu cheia API numai în formularul privat Render. Nu o adăuga în GitHub, în pagina publică sau în conversații.
-4. După deploy, deschide URL-ul Render; apare formularul de autentificare Nova. Introdu utilizatorul și parola generate în dashboard.
+4. După deploy, administratorul intră cu utilizatorul și parola din dashboard. Vizitatorii pot apăsa „Creează un cont de abonat” pentru un spațiu privat separat.
 
-Serviciul online este protejat cu un singur cont partajat. Este destinat unei instanțe personale, nu unei platforme cu utilizatori separați. Planul Render și discul persistent pot necesita plată; folosirea API-ului AI poate costa separat. Nu am lansat serviciul cloud în contul tău.
+Pagina de autentificare permite vizitatorilor să-și creeze conturi separate de abonat. Proiectele lor sunt private, iar administratorul păstrează spațiul și setările AI existente. Un cont de abonat are implicit 20 de cereri AI pe zi și cel mult 10 proiecte; apelurile folosesc furnizorul AI configurat de administrator și pot avea costuri.
 
 ### Deploy cu Docker
 
@@ -50,12 +50,16 @@ Nu sunt necesare pachete npm. Proiectele și backup-urile rămân în dosarul ap
 | `HOST` / `PORT` | Adresa și portul serverului. Pentru publicare folosește `0.0.0.0` și portul dat de hosting. |
 | `NOVA_ACCESS_USER` / `NOVA_ACCESS_PASSWORD` | Autentificare prin formular Nova și cookie de sesiune `HttpOnly`, `Secure` și `SameSite`; parola trebuie să aibă cel puțin 20 de caractere pe host public. |
 | `NOVA_DATA_DIR` | Rădăcina proiectelor, backup-urilor și coșului de gunoi. Montează aici storage persistent. |
+| `NOVA_MAX_ACCOUNTS` | Numărul maxim de conturi de abonat; implicit `100`. |
+| `NOVA_SUBSCRIBER_DAILY_AI_LIMIT` | Cereri AI permise zilnic fiecărui abonat; implicit `20`. |
 | `AI_PROVIDER` | `ollama` sau `openai`. |
 | `OLLAMA_URL` | Endpoint-ul Ollama accesibil serverului; implicit `http://127.0.0.1:11434`. |
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` | Endpoint și cheie API pentru serviciu OpenAI compatibil. |
 | `OPENAI_MODEL` / `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` | Modelele pentru chat, generare de imagini și voce. |
 
 Cheia setată prin interfața Nova se păstrează numai în memoria procesului. Pentru instanțe găzduite, configureaz-o în secretele furnizorului de hosting, ca să supraviețuiască repornirilor.
+
+Conturile sunt salvate în `NOVA_DATA_DIR/data/subscriber-accounts.json`, cu parole protejate prin scrypt. Datele fiecărui abonat sunt păstrate în `NOVA_DATA_DIR/users/<account-id>/`; păstrează `NOVA_DATA_DIR` pe un volum persistent.
 
 ## Pagina publică și versiuni
 

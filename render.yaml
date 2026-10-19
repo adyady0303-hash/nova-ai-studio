@@ -29,6 +29,10 @@ services:
         value: gpt-image-1-mini
       - key: OPENAI_SPEECH_MODEL
         value: gpt-4o-mini-tts
+      - key: NOVA_MAX_ACCOUNTS
+        value: 100
+      - key: NOVA_SUBSCRIBER_DAILY_AI_LIMIT
+        value: 20
     disk:
       name: nova-data
       mountPath: /data
