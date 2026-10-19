@@ -710,7 +710,9 @@ body { overflow: hidden; color: #eff5ff; background: radial-gradient(ellipse at 
 .top-icon-btn { width: 30px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 8px; color: #899bb4; background: transparent; font-size: 18px; }
 .top-icon-btn:hover { color: #d8f5ff; background: #102039; }
 .top-icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
-.top-status { width: 9px; height: 9px; justify-content: center; overflow: hidden; padding: 0; border: 0; }
+.top-actions .top-status { display: flex; width: auto; height: auto; max-width: clamp(90px, 16vw, 200px); justify-content: center; overflow: hidden; padding: 0; border: 0; }
+.top-status #connectionText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-status .dot { flex-shrink: 0; }
 .top-status .dot { width: 7px; height: 7px; background: #ff729b; }
 .top-status .dot.on { background: #55e6d4; box-shadow: 0 0 11px rgb(85 230 212 / 72%); }
 #statusBadge { display: none; }

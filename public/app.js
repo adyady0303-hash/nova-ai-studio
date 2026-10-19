@@ -713,13 +713,16 @@ async function send() {
   const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
   if (!promptText) return;
   if (!model) { toast("Configurează furnizorul AI și alege un model."); return; }
+  const workspaceWasOpen = el("app").classList.contains("workspace-open");
   setView("chat");
   const mode = el("modeSelect").value;
   const task = el("taskSelect").value;
   const allowChanges = mode === "build" && el("allowChanges").checked;
   const currentProject = state.projects.find(project => project.id === state.project);
   const activeContent = state.activePath ? el("editor").value : "";
-  const contextualPrompt = `${promptText}\n\nProiect: ${currentProject?.name || state.project}\nFișier activ: ${state.activePath || "niciunul"}\nConținutul fișierului activ:\n\`\`\`${state.activePath?.split(".").pop() || "text"}\n${activeContent}\n\`\`\``;
+  const contextualPrompt = task === "code" || workspaceWasOpen
+    ? `${promptText}\n\nProiect: ${currentProject?.name || state.project}\nFișier activ: ${state.activePath || "niciunul"}\nConținutul fișierului activ:\n\`\`\`${state.activePath?.split(".").pop() || "text"}\n${activeContent}\n\`\`\``
+    : promptText;
   state.chat.push({ role: "user", content: contextualPrompt, displayContent: promptText });
   localStorage.setItem(chatKey(), JSON.stringify(state.chat));
   addBubble("user", promptText); el("prompt").value = "";

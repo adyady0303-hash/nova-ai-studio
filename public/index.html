@@ -384,7 +384,7 @@ body {background:#080b13;}
       <div class="top-actions">
         <button class="top-icon-btn" id="topSearchBtn" type="button" title="Search and create" aria-label="Focus the creation prompt">⌕</button>
         <button class="top-icon-btn" id="refreshModelsTop" type="button" title="Refresh AI status" aria-label="Refresh AI status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
-        <span class="top-status"><span class="dot" id="connectionDot"></span><span class="sr-only" id="connectionText">Checking AI connection</span><span class="badge" id="statusBadge">Connecting…</span></span>
+        <span class="top-status"><span class="dot" id="connectionDot"></span><span id="connectionText" role="status" aria-live="polite">Checking AI connection</span><span class="badge" id="statusBadge">Connecting…</span></span>
         <details class="account-menu">
           <summary class="account-avatar" aria-label="Account and settings"><span id="accountAvatarLabel">AI</span></summary>
           <div class="account-popover">
