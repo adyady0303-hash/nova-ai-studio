@@ -131,6 +131,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let mockChatPrompt = '';
   let mockChatLimit = null;
   let mockSpeechBody = null;
+  let mockSpeechMode = 'audio';
+  let mockImageBody = null;
   const providerServer = http.createServer((req, res) => {
     if (req.headers.authorization !== expectedAuthorization) {
       res.writeHead(401, { 'content-type': 'application/json' });
@@ -158,8 +160,22 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         mockSpeechBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (mockSpeechMode === 'html') {
+          res.writeHead(200, { 'content-type': 'text/html' });
+          return res.end('<html>Provider error</html>');
+        }
         res.writeHead(200, { 'content-type': 'audio/mpeg' });
-        res.end(Buffer.from('fake-mp3-audio'));
+        res.end(mockSpeechMode === 'empty' ? Buffer.alloc(0) : Buffer.from('fake-mp3-audio'));
+      });
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/v1/images/generations') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        mockImageBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' }] }));
       });
       return;
     }
@@ -291,6 +307,26 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     model: 'gpt-4o-mini-tts', voice: 'nova', input: 'Bun venit la Nova AI Studio.', response_format: 'mp3',
     instructions: 'Vorbește clar, natural și expresiv în limba textului.'
   });
+  const image = await post('/api/media/image', { prompt: 'Imagine de probă Nova' });
+  assert.equal(image.status, 200);
+  assert.match((await image.json()).dataUrl, /^data:image\/png;base64,iVBOR/);
+  assert.equal(mockImageBody.prompt, 'Imagine de probă Nova');
+  assert.equal(mockImageBody.model, 'gpt-image-1-mini');
+  assert.equal(mockImageBody.size, '1024x1024');
+  const legacyVoiceSettings = await post('/api/settings', {
+    provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, speechModel: 'tts-1'
+  });
+  assert.equal(legacyVoiceSettings.status, 200);
+  assert.equal((await post('/api/media/speech', { text: 'Voce compatibilă.' })).status, 200);
+  assert.equal(mockSpeechBody.model, 'tts-1');
+  assert.equal(Object.hasOwn(mockSpeechBody, 'instructions'), false);
+  for (const mode of ['html', 'empty']) {
+    mockSpeechMode = mode;
+    const invalidAudio = await post('/api/media/speech', { text: 'Test fișier invalid' });
+    assert.equal(invalidAudio.status, 502);
+    assert.equal(Object.hasOwn(await invalidAudio.json(), 'dataUrl'), false);
+  }
+  mockSpeechMode = 'audio';
 
   expectedAuthorization = 'Bearer valid-test-key';
   const invalidKeySettings = await post('/api/settings', {
@@ -298,6 +334,9 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     apiKey: 'invalid-test-key', textModel: 'gpt-4.1-mini'
   });
   assert.equal(invalidKeySettings.status, 200);
+  const rejectedVoice = await post('/api/media/speech', { text: 'Test autentificare furnizor' });
+  assert.equal(rejectedVoice.status, 401);
+  assert.equal((await rejectedVoice.json()).providerError, true);
   const rejectedAiHealth = await request('/api/health');
   const rejectedAiStatus = await rejectedAiHealth.json();
   assert.equal(rejectedAiStatus.connected, false, JSON.stringify(rejectedAiStatus));

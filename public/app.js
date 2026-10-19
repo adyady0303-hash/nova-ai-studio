@@ -16,7 +16,7 @@ async function api(url, options = {}) {
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    if (response.status === 401) window.location.replace("/?session=expired");
+    if (response.status === 401 && !data.providerError) window.location.replace("/?session=expired");
     throw new Error(data.error || `Cererea a eșuat (${response.status}).`);
   }
   return data;
@@ -262,13 +262,13 @@ function parseCreativeSpec(content) {
     const raw = JSON.parse(match[2]);
     const title = String(raw.title || (match[1] === "music" ? "Compoziție Nova" : "Video Nova")).slice(0, 100);
     if (match[1].toLowerCase() === "music") {
-      const notes = (Array.isArray(raw.notes) ? raw.notes : []).slice(0, 128).map(item => ({
+      const notes = (Array.isArray(raw.notes) ? raw.notes : []).filter(item => item && typeof item === "object").slice(0, 128).map(item => ({
         note: String(item.note || ""), beats: Math.min(4, Math.max(0.25, Number(item.beats) || 1))
       })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
       if (!notes.length) throw new Error("Nu există note valide.");
       return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes } };
     }
-    const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).slice(0, 12).map(scene => ({
+    const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).filter(scene => scene && typeof scene === "object").slice(0, 12).map(scene => ({
       text: String(scene.text || "").slice(0, 280),
       seconds: Math.min(8, Math.max(2, Number(scene.seconds) || 4)),
       background: /^#[0-9a-f]{6}$/i.test(String(scene.background || "")) ? scene.background : "#18221a"
@@ -362,31 +362,82 @@ function drawVideoFrame(ctx, spec, elapsed, width, height) {
   ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.font = "16px Segoe UI, sans-serif"; ctx.textAlign = "right"; ctx.fillText(`${index + 1} / ${spec.scenes.length}`, width - 72, height - 72);
 }
 
+function waitForMedia(media, readyEvent, ready, description) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => { clearTimeout(timer); media.removeEventListener(readyEvent, loaded); media.removeEventListener("error", failed); };
+    const loaded = () => { cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error(`${description} nu a putut fi încărcat. Regenerează fișierul și reîncearcă.`)); };
+    const timer = setTimeout(failed, 15000);
+    media.addEventListener(readyEvent, loaded, { once: true });
+    media.addEventListener("error", failed, { once: true });
+    if (media.error) failed(); else if (ready()) loaded();
+  });
+}
+
 async function exportVideo(spec) {
   if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Browserul nu acceptă export video WebM local.");
-  spec.sceneImages = await Promise.all(spec.scenes.map(scene => scene.image ? new Promise(resolve => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => resolve(null); image.src = scene.image; }) : null));
-  const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 720;
-  const ctx = canvas.getContext("2d"), stream = canvas.captureStream(24);
-  let voice = null, audioContext = null;
-  if (spec.voiceDataUrl && window.AudioContext) {
-    audioContext = new AudioContext(); voice = new Audio(spec.voiceDataUrl); voice.preload = "auto";
-    const source = audioContext.createMediaElementSource(voice), destination = audioContext.createMediaStreamDestination();
-    source.connect(destination); stream.addTrack(destination.stream.getAudioTracks()[0]);
-    await new Promise(resolve => { if (voice.readyState >= 1) resolve(); else { voice.onloadedmetadata = resolve; voice.onerror = resolve; } });
-  }
   const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type));
   if (!mime) throw new Error("Browserul nu oferă un format WebM compatibil.");
-  const chunks = [], recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2500000 });
-  const stopped = new Promise((resolve, reject) => { recorder.onstop = resolve; recorder.onerror = () => reject(new Error("Exportul video a eșuat.")); });
-  const sceneDuration = Math.min(60, spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0));
-  const total = Math.min(120, Math.max(sceneDuration, Number(voice?.duration) || 0));
-  drawVideoFrame(ctx, spec, 0, canvas.width, canvas.height);
-  recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-  recorder.start(250);
-  if (voice) { await audioContext.resume(); await voice.play(); }
-  await new Promise(resolve => { const start = performance.now(); const frame = now => { const elapsed = (now - start) / 1000; drawVideoFrame(ctx, spec, elapsed, canvas.width, canvas.height); if (elapsed >= total) { recorder.stop(); resolve(); } else requestAnimationFrame(frame); }; requestAnimationFrame(frame); });
-  await stopped; stream.getTracks().forEach(track => track.stop()); voice?.pause(); if (audioContext) await audioContext.close();
-  return new Blob(chunks, { type: mime });
+  let stream, voice, audioContext, recorder, frameId, recordingTimer;
+  try {
+    spec.sceneImages = await Promise.all(spec.scenes.map(async scene => {
+      if (!scene.image) return null;
+      const image = new Image();
+      image.crossOrigin = "anonymous";
+      image.src = scene.image;
+      await waitForMedia(image, "load", () => image.complete && image.naturalWidth > 0, "Imaginea scenei");
+      return image;
+    }));
+    if (spec.voiceDataUrl) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("Browserul nu poate include voice-over în videoclip.");
+      audioContext = new AudioContextClass();
+      voice = new Audio(); voice.preload = "auto"; voice.src = spec.voiceDataUrl;
+      await waitForMedia(voice, "loadedmetadata", () => voice.readyState >= 1, "Voice-over-ul");
+      if (!Number.isFinite(voice.duration) || voice.duration <= 0) throw new Error("Voice-over-ul nu are o durată validă. Regenerează fișierul audio.");
+    }
+    const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 720;
+    const ctx = canvas.getContext("2d");
+    stream = canvas.captureStream(24);
+    if (voice) {
+      const source = audioContext.createMediaElementSource(voice), destination = audioContext.createMediaStreamDestination();
+      source.connect(destination);
+      for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
+      await audioContext.resume();
+    }
+    const chunks = [];
+    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2500000 });
+    const sceneDuration = spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
+    const total = Math.min(120, Math.max(sceneDuration, voice?.duration || 0));
+    drawVideoFrame(ctx, spec, 0, canvas.width, canvas.height);
+    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+    await new Promise((resolve, reject) => {
+      recorder.onstop = resolve;
+      recorder.onerror = () => reject(new Error("Exportul video a eșuat."));
+      recordingTimer = setTimeout(() => reject(new Error("Exportul video a expirat. Păstrează fila activă și reîncearcă.")), (total + 15) * 1000);
+      recorder.start(250);
+      if (voice) voice.play().catch(reject);
+      const start = performance.now();
+      const frame = now => {
+        try {
+          const elapsed = (now - start) / 1000;
+          drawVideoFrame(ctx, spec, elapsed, canvas.width, canvas.height);
+          if (elapsed >= total) recorder.stop(); else frameId = requestAnimationFrame(frame);
+        } catch (error) { reject(error); }
+      };
+      frameId = requestAnimationFrame(frame);
+    });
+    const blob = new Blob(chunks, { type: mime });
+    if (!blob.size) throw new Error("Exportul video este gol. Reîncearcă într-un browser compatibil.");
+    return blob;
+  } finally {
+    clearTimeout(recordingTimer);
+    if (frameId !== undefined) cancelAnimationFrame(frameId);
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    stream?.getTracks().forEach(track => track.stop());
+    if (voice) { voice.pause(); voice.removeAttribute("src"); voice.load(); }
+    if (audioContext && audioContext.state !== "closed") await audioContext.close();
+  }
 }
 
 async function generateSpeech(text) {
@@ -459,7 +510,7 @@ async function generateImageFromPrompt() {
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = "Se generează imaginea…"; messageContainer().append(pending);
   el("prompt").value = "";
   try { const result = await api("/api/media/image", jsonBody({ prompt })); addImageCard(prompt, result); }
-  catch (error) { addBubble("assistant", error.message); }
+  catch (error) { if (!el("prompt").value.trim()) { el("prompt").value = prompt; resizePrompt(); } addBubble("assistant", error.message); }
   finally { pending.remove(); button.disabled = false; }
 }
 

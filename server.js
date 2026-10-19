@@ -429,9 +429,13 @@ async function openAiBytes(route, body, timeout = 180000) {
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`);
+    throw Object.assign(new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`), { status: response.status });
   }
-  return { mime: response.headers.get("content-type") || "audio/mpeg", base64: Buffer.from(await response.arrayBuffer()).toString("base64") };
+  const mime = (response.headers.get("content-type") || "audio/mpeg").split(";")[0].trim().toLowerCase();
+  if (!mime.startsWith("audio/") && mime !== "application/octet-stream") throw new Error("Furnizorul vocal nu a returnat un fișier audio.");
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!bytes.length) throw new Error("Furnizorul vocal a returnat un fișier gol.");
+  return { mime: mime === "application/octet-stream" ? "audio/mpeg" : mime, base64: bytes.toString("base64") };
 }
 
 async function providerChat(model, messages, tools, maxOutputTokens = null) {
@@ -730,7 +734,7 @@ async function handle(req, res) {
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
       const format = image.output_format || "png";
       return json(res, 200, { dataUrl: image.b64_json ? `data:image/${format};base64,${image.b64_json}` : image.url, format, model: aiProvider.imageModel });
-    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea imaginii a eșuat." }); }
+    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea imaginii a eșuat.", providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/speech") {
@@ -745,10 +749,10 @@ async function handle(req, res) {
         voice: aiProvider.voice,
         input,
         response_format: "mp3",
-        instructions: "Vorbește clar, natural și expresiv în limba textului."
+        ...(aiProvider.speechModel.startsWith("gpt-4o-mini-tts") ? { instructions: "Vorbește clar, natural și expresiv în limba textului." } : {})
       }, 300000);
       return json(res, 200, { dataUrl: `data:${speech.mime};base64,${speech.base64}`, model: aiProvider.speechModel });
-    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea vocii a eșuat." }); }
+    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea vocii a eșuat.", providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/ai/test") {
