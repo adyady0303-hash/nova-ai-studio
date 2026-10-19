@@ -373,7 +373,7 @@ body {background:#080b13;}
   <div class="app" id="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-lockup"><span class="logo">N</span><span>Nova AI Studio</span><span class="badge" id="instanceBadge">LOCAL</span></div>
+        <div class="brand-lockup"><span class="logo">N</span><span>Nova AI Studio</span><span class="badge" id="instanceBadge">ONLINE · CLOUD</span></div>
       </div>
       <nav class="global-nav" aria-label="Main navigation">
         <button class="global-nav-link active" data-view="home" type="button">Home</button>
@@ -405,7 +405,7 @@ body {background:#080b13;}
       <div class="side-title">Creează cu Nova</div>
       <nav class="create-menu" aria-label="Moduri de creație">
         <button class="create-item active" data-task="auto" aria-label="Chat liber" title="Chat liber"><span class="create-icon">✦</span><span>Chat liber</span></button>
-        <button class="create-item" data-task="code" aria-label="Cod și aplicații pentru PC" title="Cod și aplicații"><span class="create-icon">{ }</span><span>Cod & aplicații PC</span></button>
+        <button class="create-item" data-task="code" aria-label="Cod și aplicații" title="Cod și aplicații"><span class="create-icon">{ }</span><span>Cod & aplicații</span></button>
         <button class="create-item" data-task="lyrics" aria-label="Texte și versuri" title="Texte și versuri"><span class="create-icon">✎</span><span>Texte & versuri</span></button>
         <button class="create-item" data-task="music" aria-label="Muzică" title="Muzică"><span class="create-icon">♫</span><span>Muzică</span></button>
         <button class="create-item" data-task="video" aria-label="Video și scenarii" title="Video și scenarii"><span class="create-icon">▶</span><span>Video & scenarii</span></button>
@@ -484,7 +484,7 @@ body {background:#080b13;}
           </div>
           <label class="sr-only" for="taskSelect">Tipul cererii</label>
           <select id="taskSelect" class="sr-only" aria-label="Tipul cererii">
-            <option value="auto">Chat liber</option><option value="code">Cod pentru Windows / PC</option><option value="lyrics">Versuri</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
+            <option value="auto">Chat liber</option><option value="code">Cod și aplicații</option><option value="lyrics">Versuri</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
           </select>
           <textarea class="prompt" id="prompt" placeholder="Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)" aria-label="Mesaj pentru Nova"></textarea>
           <div class="composer-bottom">
@@ -506,15 +506,15 @@ body {background:#080b13;}
         <div class="editor-meta"><button class="btn small" id="undoBtn" title="Anulează ultima modificare salvată">Undo</button><button class="btn small" id="copyBtn" title="Copiază codul">Copiază</button><button class="btn small" id="deleteFileBtn" title="Mută fișierul în coș">Șterge</button><button class="btn small" id="saveBtn">Salvează</button><button class="btn small" id="downloadBtn">Descarcă</button></div>
       </div>
       <div class="editor-wrap"><div class="gutter" id="gutter">1</div><textarea class="editor" id="editor" spellcheck="false" aria-label="Editor de cod"></textarea></div>
-      <div class="editor-foot"><span id="languageLabel">JavaScript</span><span><span id="lineCount">1</span> linii · salvate local</span></div>
+      <div class="editor-foot"><span id="languageLabel">JavaScript</span><span><span id="lineCount">1</span> linii · salvate pe server</span></div>
     </section>
   </div>
 
   <dialog class="provider-dialog" id="providerDialog" aria-labelledby="providerDialogTitle">
     <form method="dialog" class="provider-panel" id="providerForm">
-      <div class="provider-head"><div><div class="eyebrow">Conexiuni locale și cloud</div><h2 id="providerDialogTitle">Configurare AI</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
-      <label for="providerSelect">Furnizor AI</label><select id="providerSelect"><option value="ollama">Ollama · modele locale</option><option value="openai">OpenAI · cloud/API compatibilă</option></select>
-      <div id="openAiFields" class="provider-fields" hidden>
+      <div class="provider-head"><div><div class="eyebrow">Internet și cloud</div><h2 id="providerDialogTitle">Configurare AI</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <label for="providerSelect">Furnizor AI</label><select id="providerSelect"><option value="openai">OpenAI · cloud/API compatibilă</option></select>
+      <div id="openAiFields" class="provider-fields">
         <label for="apiBaseUrl">Adresă API compatibilă</label><input id="apiBaseUrl" value="https://api.openai.com/v1" autocomplete="url">
         <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" placeholder="Lasă gol pentru a păstra cheia existentă">
         <div class="provider-note" id="apiKeyState">Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.</div>
@@ -523,7 +523,7 @@ body {background:#080b13;}
         <div class="provider-row"><div><label for="speechModel">Model voce</label><input id="speechModel" value="gpt-4o-mini-tts" autocomplete="off"></div><div><label for="voiceSelect">Voce</label><select id="voiceSelect"><option>nova</option><option>alloy</option><option>coral</option><option>echo</option><option>fable</option><option>onyx</option><option>shimmer</option><option>verse</option><option>sage</option><option>ash</option><option>ballad</option><option>marin</option><option>cedar</option></select></div></div>
         <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API salvată</label>
       </div>
-      <div class="provider-note">Ollama rulează pe calculatorul sau serverul unde pornește Nova. Cu un furnizor cloud, mesajele și conținutul selectat din proiect se trimit către acel furnizor. Apelurile API pot costa.</div>
+      <div class="provider-note">Nova AI Studio este disponibilă pe internet. Mesajele și conținutul selectat din proiect sunt trimise furnizorului AI cloud configurat. Cheia este păstrată criptat pe server. Apelurile API pot costa.</div>
       <div class="provider-note">Conexiunea AI și căutarea pe internet sunt verificate separat. Verificarea web nu consumă unități AI. Rezultatul se păstrează cel mult un minut.</div>
       <button class="btn" type="button" id="testWebConnection">Verifică accesul la internet</button>
       <div class="provider-note" id="webConnectionStatus" role="status" aria-live="polite">Acces web neverificat.</div>

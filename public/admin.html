@@ -138,7 +138,7 @@
         byId("serviceState").textContent="Nova AI Studio online";
         byId("serviceDetail").textContent="Panou conectat la instanța ta privată.";
         if(settings){
-          byId("provider").textContent=settings.provider==="openai"?"OpenAI / compatibil":"Ollama local";
+          byId("provider").textContent=settings.provider==="openai"?"OpenAI · cloud":"Furnizor cloud neconfigurat";
           byId("model").textContent=settings.textModel||"Nespecificat";
           byId("keyState").textContent=settings.apiKeyConfigured?"Configurată · valoarea ascunsă":"Lipsește";
         }else{
@@ -147,11 +147,11 @@
         if(health){
           const isOpenAI=health.provider==="openai";
           aiTestModel=(health.models&&health.models[0])||(settings&&settings.textModel)||"";
-          setPill(isOpenAI?(health.connected?"OpenAI · conexiune verificată":"OpenAI neconectat"):(health.connected?"Ollama conectat":"Ollama neconectat"),Boolean(health.connected));
-          byId("aiDiagnostic").textContent=health.connected
-            ? (isOpenAI?"Serverul a validat cheia OpenAI și a primit lista modelelor.":"Serverul a contactat Ollama și a citit modelele instalate.")
-            : (health.error||"Furnizorul AI nu a putut fi verificat.");
-          byId("aiDiagnostic").className="notice"+(health.connected?"":" error");
+          setPill(isOpenAI && health.connected ? "AI cloud · conexiune verificată" : "AI cloud neconectat", Boolean(isOpenAI && health.connected));
+          byId("aiDiagnostic").textContent=!isOpenAI ? "Configurează furnizorul AI cloud din Configurare AI."
+            : health.connected ? "Serverul a validat conexiunea AI cloud și a primit lista modelelor."
+            : (health.error||"Furnizorul AI cloud nu a putut fi verificat.");
+          byId("aiDiagnostic").className="notice"+(isOpenAI && health.connected?"":" error");
         }else{
           setPill("Nu s-a putut citi starea AI",false);
           byId("aiDiagnostic").textContent="Nova nu a putut citi starea AI. Reîncarcă datele sau deschide configurarea AI.";

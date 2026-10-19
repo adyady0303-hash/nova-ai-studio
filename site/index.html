@@ -13,22 +13,22 @@
 <body>
   <header class="wrap nav">
     <a class="brand" href="#top" aria-label="Nova AI Studio, acasă"><span class="mark">N</span><span>Nova AI Studio</span></a>
-    <nav class="nav-links" aria-label="Navigare"><a href="#features">Funcții</a><a href="#start">Pornire</a><a href="privacy.html">Confidențialitate</a><a class="button" href="https://github.com/adyady0303-hash/nova-ai-studio/releases/latest">Vezi versiunea ↓</a></nav>
+    <nav class="nav-links" aria-label="Navigare"><a href="#features">Funcții</a><a href="#start">Pornire</a><a href="privacy.html">Confidențialitate</a><a class="button" href="https://www.nova-ai-studio.eu">Deschide aplicația ↗</a></nav>
   </header>
   <main id="top">
     <section class="wrap hero">
       <div>
-        <span class="eyebrow"><span class="spark"></span> Studio AI local sau online, protejat</span>
+        <span class="eyebrow"><span class="spark"></span> Studio AI online · internet și cloud</span>
         <h1>Cod și idei.<br><span style="color:var(--green)">Într-un singur chat.</span></h1>
-        <p>Scrie cod pentru PC, compune versuri și schițe muzicale, generează imagini și voice-over, apoi creează un videoclip WebM cu scene ilustrate. Alege Ollama local sau conectează o API cloud.</p>
-        <div class="actions"><a class="button" href="https://render.com/deploy?repo=https://github.com/adyady0303-hash/nova-ai-studio">Publică instanța online ↗</a><a class="button secondary" href="https://github.com/adyady0303-hash/nova-ai-studio/releases/latest">Descarcă versiunea ↓</a><a class="button secondary" href="https://github.com/adyady0303-hash/nova-ai-studio">Cod sursă ↗</a></div>
-        <div class="meta">Versiunea 0.6.0 · Local sau instanță online personală cu autentificare</div>
+        <p>Scrie cod, creează idei de afaceri, compune versuri și schițe muzicale, ascultă texte cu voce AI și exportă videoclipuri WebM. Accesează Nova online și folosește furnizorul AI cloud configurat pentru contul tău.</p>
+        <div class="actions"><a class="button" href="https://www.nova-ai-studio.eu">Deschide Nova AI ↗</a><a class="button secondary" href="https://www.nova-ai-studio.eu/plans.html">Vezi abonamentele ↗</a><a class="button secondary" href="https://github.com/adyady0303-hash/nova-ai-studio">Cod sursă ↗</a></div>
+        <div class="meta">Versiunea 1.2.8 · Aplicație online cu AI cloud și conturi private</div>
       </div>
       <div class="preview" aria-label="Previzualizare interfață Nova AI Studio" role="img">
-        <div class="windowbar"><i></i><i></i><i></i><span>Nova AI Studio · local</span></div>
+        <div class="windowbar"><i></i><i></i><i></i><span>Nova AI Studio · online</span></div>
         <div class="mock">
           <div class="mock-side"><b>⌘ Nova Playground</b><div>src/index.js</div><div>README.md</div><div>package.json</div></div>
-          <div class="mock-code"><em>function</em> greet(name) {<br>  <strong>return</strong> `Salut, ${name}!`;<br>}<br><br><em>const</em> result = greet(<strong>"Nova"</strong>);<br>console.log(result);<br><br><em>// Salvat local</em></div>
+          <div class="mock-code"><em>function</em> greet(name) {<br>  <strong>return</strong> `Salut, ${name}!`;<br>}<br><br><em>const</em> result = greet(<strong>"Nova"</strong>);<br>console.log(result);<br><br><em>// Salvat în proiect</em></div>
           <div class="mock-chat"><b>Agent Nova</b><div class="bubble">Adaugă o funcție de salut.</div><div class="bubble answer">Am adăugat `greet()` în src/index.js. Poți reveni cu Undo.</div></div>
         </div>
       </div>
@@ -36,7 +36,7 @@
     <section class="section" id="features"><div class="wrap">
       <div class="section-head"><span class="kicker">Spațiul tău de lucru</span><h2>Cod, versuri și media, în același chat.</h2><p>Alegi modelul AI și decizi când agentul poate modifica fișierele proiectului.</p></div>
       <div class="grid">
-        <article class="card"><div class="card-icon">⌘</div><h3>Cod pentru Windows și PC</h3><p>Construiește proiecte locale, importă foldere de cod și revizuiește fișiere cu modelul ales.</p></article>
+        <article class="card"><div class="card-icon">⌘</div><h3>Cod și aplicații</h3><p>Creează proiecte și revizuiește fișiere cu modelul AI cloud, direct din aplicația online.</p></article>
         <article class="card"><div class="card-icon">♫</div><h3>Versuri și schițe muzicale</h3><p>Scrie versuri și compoziții; exportă o melodie instrumentală simplă ca WAV.</p></article>
         <article class="card"><div class="card-icon">✦</div><h3>Imagini și voice-over</h3><p>Conectează API compatibilă pentru ilustrații PNG și vorbire MP3; cheia rămâne pe serverul tău.</p></article>
         <article class="card"><div class="card-icon">▶</div><h3>Video cu imagini și voce</h3><p>Compune scene WebM din storyboard și ilustrații generate; adaugă voice-over MP3 ca pistă audio.</p></article>
@@ -44,14 +44,14 @@
       </div>
     </div></section>
     <section class="section" id="start"><div class="wrap">
-      <div class="section-head"><span class="kicker">Alege cum rulează</span><h2>Local pe PC sau online cu parolă.</h2><p>Pagina GitHub Pages prezintă Nova și distribuie versiunea. Aplicația online rulează separat pe un serviciu cu server Node.</p></div>
+      <div class="section-head"><span class="kicker">Acces prin internet</span><h2>Deschide aplicația online.</h2><p>Nova AI Studio este disponibilă online, cu autentificare și proiecte private. Folosește aplicația din browser.</p></div>
       <div class="steps">
-        <article class="step"><h3>Deploy online</h3><p>Conectează repo-ul la Render și setează cheia furnizorului AI în configurația privată a serviciului.</p></article>
-        <article class="step"><h3>Protejează accesul</h3><p>Render generează o parolă; folosește-o pentru instanța ta personală. Proiectele sunt private în storage-ul persistent.</p></article>
-        <article class="step"><h3>Începe să creezi</h3><p>Alege modelul de chat, imagine sau voice-over din fereastra Configurare AI și lucrează în aceeași conversație.</p></article>
+        <article class="step"><h3>Deschide Nova</h3><p>Accesează www.nova-ai-studio.eu pentru a deschide studioul AI.</p></article>
+        <article class="step"><h3>Creează-ți contul</h3><p>Autentifică-te sau creează un cont de vizitator. Proiectele tale sunt păstrate separat pe server.</p></article>
+        <article class="step"><h3>Începe să creezi</h3><p>Descrie ce vrei în chat și folosește funcțiile disponibile pentru contul tău. Administratorul configurează conexiunea AI cloud.</p></article>
       </div>
-      <p style="margin-top:27px"><a class="button" href="https://render.com/deploy?repo=https://github.com/adyady0303-hash/nova-ai-studio">Pornește deploy-ul online ↗</a> <a class="button secondary" href="https://github.com/adyady0303-hash/nova-ai-studio/releases/latest">Vezi arhiva de instalare ↓</a></p>
-      <div class="notice" style="margin-top:24px"><strong>Ce înseamnă online:</strong> Render găzduiește aplicația; această pagină rămâne prezentare. Instanța inclusă este cu un singur cont partajat, destinată unei persoane, iar planul cu storage persistent și apelurile AI pot costa. Exportul WAV este o schiță instrumentală sintetizată, nu cântec cu voce; video-ul este montat din scene și imagini, nu este filmare AI fotorealistă.</div>
+      <p style="margin-top:27px"><a class="button" href="https://www.nova-ai-studio.eu">Intră în aplicație ↗</a> <a class="button secondary" href="https://www.nova-ai-studio.eu/plans.html">Vezi abonamentele ↗</a></p>
+      <div class="notice" style="margin-top:24px"><strong>Ce înseamnă online:</strong> Render găzduiește aplicația; această pagină rămâne prezentare. Vizitatorii au conturi și proiecte private. Funcțiile și consumul AI depind de planul contului. Exportul WAV este o schiță instrumentală sintetizată, nu cântec cu voce; video-ul este montat din scene și imagini, nu este filmare AI fotorealistă.</div>
     </div></section>
   </main>
   <footer class="wrap footer"><span>© 2026 Nova AI Studio · Creat pentru dezvoltatori</span><div class="footer-links"><a href="privacy.html">Confidențialitate</a><a href="https://github.com/adyady0303-hash/nova-ai-studio">GitHub</a><a href="https://github.com/adyady0303-hash/nova-ai-studio/issues">Suport</a></div></footer>

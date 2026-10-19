@@ -49,39 +49,39 @@ async function loadAccount() {
 async function refreshHealth() {
   const badge = el("statusBadge"), dot = el("connectionDot"), label = el("connectionText"), select = el("modelSelect");
   const sideDot = el("sidebarConnectionDot"), sideLabel = el("sidebarConnectionText");
-  const localInstance = ["localhost", "127.0.0.1", "::1"].includes(location.hostname);
-  el("instanceBadge").textContent = localInstance ? "LOCAL" : "ONLINE PRIVAT";
-  el("projectStorageLabel").textContent = localInstance ? "Fișiere pe acest calculator" : "Fișiere pe serverul privat";
+  el("instanceBadge").textContent = "ONLINE · CLOUD";
+  el("projectStorageLabel").textContent = "Fișiere pe serverul cloud";
   try {
     const data = await api("/api/health");
+    if (data.provider !== "openai") throw new Error("Configurează furnizorul AI cloud din Configurare AI.");
     if (!data.connected) {
-      const message = data.error || (data.provider === "openai" ? "Cheia API lipsește" : "Ollama nu este disponibil");
+      const message = data.error || "Conexiunea AI cloud nu este disponibilă";
       label.title = message;
       sideLabel.title = message;
       throw new Error(message);
     }
     label.removeAttribute("title"); sideLabel.removeAttribute("title");
-    dot.classList.add("on"); label.textContent = data.provider === "openai" ? `OpenAI · ${data.version}` : `Ollama ${data.version}`;
-    sideDot.classList.add("on"); sideLabel.textContent = data.provider === "openai" ? "OpenAI conectat" : "Ollama conectat";
-    badge.textContent = data.provider === "openai" ? "OpenAI · conexiune verificată" : "Ollama conectat";
+    dot.classList.add("on"); label.textContent = "AI cloud conectat";
+    sideDot.classList.add("on"); sideLabel.textContent = "AI cloud conectat";
+    badge.textContent = "Cloud · conexiune verificată";
     badge.style.color = "var(--green)"; badge.style.borderColor = "#364131";
     const previous = select.value; select.replaceChildren();
-    if (!data.models.length) select.add(new Option(data.provider === "openai" ? "Setează modelul cloud" : "Niciun model instalat", ""));
+    if (!data.models.length) select.add(new Option("Setează modelul cloud", ""));
     else { data.models.forEach(model => select.add(new Option(model, model))); if (data.models.includes(previous)) select.value = previous; }
   } catch (error) {
-    dot.classList.remove("on"); label.textContent = state.settings?.provider === "openai" ? "OpenAI neconectat" : "Ollama deconectat"; badge.textContent = "AI neconectat";
+    dot.classList.remove("on"); label.textContent = "AI cloud neconectat"; badge.textContent = "AI neconectat";
     sideDot.classList.remove("on");
-    const reason = error?.message || (state.settings?.provider === "openai" ? "Verifică OPENAI_API_KEY în Render." : "Pornește Ollama și reîncarcă.");
+    const reason = error?.message || "Verifică setările furnizorului AI cloud.";
     sideLabel.textContent = reason;
     label.title = reason; sideLabel.title = reason; badge.title = reason;
     badge.style.color = "#e4a69b"; badge.style.borderColor = "#583b35";
-    select.replaceChildren(new Option(state.settings?.provider === "openai" ? "Configurează cheia API" : "Pornește Ollama și reîncarcă", ""));
+    select.replaceChildren(new Option("Configurează AI cloud", ""));
   }
 }
 
 async function loadProviderSettings() {
   const { settings } = await api("/api/settings"); state.settings = settings;
-  el("providerSelect").value = settings.provider;
+  el("providerSelect").value = "openai";
   el("apiBaseUrl").value = settings.baseUrl;
   el("textModel").value = settings.textModel;
   el("imageModel").value = settings.imageModel;
@@ -92,7 +92,7 @@ async function loadProviderSettings() {
   el("apiKeyState").textContent = settings.apiKeyConfigured
     ? "O cheie este deja configurată și se păstrează criptat pe server. Lasă câmpul gol pentru a o păstra. Cheia nu este returnată în browser."
     : "Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.";
-  el("openAiFields").hidden = settings.provider !== "openai";
+  el("openAiFields").hidden = false;
   await refreshHealth();
 }
 
@@ -123,7 +123,7 @@ async function saveProviderSettings() {
   const result = await api("/api/settings", jsonBody(settings));
   state.settings = result.settings; el("apiKey").value = "";
   el("providerDialog").close(); await refreshHealth();
-  toast(settings.provider === "openai" ? "Conexiunea AI cloud a fost salvată" : "Ollama local a fost selectat");
+  toast("Conexiunea AI cloud a fost salvată");
 }
 
 function renderProjects() {
@@ -314,7 +314,7 @@ function noteFrequency(note) {
 
 async function createWav(spec) {
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Offline) throw new Error("Browserul nu acceptă export audio local.");
+  if (!Offline) throw new Error("Browserul nu acceptă export audio WAV.");
   const rate = 22050, beatSeconds = 60 / spec.bpm;
   const duration = Math.min(90, spec.notes.reduce((sum, item) => sum + item.beats * beatSeconds, 0) + 0.2);
   const audio = new Offline(1, Math.ceil(duration * rate), rate);
@@ -388,7 +388,7 @@ function waitForMedia(media, readyEvent, ready, description) {
 }
 
 async function exportVideo(spec) {
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Browserul nu acceptă export video WebM local.");
+  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Browserul nu acceptă export video WebM.");
   const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type));
   if (!mime) throw new Error("Browserul nu oferă un format WebM compatibil.");
   let stream, voice, audioContext, recorder, frameId, recordingTimer;
@@ -546,9 +546,9 @@ function addCreativeCard(node, spec) {
   if (spec.type === "music") {
     detail.textContent = `${spec.bpm} BPM · ${spec.notes.length} note · sintetizator simplu`;
     action.textContent = "Generează WAV";
-    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se sintetizează audio local…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = "Audio sintetizat local · fără voce cântată"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se generează fișierul audio…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = "Audio WAV creat · melodie instrumentală"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
   } else {
-    detail.textContent = `${spec.scenes.length} scene · videoclip WebM compus local${spec.scenes.some(scene => scene.image) ? " cu imagini AI" : " cu fundaluri animate"}`;
+    detail.textContent = `${spec.scenes.length} scene · videoclip WebM${spec.scenes.some(scene => scene.image) ? " cu imagini AI" : " cu fundaluri animate"}`;
     const images = document.createElement("button"); images.className = "btn small"; images.textContent = "Generează imagini pentru scene";
     images.addEventListener("click", async () => {
       if (!confirm(`Se va genera câte o imagine AI pentru ${spec.scenes.length} scene. Furnizorul API poate taxa fiecare imagine. Continui?`)) return;
@@ -581,7 +581,7 @@ function addCreativeCard(node, spec) {
       finally { voice.disabled = false; }
     });
     action.textContent = "Exportă WebM";
-    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se randează videoclipul în browser…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat local${spec.voiceDataUrl ? " cu voice-over" : ""} · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se pregătește videoclipul…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat${spec.voiceDataUrl ? " cu voice-over" : ""} · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
     card.append(heading, detail, images, voice, action, output); node.append(card); return;
   }
   card.append(heading, detail, action, output); node.append(card);
@@ -685,7 +685,7 @@ async function renameProject() {
 
 async function deleteProject() {
   const current = state.projects.find(project => project.id === state.project); if (!current) return;
-  if (!confirm(`Muți proiectul „${current.name}” în coșul local? Îl poți restaura din butonul Restaurează. Modificările nesalvate se pierd.`)) return;
+  if (!confirm(`Muți proiectul „${current.name}” în coșul proiectului? Îl poți restaura din butonul Restaurează. Modificările nesalvate se pierd.`)) return;
   try {
     await api("/api/project/delete", jsonBody({ project: current.id }));
     state.projects = state.projects.filter(project => project.id !== current.id); state.dirty = false; state.project = null;
@@ -768,7 +768,7 @@ async function createFile() {
 
 async function deleteFile() {
   if (!state.project || !state.activePath) return;
-  if (!confirm(`Muți ${state.activePath} în coșul local? Poți folosi Undo pentru a-l restaura.`)) return;
+  if (!confirm(`Muți ${state.activePath} în coșul proiectului? Poți folosi Undo pentru a-l restaura.`)) return;
   try {
     if (state.dirty) await saveFile(false);
     await api(`/api/file?project=${encodeURIComponent(state.project)}&path=${encodeURIComponent(state.activePath)}`, { method: "DELETE" });
