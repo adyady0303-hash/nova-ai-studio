@@ -13,7 +13,7 @@ test('app entry points and responsive page metadata exist', () => {
     assert.ok(fs.statSync(path.join(root, file)).isFile(), file);
   }
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
-  assert.match(html, /<html[^>]+lang="ro"/);
+  assert.match(html, /<html[^>]+lang="en"/);
   assert.match(html, /<meta[^>]+name="viewport"/);
   assert.match(html, /@media\s*\(max-width:\s*(?:620|1000)px\)/);
   assert.match(html, /id="sendBtn"/);
@@ -26,25 +26,30 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="projectDrawer"/);
 });
 
-test('creator hub is the launch screen and routes its tools to implemented actions', () => {
+test('reference creator dashboard is the launch screen and routes creation tools to implemented actions', () => {
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8');
   assert.match(html, /<main class="chat home-active" id="chat">/);
+  assert.match(html, /What do you want to <span>create\?<\/span>/);
+  for (const navItem of ['Home', 'Create', 'Explore', 'Library']) assert.match(html, new RegExp(`>${navItem}<`));
   assert.match(html, /id="homePrompt"/);
   assert.match(html, /id="homeSendBtn"/);
   assert.match(html, /id="resumeChatBtn"/);
-  for (const action of ['chat', 'code', 'image', 'music', 'video', 'lyrics']) {
+  for (const action of ['code', 'image', 'music', 'video', 'lyrics']) {
     assert.match(html, new RegExp(`data-home-action="${action}"`));
   }
   assert.match(html, /id="homeProjects"/);
   assert.match(app, /function renderHomeProjects\(\)/);
+  assert.match(app, /project-cover/);
   assert.match(app, /function submitHomePrompt\(\)/);
   assert.match(app, /api\("\/api\/agent"/);
   assert.match(app, /generateImageFromPrompt\(\)/);
   assert.match(app, /function openVoiceDialog\(\)/);
   assert.match(css, /\.chat\.home-active/);
-  assert.match(css, /@media \(max-width: 620px\)/);
+  assert.match(css, /\.card-code\s*\{/);
+  assert.match(css, /\.project-cover/);
+  assert.match(css, /@media \(max-width: 480px\)/);
 });
 
 test('server uses environment-provided credentials and does not ship secrets', () => {
