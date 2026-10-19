@@ -216,6 +216,13 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
 
   await waitForServer(baseUrl, child, () => output);
 
+  const publicVersion = await fetch(`${baseUrl}/api/version`);
+  assert.equal(publicVersion.status, 200);
+  const versionData = await publicVersion.json();
+  assert.equal(versionData.release, 'media-fixes-4343cf3');
+  assert.equal(versionData.version, require('../package.json').version);
+  assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
+  assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
   const health = await fetch(`${baseUrl}/healthz`);
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { ok: true });

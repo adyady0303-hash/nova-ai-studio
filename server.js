@@ -636,6 +636,15 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
 async function handle(req, res) {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
 
+  if (req.method === "GET" && url.pathname === "/api/version") {
+    const commit = process.env.RENDER_GIT_COMMIT || "";
+    return json(res, 200, {
+      version: require("./package.json").version,
+      release: "media-fixes-4343cf3",
+      commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
+    });
+  }
+
   if (req.method === "GET" && url.pathname === "/healthz") {
     try { await dataStore.healthCheck(); return json(res, 200, { ok: true }); }
     catch { return json(res, 503, { ok: false, error: "Storage unavailable" }); }
