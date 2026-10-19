@@ -2,6 +2,7 @@ const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, view: "home" };
 let activeMessageStream = null;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
+const starterProjectNames = ["Mountain Escape", "Travel App", "Neon Dreams", "Old Beat", "Band City"];
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -95,19 +96,12 @@ function renderHomeProjects() {
   const list = el("homeProjects");
   if (!list) return;
   list.replaceChildren();
-  const projects = state.projects.slice(0, 4);
-  if (!projects.length) {
-    const empty = document.createElement("div"); empty.className = "home-project-empty";
-    empty.innerHTML = '<span class="empty-project-icon">＋</span><strong>No projects yet</strong><small>Create a project to keep your files together.</small>';
-    empty.addEventListener("click", createProject);
-    list.append(empty);
-    return;
-  }
+  const projects = state.projects.slice(0, 5);
   projects.forEach((project, index) => {
-    const card = document.createElement("button"); card.className = `home-project-card project-tone-${index % 4}`; card.type = "button";
+    const card = document.createElement("button"); card.className = `home-project-card project-tone-${index % 5}`; card.type = "button";
     card.dataset.projectId = project.id;
     card.setAttribute("aria-label", `Open project ${project.name}`);
-    const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 4}`; cover.setAttribute("aria-hidden", "true");
+    const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 5}`; cover.setAttribute("aria-hidden", "true");
     const scene = document.createElement("span"); scene.className = "cover-scene";
     const glow = document.createElement("span"); glow.className = "cover-glow";
     const detailLines = document.createElement("span"); detailLines.className = "cover-detail";
@@ -117,6 +111,21 @@ function renderHomeProjects() {
     detail.textContent = project.id === state.project ? `${state.files.length} file${state.files.length === 1 ? "" : "s"} · Open` : "Open project";
     card.append(cover, name, detail); list.append(card);
   });
+  for (let index = projects.length; index < 5; index++) {
+    const card = document.createElement("button"); card.type = "button";
+    card.className = `home-project-card project-create-card project-tone-${index % 5}`;
+    card.dataset.createProject = starterProjectNames[index];
+    card.setAttribute("aria-label", `Create project ${starterProjectNames[index]}`);
+    const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 5}`; cover.setAttribute("aria-hidden", "true");
+    const scene = document.createElement("span"); scene.className = "cover-scene";
+    const glow = document.createElement("span"); glow.className = "cover-glow";
+    const detailLines = document.createElement("span"); detailLines.className = "cover-detail";
+    const plus = document.createElement("span"); plus.className = "project-create-plus"; plus.setAttribute("aria-hidden", "true"); plus.textContent = "+";
+    cover.append(glow, scene, detailLines, plus);
+    const name = document.createElement("strong"); name.className = "project-name"; name.textContent = starterProjectNames[index];
+    const detail = document.createElement("small"); detail.className = "project-description"; detail.textContent = "Create this project";
+    card.append(cover, name, detail); list.append(card);
+  }
 }
 
 function updateHomeHistory() {
@@ -545,12 +554,19 @@ async function loadProjects() {
   state.project = selected.id; localStorage.setItem("nova-project", selected.id); renderProjects(); await loadProject(selected.id);
 }
 
-async function createProject() {
-  const name = prompt("Numele proiectului nou:"); if (!name?.trim()) return;
+function createProject(name = "") {
+  const dialog = el("newProjectDialog");
+  el("newProjectName").value = name;
+  dialog.showModal();
+  requestAnimationFrame(() => el("newProjectName").focus());
+}
+
+async function saveNewProject(name) {
+  if (!name?.trim()) return;
   try {
     const data = await api("/api/projects", jsonBody({ name: name.trim() }));
-    state.projects.push(data.project); state.dirty = false; await loadProject(data.project.id); localStorage.setItem("nova-project", data.project.id); toast("Proiect creat");
-  } catch (error) { toast(error.message); }
+    state.projects.push(data.project); state.dirty = false; await loadProject(data.project.id); localStorage.setItem("nova-project", data.project.id); setProjectsOpen(false); toast("Proiect creat"); return true;
+  } catch (error) { toast(error.message); return false; }
 }
 
 async function renameProject() {
@@ -754,6 +770,8 @@ el("app").addEventListener("click", event => {
 });
 el("seeProjectsBtn").addEventListener("click", () => setProjectsOpen(true));
 el("homeProjects").addEventListener("click", async event => {
+  const createCard = event.target.closest("[data-create-project]");
+  if (createCard) { createProject(createCard.dataset.createProject); return; }
   const card = event.target.closest("[data-project-id]");
   if (!card) return;
   try {
@@ -798,6 +816,12 @@ el("prompt").addEventListener("keydown", event => { if (event.key === "Enter" &&
 el("refreshModels").addEventListener("click", refreshHealth);
 el("refreshModelsTop").addEventListener("click", refreshHealth);
 el("newProjectBtn").addEventListener("click", createProject);
+el("newProjectForm").addEventListener("submit", event => {
+  event.preventDefault();
+  const name = el("newProjectName").value.trim();
+  if (!name) { el("newProjectName").focus(); return; }
+  saveNewProject(name).then(created => { if (created) el("newProjectDialog").close(); });
+});
 el("renameProjectBtn").addEventListener("click", renameProject);
 el("deleteProjectBtn").addEventListener("click", deleteProject);
 el("restoreProjectBtn").addEventListener("click", restoreProject);
@@ -848,6 +872,5 @@ Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
     el("providerSettingsBtn").click();
   }
 });
-
 
 
