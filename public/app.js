@@ -98,7 +98,7 @@ function renderHomeProjects() {
   const projects = state.projects.slice(0, 4);
   if (!projects.length) {
     const empty = document.createElement("div"); empty.className = "home-project-empty";
-    empty.innerHTML = '<span class="empty-project-icon">＋</span><strong>Începe un proiect</strong><small>Creează un spațiu pentru fișierele tale.</small>';
+    empty.innerHTML = '<span class="empty-project-icon">＋</span><strong>No projects yet</strong><small>Create a project to keep your files together.</small>';
     empty.addEventListener("click", createProject);
     list.append(empty);
     return;
@@ -106,12 +106,16 @@ function renderHomeProjects() {
   projects.forEach((project, index) => {
     const card = document.createElement("button"); card.className = `home-project-card project-tone-${index % 4}`; card.type = "button";
     card.dataset.projectId = project.id;
-    const art = document.createElement("span"); art.className = "project-preview"; art.setAttribute("aria-hidden", "true");
-    const glyph = document.createElement("span"); glyph.textContent = ["⌘", "◇", "▤", "✦"][index % 4]; art.append(glyph);
-    const name = document.createElement("strong"); name.textContent = project.name;
-    const detail = document.createElement("small"); detail.textContent = project.id === state.project ? `${state.files.length} fișier${state.files.length === 1 ? "" : "e"} · Deschis` : "Deschide proiectul";
-    const arrow = document.createElement("span"); arrow.className = "project-open-arrow"; arrow.textContent = "↗";
-    card.append(art, name, detail, arrow); list.append(card);
+    card.setAttribute("aria-label", `Open project ${project.name}`);
+    const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 4}`; cover.setAttribute("aria-hidden", "true");
+    const scene = document.createElement("span"); scene.className = "cover-scene";
+    const glow = document.createElement("span"); glow.className = "cover-glow";
+    const detailLines = document.createElement("span"); detailLines.className = "cover-detail";
+    cover.append(glow, scene, detailLines);
+    const name = document.createElement("strong"); name.className = "project-name"; name.textContent = project.name;
+    const detail = document.createElement("small"); detail.className = "project-description";
+    detail.textContent = project.id === state.project ? `${state.files.length} file${state.files.length === 1 ? "" : "s"} · Open` : "Open project";
+    card.append(cover, name, detail); list.append(card);
   });
 }
 
@@ -131,7 +135,7 @@ function setView(view) {
   if (state.view === "home" && el("prompt").value.trim() && !el("homePrompt").value.trim()) el("homePrompt").value = el("prompt").value;
   el("chat").classList.toggle("home-active", state.view === "home");
   setProjectsOpen(false);
-  const activeView = view === "create" ? "create" : state.view;
+  const activeView = ["create", "explore"].includes(view) ? view : state.view;
   document.querySelectorAll(".global-nav-link[data-view]").forEach(button => {
     const active = button.dataset.view === activeView;
     button.classList.toggle("active", active);
@@ -728,9 +732,16 @@ document.querySelectorAll(".global-nav-link[data-view]").forEach(button => butto
   if (view === "create") {
     setView("create");
     requestAnimationFrame(() => el("homeTools").scrollIntoView({ behavior: "smooth", block: "start" }));
+  } else if (view === "explore") {
+    setView("explore");
+    requestAnimationFrame(() => el("projectsTitle").scrollIntoView({ behavior: "smooth", block: "start" }));
   } else setView(view);
   if (view === "chat") el("prompt").focus();
 }));
+el("topSearchBtn").addEventListener("click", () => {
+  if (state.view === "chat") el("prompt").focus();
+  else { el("homePrompt").focus(); el("homePrompt").scrollIntoView({ behavior: "smooth", block: "center" }); }
+});
 el("projectsNavBtn").addEventListener("click", () => setProjectsOpen(!el("app").classList.contains("projects-open")));
 el("projectDrawer").addEventListener("toggle", event => {
   const open = event.currentTarget.open;
