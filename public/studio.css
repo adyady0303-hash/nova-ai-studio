@@ -168,7 +168,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 
-/* Nova Studio 0.8 — new light workspace and centered conversation layout. */
+/* Nova Studio 0.9 — prompt-first workspace and readable conversation layout. */
 :root {
   color-scheme: light;
   --bg: #f3f6fb;
@@ -222,14 +222,14 @@ body { background: linear-gradient(135deg, #f6f8fc, #eff3fa 70%, #f5f4fc); }
 .chat-title { color: #1d2b40; font-size: 13px; }
 .chat-sub { color: #75849a; }
 .workspace-toggle { color: #5b55a8; background: #fff; }
-.messages { width: 100%; align-items: center; padding: 24px clamp(18px, 4vw, 54px) 28px; }
-.message-stream { width: min(100%, 820px); display: flex; flex-direction: column; align-items: stretch; gap: 18px; margin: auto; }
-.messages > .message { width: min(100%, 820px); }
+.messages { width: 100%; align-items: center; padding: 30px clamp(20px, 5vw, 72px) 34px; }
+.message-stream { width: min(100%, 760px); display: flex; flex-direction: column; align-items: stretch; gap: 22px; margin: auto; }
+.messages > .message { width: min(100%, 760px); }
 .message { color: #24344a; font-size: 13px; line-height: 1.75; }
-.message.assistant { padding: 15px 18px; border: 1px solid #e5eaf2; border-radius: 15px; background: #fff; box-shadow: 0 6px 18px rgb(31 47 72 / 4%); }
-.message.assistant .message-meta { color: #6659c6; }
+.message.assistant { padding: 17px 20px; border: 1px solid #e5eaf2; border-radius: 17px; background: #fff; box-shadow: 0 8px 22px rgb(31 47 72 / 5%); }
+.message.assistant .message-meta { color: #6659c6; margin-bottom: 8px; }
 .message-meta::before { background: linear-gradient(145deg, #a395ff, #6559d4); box-shadow: 0 2px 7px rgb(101 84 217 / 20%); }
-.message.user { width: fit-content; max-width: min(82%, 680px); align-self: flex-end; margin-left: auto; padding: 11px 15px; border: 0; border-radius: 16px 16px 5px 16px; color: #fff; background: linear-gradient(135deg, #7161dc, #5969d5); box-shadow: 0 6px 14px rgb(92 96 201 / 18%); }
+.message.user { width: fit-content; max-width: min(78%, 570px); align-self: flex-end; margin-left: auto; padding: 12px 17px; border: 1px solid #e2defc; border-radius: 17px 17px 5px 17px; color: #332d68; background: #eeecff; box-shadow: 0 5px 16px rgb(92 96 201 / 8%); overflow-wrap: anywhere; }
 .message.user .message-meta { display: none; }
 .message code { color: #5c51bc; }
 .thinking { align-self: center; color: #6256bc; }
@@ -280,5 +280,24 @@ body { background: linear-gradient(135deg, #f6f8fc, #eff3fa 70%, #f5f4fc); }
   .message.user { max-width: 88%; }
   .composer-wrap { padding: 0 8px max(8px, env(safe-area-inset-bottom)); }
   .composer { box-shadow: 0 8px 24px rgb(36 51 75 / 11%); }
+}
+
+/* Keep project and file management out of the way until requested. */
+.project-drawer { display: block; margin-top: 12px; min-height: 0; }
+.project-drawer > summary { display: flex; align-items: center; justify-content: space-between; padding: 12px 11px; border: 1px solid #2a3950; border-radius: 12px; color: #d6dfec; background: #18253a; cursor: pointer; font-size: 11px; font-weight: 650; list-style: none; }
+.project-drawer > summary::-webkit-details-marker { display: none; }
+.project-drawer[open] { max-height: min(58vh, 560px); overflow: auto; padding: 8px; border: 1px solid #2a3950; border-radius: 14px; background: #131f32; box-shadow: 0 14px 30px rgb(0 0 0 / 16%); }
+.project-drawer[open] > summary { position: sticky; top: -8px; z-index: 2; margin: -8px -8px 8px; border-color: transparent; border-bottom-color: #34425a; border-radius: 13px 13px 0 0; }
+.project-drawer[open] .sidebar-spacer { display: none; }
+.project-drawer[open] .side-title-row .side-title, .project-drawer[open] .files-title .side-title { margin-top: 10px; }
+.drawer-chevron { transition: transform .18s ease; }
+.project-drawer[open] .drawer-chevron { transform: rotate(180deg); }
+@media (min-width: 1200px) {
+  .app { grid-template-columns: 250px minmax(0, 1fr); }
+  .messages { padding-left: 58px; padding-right: 58px; }
+}
+@media (max-width: 620px) {
+  .project-drawer { position: absolute; z-index: 40; top: calc(100% + 5px); right: 8px; left: 8px; margin: 0; max-width: calc(100vw - 16px); }
+  .project-drawer[open] { max-height: calc(100dvh - 148px); }
 }
 
