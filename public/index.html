@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d0f14">
-  <meta name="nova-version" content="0.9.0">
-  <meta name="nova-build" content="NOVA_CHAT_LAYOUT_2026_10_19">
+  <meta name="nova-version" content="1.0.0">
+  <meta name="nova-build" content="NOVA_NEBULA_STUDIO_2026_10_19">
   <meta name="description" content="Nova AI Studio: creează și construiește într-un singur spațiu de lucru AI.">
   <title>Nova AI Studio</title>
   <style>
@@ -367,7 +367,7 @@ body {background:#080b13;}
 }
 
 </style>
-  <link rel="stylesheet" href="/studio.css?v=0.9.0">
+  <link rel="stylesheet" href="/studio.css?v=1.0.0">
 </head>
 <body>
   <div class="app" id="app">
@@ -390,16 +390,16 @@ body {background:#080b13;}
       <button class="btn primary new-chat" id="clearChat" title="Începe o conversație nouă"><span class="plus">＋</span><span class="new-label">Conversație nouă</span></button>
       <div class="side-title">Creează cu Nova</div>
       <nav class="create-menu" aria-label="Moduri de creație">
-        <button class="create-item active" data-task="auto"><span class="create-icon">✦</span><span>Chat liber</span></button>
-        <button class="create-item" data-task="code"><span class="create-icon">{ }</span><span>Cod & aplicații PC</span></button>
-        <button class="create-item" data-task="lyrics"><span class="create-icon">✎</span><span>Texte & versuri</span></button>
-        <button class="create-item" data-task="music"><span class="create-icon">♫</span><span>Muzică</span></button>
-        <button class="create-item" data-task="video"><span class="create-icon">▶</span><span>Video & scenarii</span></button>
+        <button class="create-item active" data-task="auto" aria-label="Chat liber" title="Chat liber"><span class="create-icon">✦</span><span>Chat liber</span></button>
+        <button class="create-item" data-task="code" aria-label="Cod și aplicații pentru PC" title="Cod și aplicații"><span class="create-icon">{ }</span><span>Cod & aplicații PC</span></button>
+        <button class="create-item" data-task="lyrics" aria-label="Texte și versuri" title="Texte și versuri"><span class="create-icon">✎</span><span>Texte & versuri</span></button>
+        <button class="create-item" data-task="music" aria-label="Muzică" title="Muzică"><span class="create-icon">♫</span><span>Muzică</span></button>
+        <button class="create-item" data-task="video" aria-label="Video și scenarii" title="Video și scenarii"><span class="create-icon">▶</span><span>Video & scenarii</span></button>
       </nav>
 
       <div class="side-divider"></div>
       <details class="project-drawer" id="projectDrawer">
-        <summary><span>Proiecte și fișiere</span><span class="drawer-chevron" aria-hidden="true">⌄</span></summary>
+        <summary aria-label="Proiecte și fișiere" title="Proiecte și fișiere"><span class="drawer-glyph" aria-hidden="true">▤</span><span class="drawer-label">Proiecte</span><span class="drawer-chevron" aria-hidden="true">⌄</span></summary>
       <div class="side-title-row"><div class="side-title">Proiectul tău</div><div class="row"><button class="btn subtle iconbtn" id="newProjectBtn" title="Proiect nou">＋</button><button class="btn subtle iconbtn" id="renameProjectBtn" title="Redenumește proiectul">✎</button></div></div>
       <div class="project-controls"><select id="projectSelect" aria-label="Alege proiectul"></select></div>
       <div class="project-card"><div class="project-icon">⌘</div><div><div class="project-name" id="projectName">Se încarcă proiectul…</div><div class="project-path" id="projectStorageLabel">Fișierele proiectului</div></div></div>
@@ -505,7 +505,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=0.9.0"></script><script>
+  <script src="/app.js?v=1.0.0"></script><script>
 /* Navigation bridges to existing, tested Nova actions. */
 document.addEventListener("click",function(event){
  var button=event.target.closest("[data-nova-action]"); if(!button)return;
