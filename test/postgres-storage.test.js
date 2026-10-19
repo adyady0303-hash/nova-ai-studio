@@ -72,7 +72,7 @@ test('PostgreSQL storage imports disk data and shares projects, sessions and set
   assert.equal(legacyAccount.body.username, 'legacy-user');
 
   const registration = await post(serverA, '/api/auth/register', { username: 'shared-user', password: 'share123' });
-  assert.equal(registration.response.status, 201, registration.body);
+  assert.equal(registration.response.status, 201, JSON.stringify(registration.body));
   const sharedSession = await get(serverB, '/api/auth/me', registration.cookie);
   assert.equal(sharedSession.body.username, 'shared-user');
 
@@ -163,3 +163,4 @@ async function post(server, route, body) {
 }
 
 async function get(server, route, cookie) { return request(server, route, cookie); }
+
