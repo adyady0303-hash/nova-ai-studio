@@ -90,7 +90,7 @@ async function loadProviderSettings() {
   el("apiKey").value = "";
   el("clearApiKey").checked = false;
   el("apiKeyState").textContent = settings.apiKeyConfigured
-    ? "O cheie este deja configurată. Lasă câmpul gol pentru a o păstra. Cheia nu este returnată în browser."
+    ? "O cheie este deja configurată și se păstrează criptat pe server. Lasă câmpul gol pentru a o păstra. Cheia nu este returnată în browser."
     : "Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.";
   el("openAiFields").hidden = settings.provider !== "openai";
   await refreshHealth();

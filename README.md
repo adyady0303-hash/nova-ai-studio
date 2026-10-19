@@ -57,7 +57,7 @@ Volumul Docker `nova-data` păstrează proiectele și copiile de rezervă la rep
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` | Endpoint și cheie API pentru serviciu OpenAI compatibil. |
 | `OPENAI_MODEL` / `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` | Modelele pentru chat, generare de imagini și voce. |
 
-Cheia setată prin interfața Nova se păstrează numai în memoria procesului. Pentru instanțe găzduite, configureaz-o în secretele furnizorului de hosting, ca să supraviețuiască repornirilor.
+Cheia și furnizorul salvate din interfața Nova se păstrează criptat: în PostgreSQL când este configurat sau în `NOVA_DATA_DIR/data/ai-settings.json` în modul cu disc. Se reîncarcă automat la repornire. Păstrează discul/baza de date și cheia `NOVA_DATA_ENCRYPTION_KEY` stabile între deploy-uri. Dacă nu există o cheie explicită, criptarea folosește parola administratorului; în modul local fără autentificare este creat automat fișierul privat `NOVA_DATA_DIR/data/ai-settings.key`. Nu șterge acest fișier și nu îl publica. Schimbarea secretului de criptare necesită reconfigurarea credențialei. Poți utiliza în continuare secretele furnizorului de hosting pentru cheia API.
 
 Conturile sunt salvate în `NOVA_DATA_DIR/data/subscriber-accounts.json`, cu parole protejate prin scrypt. Datele fiecărui abonat sunt păstrate în `NOVA_DATA_DIR/users/<account-id>/`; păstrează `NOVA_DATA_DIR` pe un volum persistent.
 

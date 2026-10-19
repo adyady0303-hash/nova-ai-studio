@@ -338,22 +338,22 @@ function publicProviderSettings() {
 }
 
 function aiSettingsCipherKey() {
-  const secret = process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD || process.env.DATABASE_URL || "";
+  const secret = process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD || process.env.DATABASE_URL || localAiEncryptionSecret;
   if (!secret) throw new Error("Lipsește cheia pentru criptarea configurării AI persistente.");
   return crypto.createHash("sha256").update(secret).digest();
 }
 
-function storedAiSettings() {
+function storedAiSettings(settings = aiProvider) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", aiSettingsCipherKey(), iv);
-  const encryptedKey = Buffer.concat([cipher.update(aiProvider.apiKey || "", "utf8"), cipher.final()]);
+  const encryptedKey = Buffer.concat([cipher.update(settings.apiKey || "", "utf8"), cipher.final()]);
   return {
-    provider: aiProvider.provider,
-    baseUrl: aiProvider.baseUrl,
-    textModel: aiProvider.textModel,
-    imageModel: aiProvider.imageModel,
-    speechModel: aiProvider.speechModel,
-    voice: aiProvider.voice,
+    provider: settings.provider,
+    baseUrl: settings.baseUrl,
+    textModel: settings.textModel,
+    imageModel: settings.imageModel,
+    speechModel: settings.speechModel,
+    voice: settings.voice,
     apiKeyCipher: encryptedKey.toString("base64"),
     apiKeyIv: iv.toString("base64"),
     apiKeyTag: cipher.getAuthTag().toString("base64")
@@ -383,15 +383,44 @@ function applyStoredAiSettings(value) {
   }
 }
 
+const AI_SETTINGS_FILE = path.join(DATA_DIR, "data", "ai-settings.json");
+let localAiEncryptionSecret = "";
+
+async function initializeAiEncryption() {
+  if (dataStore.enabled || process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD) return;
+  const keyFile = path.join(DATA_DIR, "data", "ai-settings.key");
+  await fs.promises.mkdir(path.dirname(keyFile), { recursive: true });
+  try { await fs.promises.writeFile(keyFile, crypto.randomBytes(32).toString("hex"), { encoding: "utf8", mode: 0o600, flag: "wx" }); }
+  catch (error) { if (error.code !== "EEXIST") throw error; }
+  localAiEncryptionSecret = (await fs.promises.readFile(keyFile, "utf8")).trim();
+  if (!/^[a-f0-9]{64}$/.test(localAiEncryptionSecret)) throw new Error("Cheia locală pentru configurarea AI este invalidă.");
+}
+
 async function refreshAiSettings(force = false) {
-  if (!dataStore.enabled || (!force && Date.now() < aiSettingsCacheExpiresAt)) return;
-  const value = await dataStore.getSetting("ai-provider");
+  if (!force && Date.now() < aiSettingsCacheExpiresAt) return;
+  let value;
+  if (dataStore.enabled) value = await dataStore.getSetting("ai-provider");
+  else {
+    try { value = JSON.parse(await fs.promises.readFile(AI_SETTINGS_FILE, "utf8")); }
+    catch (error) {
+      if (error.code !== "ENOENT") console.error("Nova AI settings file could not be read; keeping the current configuration.");
+    }
+  }
   if (value) applyStoredAiSettings(value);
   aiSettingsCacheExpiresAt = Date.now() + 1000;
 }
 
-async function persistAiSettings() {
-  if (dataStore.enabled) await dataStore.setSetting("ai-provider", storedAiSettings());
+async function persistAiSettings(settings = aiProvider) {
+  const encrypted = storedAiSettings(settings);
+  if (dataStore.enabled) await dataStore.setSetting("ai-provider", encrypted);
+  else {
+    await fs.promises.mkdir(path.dirname(AI_SETTINGS_FILE), { recursive: true });
+    const temporary = `${AI_SETTINGS_FILE}.${crypto.randomBytes(8).toString("hex")}.tmp`;
+    try {
+      await fs.promises.writeFile(temporary, JSON.stringify(encrypted), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await fs.promises.rename(temporary, AI_SETTINGS_FILE);
+    } finally { await fs.promises.unlink(temporary).catch(() => {}); }
+  }
   aiSettingsCacheExpiresAt = 0;
 }
 
@@ -648,7 +677,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "public-voice-v1",
+      release: "persistent-ai-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -738,8 +767,8 @@ async function handle(req, res) {
       if (!nextProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
     }
     nextProvider.provider = body.provider;
+    await persistAiSettings(nextProvider);
     Object.assign(aiProvider, nextProvider);
-    await persistAiSettings();
     return json(res, 200, { settings: publicProviderSettings(), notice: "Configurarea AI este sincronizată între instanțe; cheia este criptată și nu este returnată în interfață." });
   }
 
@@ -1183,6 +1212,7 @@ async function startNova() {
   await dataFs.promises.mkdir(PROJECTS_DIR, { recursive: true });
   await dataFs.promises.mkdir(BACKUPS_DIR, { recursive: true });
   await dataFs.promises.mkdir(PROJECT_TRASH_DIR, { recursive: true });
+  await initializeAiEncryption();
   await refreshAiSettings(true);
   appServer.listen(PORT, HOST, () => {
     console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);

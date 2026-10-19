@@ -516,12 +516,12 @@ body {background:#080b13;}
       <label for="providerSelect">Furnizor AI</label><select id="providerSelect"><option value="ollama">Ollama · modele locale</option><option value="openai">OpenAI · cloud/API compatibilă</option></select>
       <div id="openAiFields" class="provider-fields" hidden>
         <label for="apiBaseUrl">Adresă API compatibilă</label><input id="apiBaseUrl" value="https://api.openai.com/v1" autocomplete="url">
-        <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" placeholder="Cheia rămâne doar în memoria serverului">
+        <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" placeholder="Lasă gol pentru a păstra cheia existentă">
         <div class="provider-note" id="apiKeyState">Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.</div>
         <label for="textModel">Model text / programare</label><input id="textModel" value="gpt-4.1-mini" autocomplete="off">
         <label for="imageModel">Model imagini</label><input id="imageModel" value="gpt-image-1-mini" autocomplete="off">
         <div class="provider-row"><div><label for="speechModel">Model voce</label><input id="speechModel" value="gpt-4o-mini-tts" autocomplete="off"></div><div><label for="voiceSelect">Voce</label><select id="voiceSelect"><option>nova</option><option>alloy</option><option>coral</option><option>echo</option><option>fable</option><option>onyx</option><option>shimmer</option><option>verse</option><option>sage</option><option>ash</option><option>ballad</option><option>marin</option><option>cedar</option></select></div></div>
-        <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API din memoria serverului</label>
+        <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API salvată</label>
       </div>
       <div class="provider-note">Ollama rulează pe calculatorul sau serverul unde pornește Nova. Cu un furnizor cloud, mesajele și conținutul selectat din proiect se trimit către acel furnizor. Apelurile API pot costa.</div>
       <div class="provider-note">Conexiunea AI și căutarea pe internet sunt verificate separat. Verificarea web nu consumă unități AI. Rezultatul se păstrează cel mult un minut.</div>
