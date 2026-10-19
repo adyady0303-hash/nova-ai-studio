@@ -12,7 +12,10 @@ async function api(url, options = {}) {
     el("accountLabel").textContent = `${state.account.username} · Abonat · ${state.account.remainingToday}/${state.account.dailyLimit} cereri AI azi`;
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Cererea a eșuat (${response.status}).`);
+  if (!response.ok) {
+    if (response.status === 401) window.location.replace("/?session=expired");
+    throw new Error(data.error || `Cererea a eșuat (${response.status}).`);
+  }
   return data;
 }
 function jsonBody(value) { return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) }; }

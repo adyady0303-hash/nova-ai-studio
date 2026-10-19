@@ -210,6 +210,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(loginHtml, /Autentificare/);
   assert.match(loginHtml, /Creează un cont de abonat/);
   assert.match(loginHtml, /Cont fără taxă de înscriere/);
+  assert.match(loginHtml, /Sesiunea a expirat\. Autentifică-te din nou\./);
   assert.equal((await fetch(`${baseUrl}/api/projects`)).status, 401);
 
   const rejectedLogin = await fetch(`${baseUrl}/api/auth/login`, {
