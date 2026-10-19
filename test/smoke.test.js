@@ -147,6 +147,19 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        if (body.messages.some(message => message.role === 'user' && message.content === 'Test web tools')) {
+          assert.ok(body.tools.some(tool => tool.function.name === 'web_search'));
+          assert.ok(body.tools.some(tool => tool.function.name === 'read_web_page'));
+          assert.match(body.messages[0].content, /Ai acces la internet/);
+          const toolReply = body.messages.find(message => message.role === 'tool');
+          const message = toolReply
+            ? { role: 'assistant', content: `Rezultat verificat: ${toolReply.content}` }
+            : { role: 'assistant', content: null, tool_calls: [{ id: 'web-test-1', type: 'function', function: { name: 'read_web_page', arguments: JSON.stringify({ url: 'https://127.0.0.1/' }) } }] };
+          if (toolReply) assert.equal(toolReply.tool_call_id, 'web-test-1');
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ choices: [{ message }], model: body.model }));
+          return;
+        }
         mockChatModel = body.model;
         mockChatPrompt = body.messages?.at(-1)?.content || '';
         mockChatLimit = body.max_completion_tokens || null;
@@ -297,6 +310,12 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(mockChatModel, 'gpt-4.1-mini');
   assert.equal(mockChatPrompt, 'Salut Nova');
 
+  const webChat = await post('/api/chat', {
+    model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Test web tools' }]
+  });
+  assert.equal(webChat.status, 200);
+  assert.match((await webChat.json()).content, /Rezultat verificat: Eroare:.*rezervate/);
+
   const aiTest = await post('/api/ai/test', { model: 'gpt-4.1-mini' });
   assert.equal(aiTest.status, 200);
   assert.deepEqual(await aiTest.json(), {
@@ -413,6 +432,21 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(emptyImage.status, 400);
   const emptySpeech = await post('/api/media/speech', { text: '' });
   assert.equal(emptySpeech.status, 400);
+  assert.equal((await post('/api/settings', {
+    provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key'
+  })).status, 200);
+  const webAgent = await post('/api/agent', {
+    project: project.id, model: 'gpt-4.1-mini', mode: 'plan', messages: [{ role: 'user', content: 'Test web tools' }]
+  });
+  assert.equal(webAgent.status, 200);
+  const webAgentResult = await webAgent.json();
+  assert.match(webAgentResult.content, /Rezultat verificat: Eroare:.*rezervate/);
+  assert.equal(webAgentResult.events[0].tool, 'read_web_page');
+  assert.equal(webAgentResult.events[0].ok, false);
+  assert.equal((await post('/api/settings', {
+    provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'invalid-test-key'
+  })).status, 200);
+
   const invalidAgent = await post('/api/agent', { project: project.id, messages: [{ role: 'user', content: 'test' }] });
   assert.equal(invalidAgent.status, 400);
 

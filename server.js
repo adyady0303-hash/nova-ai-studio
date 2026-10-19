@@ -567,7 +567,10 @@ async function writeProjectFile(project, name, content, principal = "owner") {
   return { path: target.relative, action: existed ? "updated" : "created" };
 }
 
+const { webTools, webPrompt, callWebTool } = require("./web-tools");
+
 const agentTools = [
+  ...webTools,
   { type: "function", function: { name: "list_files", description: "List the files in the open project.", parameters: { type: "object", properties: {}, additionalProperties: false } } },
   { type: "function", function: { name: "read_file", description: "Read a UTF-8 text file from the open project.", parameters: { type: "object", required: ["path"], properties: { path: { type: "string", description: "Project-relative path, such as src/index.js" } }, additionalProperties: false } } },
   { type: "function", function: { name: "write_file", description: "Create or update a UTF-8 text file in the open project. Only call this when the user asked to implement changes.", parameters: { type: "object", required: ["path", "content"], properties: { path: { type: "string", description: "Project-relative file path" }, content: { type: "string", description: "Complete UTF-8 file content" } }, additionalProperties: false } } }
@@ -575,6 +578,7 @@ const agentTools = [
 
 async function callAgentTool(name, args, project, allowChanges, principal = "owner") {
   if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Argumente de unealtă invalide.");
+  if (webTools.some(tool => tool.function.name === name)) return await callWebTool(name, args);
   if (name === "list_files") return JSON.stringify(await listProjectFiles(projectRoot(project, principal)));
   if (name === "read_file") return await readProjectFile(project, args.path, principal);
   if (name === "write_file") {
@@ -599,7 +603,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       ? "Ești Nova, agent de planificare software. Explorează proiectul cu list_files și read_file, apoi prezintă un plan ordonat și clar. Nu modifica fișierele."
       : `Ești Nova, asistent de creație și programare. ${taskPrompts[task] || taskPrompts.auto} Explorează proiectul și fișierele relevante când cererea depinde de ele. Implementează cererile de cod folosind write_file numai când este permis. Păstrează schimbările la obiect și raportează fiecare fișier schimbat. Nu rula comenzi și nu pretinde că ai testat codul.`;
   const messages = [
-    { role: "system", content: `${prompt}\n\nAi acces numai la fișierele proiectului deschis, prin uneltele list_files, read_file și write_file. Nu ai terminal, acces la internet sau acces la alte dosare. ${allowChanges ? "Modificările sunt permise pentru această cerere." : "Modificările sunt dezactivate pentru această cerere."} Păstrează căile relative în proiect și nu șterge fișiere.` },
+    { role: "system", content: `${prompt}\n\nAi acces la fișierele proiectului deschis prin list_files, read_file și write_file. Nu ai terminal sau acces la alte dosare. ${webPrompt} ${allowChanges ? "Modificările sunt permise pentru această cerere." : "Modificările sunt dezactivate pentru această cerere."} Păstrează căile relative în proiect și nu șterge fișiere.` },
     ...inputMessages.slice(-12)
   ];
   const tools = allowChanges ? agentTools : agentTools.filter(tool => tool.function.name !== "write_file");
@@ -611,13 +615,15 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     messages.push(message);
     if (!calls.length) return { content: message.content || "Agentul a terminat fără un răspuns text.", events, model: response.model || model };
+    let toolCount = 0;
     for (const call of calls) {
       const name = call.function?.name;
       try {
+      if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
       let args = call.function?.arguments;
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges, principal);
-        events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
+        events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : name === "web_search" ? `Căutare web: ${args.query}` : name === "read_web_page" ? `Pagină web citită: ${args.url}` : `Fișier citit: ${args.path}` });
         const toolResultLimit = principal === "owner" ? 30000 : 10000;
         messages.push(aiProvider.provider === "openai"
           ? { role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) }
@@ -1064,13 +1070,34 @@ async function handle(req, res) {
       });
       if (!await consumeAiQuota(req, res)) return;
 
-      const result = await providerChat(body.model.trim(), [
+      const chatMessages = [
             {
               role: "system",
-              content: "Ești Nova, un asistent de programare care rulează local. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante. Răspunde în limba utilizatorului."
+              content: "Ești Nova, un asistent de programare care rulează local. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante. Răspunde în limba utilizatorului. " + webPrompt
             },
             ...messages
-          ], undefined, account.role === "subscriber" ? 1500 : null);
+          ];
+      let result;
+      for (let round = 0; round < 4; round++) {
+        result = await providerChat(body.model.trim(), chatMessages, webTools, account.role === "subscriber" ? 1500 : null);
+        const message = result.message || {};
+        if (!message.tool_calls?.length) break;
+        chatMessages.push(message);
+        let toolCount = 0;
+        for (const call of message.tool_calls) {
+          let content;
+          try {
+            if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
+            const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments;
+            if (!args || typeof args !== "object") throw new Error("Argumente invalide.");
+            content = await callWebTool(call.function.name, args);
+          } catch (error) { content = `Eroare: ${error.message}`; }
+          chatMessages.push(aiProvider.provider === "openai"
+            ? { role: "tool", tool_call_id: call.id, content }
+            : { role: "tool", tool_name: call.function?.name, content });
+        }
+        result = { message: { content: "Am atins limita de căutări web. Trimite o cerere de continuare." } };
+      }
       return json(res, 200, {
         content: result.message?.content || "Modelul nu a returnat text.",
         model: result.model || body.model,

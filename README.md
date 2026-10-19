@@ -105,3 +105,11 @@ Fără configurare Stripe, aplicația, planul Gratuit și transferul bancar conf
 Accesul plătit și cotele se păstrează în depozitul de conturi existent, inclusiv PostgreSQL dacă acesta este activ. Nu elimina `NOVA_DATA_DIR` sau baza de date la publicare. Webhookurile sunt verificate pe corpul original al cererii; aplicația citește starea curentă a abonamentului și factura plătită din Stripe, prevenind reactivarea pe baza unor evenimente vechi. Checkout reutilizează sesiunile deschise și blochează abonamentele duplicate pentru același cont.
 
 Validare locală: `npm ci` și `npm test`. Testele Stripe folosesc răspunsuri simulate și nu debitează carduri; validarea unei plăți Stripe reale rămâne necesară după configurarea contului.
+
+## Acces la internet în conversații
+
+Chatul și agentul pot folosi `web_search` pentru căutări Bing (RSS, fără cheie API suplimentară) și `read_web_page` pentru citirea textului unei pagini HTTPS publice. Cere, de exemplu: „Caută ultimele noutăți despre Node.js și include sursele” sau „Citește https://nodejs.org/en și rezumă pagina”. Este necesar un model cu suport pentru apelarea uneltelor și un furnizor AI configurat. Răspunsurile trebuie să citeze URL-urile consultate; o eroare de căutare nu este prezentată drept conectare reușită.
+
+Serverul necesită acces DNS și HTTPS direct către `www.bing.com` și site-urile consultate. În medii care permit numai trafic prin proxy, acest transport direct poate fi blocat. Verifică accesul din mediul de producție înainte de a declara funcția disponibilă. Nu este necesară nicio cheie de căutare; disponibilitatea și formatul RSS depind de Bing.
+
+Citirea nu execută JavaScript, nu se autentifică în site-uri și nu citește PDF-uri. Accesul este limitat la HTTPS pe portul 443 și la adrese IPv4 publice; rețelele private, adresele rezervate și redirecționările către ele sunt blocate. Fiecare descărcare are o limită de 1 MiB, 15 secunde și trei redirecționări. Conținutul web este tratat ca informație externă, nu ca instrucțiuni pentru agent. Nu include date private în căutări. Publicarea versiunii actualizate a serverului este necesară pentru activarea funcției pe site-ul online.
