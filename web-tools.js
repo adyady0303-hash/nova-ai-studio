@@ -44,7 +44,7 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
     const req = request(url, {
       agent: false,
       lookup: (_host, options, callback) => callback(null, options.all ? [{ address: addresses[0].address, family: 4 }] : addresses[0].address, 4),
-      headers: { 'user-agent': 'NovaAIStudio/1.0', accept: 'text/html, application/rss+xml, application/xml, text/plain', 'accept-encoding': 'identity' }
+      headers: { 'user-agent': 'NovaAIStudio/1.0', accept: 'text/html, application/rss+xml, application/xml, text/xml, text/plain', 'accept-encoding': 'identity' }
     }, res => {
       if ([301,302,303,307,308].includes(res.statusCode)) {
         res.destroy();
@@ -53,7 +53,7 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
         return;
       }
       if (res.statusCode !== 200) { res.destroy(); return reject(new Error(`Site-ul a răspuns cu HTTP ${res.statusCode}.`)); }
-      if (!/^(text\/(html|plain)|application\/(rss\+xml|xml|xhtml\+xml))(;|$)/i.test(res.headers['content-type'] || '')) {
+      if (!/^(text\/(html|plain|xml)|application\/(rss\+xml|xml|xhtml\+xml))(;|$)/i.test(res.headers['content-type'] || '')) {
         res.destroy(); return reject(new Error('Pagina nu este HTML, XML sau text.'));
       }
       let bytes = 0;

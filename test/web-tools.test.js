@@ -102,3 +102,13 @@ test('page downloads reject aborted bodies and decode declared legacy charsets',
   await assert.rejects(callWebTool('web_search', null), /invalide/);
   await assert.rejects(callWebTool('read_web_page', []), /invalide/);
 });
+
+test('RSS search accepts text/xml responses and extracts cited source links', async () => {
+  const rss = '<rss version="2.0"><channel><item><title>Știre de azi</title><link>https://example.com/stiri</link><description>Rezumat verificat</description></item></channel></rss>';
+  for (const type of ['text/xml; charset=utf-8', 'application/xml; charset=UTF-8', 'application/rss+xml; charset=utf-8']) {
+    const result = JSON.parse(await callWebTool('web_search', { query: 'știrile de astăzi' }, url => downloadPage(url, {
+      lookup, request: transport({ type, body: rss })
+    })));
+    assert.deepEqual(result.sources, [{ title:'Știre de azi', url:'https://example.com/stiri', excerpt:'Rezumat verificat' }]);
+  }
+});
