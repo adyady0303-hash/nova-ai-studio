@@ -165,6 +165,7 @@ function setView(view) {
   state.view = view === "chat" ? "chat" : "home";
   if (state.view === "home" && el("prompt").value.trim() && !el("homePrompt").value.trim()) el("homePrompt").value = el("prompt").value;
   el("chat").classList.toggle("home-active", state.view === "home");
+  if (state.view === "chat") setWorkspaceOpen(false);
   setProjectsOpen(false);
   const activeView = ["create", "explore"].includes(view) ? view : state.view;
   document.querySelectorAll(".global-nav-link[data-view]").forEach(button => {
@@ -870,13 +871,14 @@ el("clearChat").addEventListener("click", () => {
   setView("home");
 });
 el("newChatTop").addEventListener("click", () => el("clearChat").click());
-el("openWorkspaceBtn").addEventListener("click", () => {
-  const app = el("app");
-  const open = !app.classList.contains("workspace-open");
-  app.classList.toggle("workspace-open", open);
+function setWorkspaceOpen(open) {
+  el("app").classList.toggle("workspace-open", open);
   el("openWorkspaceBtn").setAttribute("aria-pressed", String(open));
   el("openWorkspaceBtn").lastElementChild.textContent = open ? "Închide editorul" : "Spațiu de lucru";
   if (open) renderFiles();
+}
+el("openWorkspaceBtn").addEventListener("click", () => {
+  setWorkspaceOpen(!el("app").classList.contains("workspace-open"));
 });
 el("copyBtn").addEventListener("click", async () => { try { await navigator.clipboard.writeText(el("editor").value); toast("Cod copiat"); } catch { toast("Clipboard indisponibil în acest context"); } });
 el("downloadBtn").addEventListener("click", () => {
