@@ -26,6 +26,27 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="projectDrawer"/);
 });
 
+test('creator hub is the launch screen and routes its tools to implemented actions', () => {
+  const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8');
+  assert.match(html, /<main class="chat home-active" id="chat">/);
+  assert.match(html, /id="homePrompt"/);
+  assert.match(html, /id="homeSendBtn"/);
+  assert.match(html, /id="resumeChatBtn"/);
+  for (const action of ['chat', 'code', 'image', 'music', 'video', 'lyrics']) {
+    assert.match(html, new RegExp(`data-home-action="${action}"`));
+  }
+  assert.match(html, /id="homeProjects"/);
+  assert.match(app, /function renderHomeProjects\(\)/);
+  assert.match(app, /function submitHomePrompt\(\)/);
+  assert.match(app, /api\("\/api\/agent"/);
+  assert.match(app, /generateImageFromPrompt\(\)/);
+  assert.match(app, /function openVoiceDialog\(\)/);
+  assert.match(css, /\.chat\.home-active/);
+  assert.match(css, /@media \(max-width: 620px\)/);
+});
+
 test('server uses environment-provided credentials and does not ship secrets', () => {
   const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
   assert.match(server, /process\.env\.NOVA_ACCESS_PASSWORD/);
@@ -344,4 +365,5 @@ async function waitForServer(baseUrl, child, getOutput) {
   }
   throw new Error(`Nova did not start in time: ${lastError?.message || 'unknown error'}\n${getOutput()}`);
 }
+
 
