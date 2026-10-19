@@ -40,7 +40,13 @@ test('reference creator dashboard is the launch screen and routes creation tools
     assert.match(html, new RegExp(`data-home-action="${action}"`));
   }
   assert.match(html, /id="homeProjects"/);
+  assert.match(html, /class="home-kicker"/);
+  assert.match(html, /id="newProjectDialog"/);
   assert.match(app, /function renderHomeProjects\(\)/);
+  assert.match(app, /slice\(0, 5\)/);
+  assert.match(app, /data-create-project/);
+  assert.match(app, /starterProjectNames = \["Mountain Escape", "Travel App", "Neon Dreams", "Old Beat", "Band City"\]/);
+  assert.match(app, /async function saveNewProject\(name\)/);
   assert.match(app, /project-cover/);
   assert.match(app, /function submitHomePrompt\(\)/);
   assert.match(app, /api\("\/api\/agent"/);
@@ -370,5 +376,4 @@ async function waitForServer(baseUrl, child, getOutput) {
   }
   throw new Error(`Nova did not start in time: ${lastError?.message || 'unknown error'}\n${getOutput()}`);
 }
-
 

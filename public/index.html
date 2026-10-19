@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#07101b">
-  <meta name="nova-version" content="1.2.0">
-  <meta name="nova-build" content="NOVA_CREATE_DASHBOARD_2026_10_19">
+  <meta name="nova-version" content="1.2.2">
+  <meta name="nova-build" content="NOVA_CREATE_DASHBOARD_2026_10_19_3">
   <meta name="description" content="Nova AI Studio: creează și construiește într-un singur spațiu de lucru AI.">
   <title>Nova AI Studio</title>
   <style>
@@ -367,7 +367,7 @@ body {background:#080b13;}
 }
 
 </style>
-  <link rel="stylesheet" href="/studio.css?v=1.2.0">
+  <link rel="stylesheet" href="/studio.css?v=1.2.2">
 </head>
 <body>
   <div class="app" id="app">
@@ -436,6 +436,7 @@ body {background:#080b13;}
       <section class="creator-home" id="creatorHome" aria-labelledby="homeTitle">
         <div class="home-content">
           <section class="home-hero">
+            <div class="home-kicker"><span class="home-kicker-dot" aria-hidden="true"></span><span>NOVA AI STUDIO</span><span aria-hidden="true">/</span><span>CREATOR HUB</span></div>
             <h1 id="homeTitle">What do you want to <span>create?</span></h1>
             <p>Turn your idea into something incredible with AI.</p>
             <div class="home-prompt-wrap">
@@ -534,10 +535,18 @@ body {background:#080b13;}
       <div class="provider-note" id="voiceStatus" role="status" aria-live="polite" hidden></div>
     </form>
   </dialog>
+  <dialog class="provider-dialog" id="newProjectDialog" aria-labelledby="newProjectTitle">
+    <form method="dialog" class="provider-panel" id="newProjectForm">
+      <div class="provider-head"><div><div class="eyebrow">Nova project</div><h2 id="newProjectTitle">Create a project</h2></div><button class="btn iconbtn" value="cancel" aria-label="Close">×</button></div>
+      <label for="newProjectName">Project name</label>
+      <input id="newProjectName" maxlength="80" required autocomplete="off" placeholder="e.g. Mountain Escape">
+      <div class="provider-note">Nova will create an editable project with starter files in your workspace.</div>
+      <div class="provider-actions"><button class="btn" value="cancel">Cancel</button><button class="btn primary" type="submit">Create project</button></div>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.2.0"></script>
+  <script src="/app.js?v=1.2.2"></script>
 </body>
 </html>
-
 
 
