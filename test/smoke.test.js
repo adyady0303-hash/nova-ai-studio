@@ -215,6 +215,16 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(loginHtml, /password\.maxLength=8/);
   assert.match(loginHtml, /confirmPassword\.maxLength=8/);
   assert.match(loginHtml, /password\.maxLength=128/);
+
+  const overlongRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'subscriber-overlong', password: '123456789' })
+  });
+  assert.equal(overlongRegistration.status, 400);
+  assert.deepEqual(await overlongRegistration.json(), {
+    error: 'Parola abonatului trebuie să aibă între 1 și 8 caractere.'
+  });
   assert.match(loginHtml, /Sesiunea a expirat\. Autentifică-te din nou\./);
   assert.equal((await fetch(`${baseUrl}/api/projects`)).status, 401);
 
