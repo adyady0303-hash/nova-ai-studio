@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0d0f14">
-  <meta name="nova-version" content="1.0.0">
-  <meta name="nova-build" content="NOVA_NEBULA_STUDIO_2026_10_19">
+  <meta name="theme-color" content="#07101b">
+  <meta name="nova-version" content="1.1.0">
+  <meta name="nova-build" content="NOVA_CREATOR_HUB_2026_10_19">
   <meta name="description" content="Nova AI Studio: creează și construiește într-un singur spațiu de lucru AI.">
   <title>Nova AI Studio</title>
   <style>
@@ -367,7 +367,7 @@ body {background:#080b13;}
 }
 
 </style>
-  <link rel="stylesheet" href="/studio.css?v=1.0.0">
+  <link rel="stylesheet" href="/studio.css?v=1.1.0">
 </head>
 <body>
   <div class="app" id="app">
@@ -377,12 +377,19 @@ body {background:#080b13;}
         <span class="brand-divider"></span>
         <div class="top-context"><span class="context-dot"></span><span>Spațiul tău creativ AI</span></div>
       </div>
+      <nav class="global-nav" aria-label="Navigare principală">
+        <button class="global-nav-link active" data-view="home" type="button">Acasă</button>
+        <button class="global-nav-link" data-view="create" type="button">Creează</button>
+        <button class="global-nav-link" id="projectsNavBtn" type="button" aria-expanded="false">Proiecte</button>
+        <button class="global-nav-link" data-view="chat" type="button">Conversație</button>
+      </nav>
       <div class="top-actions">
         <div class="top-status"><span class="dot" id="connectionDot"></span><span class="status-label" id="connectionText">Se verifică AI-ul…</span></div>
         <span class="badge" id="statusBadge">Se conectează…</span>
         <button class="btn subtle" id="refreshModelsTop" title="Reîncarcă modelele">↻ Modele</button>
         <button class="btn" id="providerSettingsBtn">Configurare AI</button>
         <a class="btn subtle" href="/admin.html" id="adminDashboardLink">Administrare</a>
+        <button class="btn primary new-chat-top" id="newChatTop" type="button" title="Începe o conversație nouă" aria-label="Începe o conversație nouă">＋ Chat nou</button>
       </div>
     </header>
 
@@ -416,27 +423,49 @@ body {background:#080b13;}
       </details>
     </aside>
 
-    <main class="chat" id="chat">
+    <main class="chat home-active" id="chat">
       <div class="chat-head">
         <div class="chat-heading"><div><div class="chat-title">Chat Nova</div><div class="chat-sub">Idee → conversație → creație</div></div></div>
         <button class="btn subtle workspace-toggle" id="openWorkspaceBtn" aria-pressed="false" title="Deschide editorul proiectului"><span>⌘</span><span>Spațiu de lucru</span></button>
       </div>
-      <div class="messages" id="messages">
-        <template id="welcomeTemplate"><div class="welcome" id="welcome">
-          <div class="nova-hero"><div class="nova-hero-content"><div class="welcome-kicker"><span class="spark">✦</span><span>NOVA AI STUDIO · SPAȚIUL TĂU CREATIV</span></div><div class="nova-hero-title">Ce vrei să <span>creezi</span> astăzi?</div><p>Scrie o idee în chat. Nova te ajută cu cod, texte, imagini, muzică, video și voce.</p></div></div>
-          <div class="nova-tool-heading"><strong>Începe cu un mod</strong><span>Totul continuă în același chat</span></div>
-          <div class="nova-tool-grid" aria-label="Moduri de creație Nova">
-            <button type="button" class="nova-tool" data-nova-action="chat"><span class="nova-tool-icon blue">✦</span><span class="tool-copy"><strong>Chat AI</strong><small>Idei, explicații și planuri</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="code"><span class="nova-tool-icon teal">&lt;/&gt;</span><span class="tool-copy"><strong>Cod & aplicații</strong><small>Programe pentru PC și web</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="image"><span class="nova-tool-icon purple">▧</span><span class="tool-copy"><strong>Imagini AI</strong><small>Vizuale generate cu OpenAI</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="video"><span class="nova-tool-icon pink">▶</span><span class="tool-copy"><strong>Video</strong><small>Scenariu și export WebM</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="music"><span class="nova-tool-icon orange">♫</span><span class="tool-copy"><strong>Muzică</strong><small>Schițe audio WAV locale</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="voice"><span class="nova-tool-icon cyan">◉</span><span class="tool-copy"><strong>Voice-over</strong><small>Voce AI și export MP3</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="lyrics"><span class="nova-tool-icon violet">✎</span><span class="tool-copy"><strong>Texte & versuri</strong><small>Scriere în stilul dorit</small></span><span class="tool-arrow">↗</span></button>
-            <button type="button" class="nova-tool" data-nova-action="projects"><span class="nova-tool-icon green">▤</span><span class="tool-copy"><strong>Proiecte</strong><small>Fișiere, cod și editor</small></span><span class="tool-arrow">↗</span></button>
-          </div>
-        </div></template>
-      </div>
+      <section class="creator-home" id="creatorHome" aria-labelledby="homeTitle">
+        <div class="home-content">
+          <section class="home-hero">
+            <div class="home-kicker"><span class="home-kicker-dot"></span>NOVA AI STUDIO <span>/</span> CREATOR HUB</div>
+            <h1 id="homeTitle">Ce vrei să <span>creezi</span>?</h1>
+            <p>Pornește de la o idee. Continuă în chat și folosește instrumentele disponibile în proiectul tău.</p>
+            <div class="home-prompt-wrap">
+              <label class="sr-only" for="homePrompt">Descrie ce vrei să creezi</label>
+              <textarea id="homePrompt" rows="1" placeholder="Descrie ideea ta: o aplicație, o imagine, un text, muzică sau un videoclip…"></textarea>
+              <button class="btn primary home-send" id="homeSendBtn" type="button">Creează <span aria-hidden="true">↗</span></button>
+            </div>
+            <div class="home-prompt-note"><span>Enter trimite</span><span>·</span><span>Shift + Enter adaugă un rând</span><button id="homeVoiceBtn" type="button">◉ Voice-over</button></div>
+          </section>
+
+          <section class="home-section" id="homeTools" aria-labelledby="toolsTitle">
+            <div class="home-section-heading"><div><span class="section-kicker">INSTRUMENTE</span><h2 id="toolsTitle">Alege ce vrei să faci</h2></div><span class="section-note">Modurile continuă în conversația Nova</span></div>
+            <div class="creator-grid">
+              <button class="creator-card card-chat" type="button" data-home-action="chat"><span class="creator-art"><span>✦</span><i></i></span><span class="creator-card-copy"><strong>Chat AI</strong><small>Întrebări, idei și planuri</small></span><span class="creator-arrow">↗</span></button>
+              <button class="creator-card card-code" type="button" data-home-action="code"><span class="creator-art"><span>&lt;/&gt;</span><i></i></span><span class="creator-card-copy"><strong>Cod & aplicații</strong><small>Construiește în proiectul tău</small></span><span class="creator-arrow">↗</span></button>
+              <button class="creator-card card-image" type="button" data-home-action="image"><span class="creator-art"><span>▧</span><i></i></span><span class="creator-card-copy"><strong>Imagine</strong><small>Generează vizual cu furnizorul AI</small></span><span class="creator-arrow">↗</span></button>
+              <button class="creator-card card-music" type="button" data-home-action="music"><span class="creator-art"><span>♫</span><i></i></span><span class="creator-card-copy"><strong>Muzică</strong><small>Schiță audio instrumentală WAV</small></span><span class="creator-arrow">↗</span></button>
+              <button class="creator-card card-video" type="button" data-home-action="video"><span class="creator-art"><span>▶</span><i></i></span><span class="creator-card-copy"><strong>Video</strong><small>Scenariu și export video WebM</small></span><span class="creator-arrow">↗</span></button>
+              <button class="creator-card card-text" type="button" data-home-action="lyrics"><span class="creator-art"><span>✎</span><i></i></span><span class="creator-card-copy"><strong>Text & versuri</strong><small>Scriere creativă asistată de AI</small></span><span class="creator-arrow">↗</span></button>
+            </div>
+          </section>
+
+          <section class="home-history" id="homeHistory" hidden>
+            <div class="home-section-heading"><div><span class="section-kicker">RELUARE RAPIDĂ</span><h2>Conversația ta</h2></div></div>
+            <button class="resume-card" id="resumeChatBtn" type="button"><span class="resume-icon">↗</span><span><strong>Continuă ultima conversație</strong><small id="resumeChatPreview"></small></span><span class="creator-arrow">→</span></button>
+          </section>
+
+          <section class="home-projects" aria-labelledby="projectsTitle">
+            <div class="home-section-heading"><div><span class="section-kicker">SPAȚIUL TĂU DE LUCRU</span><h2 id="projectsTitle">Proiectele tale</h2></div><button class="text-action" type="button" id="seeProjectsBtn">Vezi toate <span aria-hidden="true">→</span></button></div>
+            <div class="home-project-grid" id="homeProjects" aria-live="polite"></div>
+          </section>
+        </div>
+      </section>
+      <div class="messages" id="messages" aria-live="polite"></div>
       <div class="composer-wrap">
         <div class="composer">
           <div class="composer-top" aria-label="Alege tipul creației">
@@ -505,25 +534,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.0.0"></script><script>
-/* Navigation bridges to existing, tested Nova actions. */
-document.addEventListener("click",function(event){
- var button=event.target.closest("[data-nova-action]"); if(!button)return;
- var action=button.getAttribute("data-nova-action");
- if(action==="business"){
- document.querySelector('.create-item[data-task="code"]')?.click();
- var prompt=document.getElementById("prompt");
- if(prompt){prompt.value="Acționează ca un consultant de business online și dezvoltator web. Ajută-mă să construiesc un business online real, etapă cu etapă: identifică nișa și clientul ideal, propune oferta și numele brandului, validează ipotezele, creează planul de afaceri, structura site-ului sau magazinului online, textele de vânzare, strategia de marketing, bugetul și lista de verificare pentru lansare. Începe prin a-mi pune 3 întrebări: ce vreau să vând, în ce țară și ce buget am. Nu pretinde că ai lansat site-ul, conectat plăți sau înregistrat firma fără confirmare.";prompt.focus();}
- return;
- }
- if(action==="image"){document.getElementById("generateImageBtn")?.click();return}
- if(action==="projects"){document.getElementById("openWorkspaceBtn")?.click();return}
- if(action==="voice"){document.getElementById("voiceComposerBtn")?.click();return}
- var task=action==="chat"?"auto":action;
- document.querySelector('.create-item[data-task="'+task+'"]')?.click();
- document.getElementById("prompt")?.focus();
-});
-</script>
+  <script src="/app.js?v=1.1.0"></script>
 </body>
 </html>
 
