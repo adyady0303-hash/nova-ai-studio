@@ -121,7 +121,12 @@ function renderChat() {
   activeMessageStream = document.createElement("div");
   activeMessageStream.className = "message-stream";
   box.append(activeMessageStream);
-  for (const message of state.chat) addBubble(message.role, message.content, message.events);
+  for (const message of state.chat) {
+    const visibleContent = message.role === "user"
+      ? (message.displayContent || String(message.content || "").split(/\n\nProiect:\s/)[0])
+      : message.content;
+    addBubble(message.role, visibleContent, message.events);
+  }
   box.scrollTop = box.scrollHeight;
 }
 
@@ -611,7 +616,7 @@ async function send() {
   const currentProject = state.projects.find(project => project.id === state.project);
   const activeContent = state.activePath ? el("editor").value : "";
   const contextualPrompt = `${promptText}\n\nProiect: ${currentProject?.name || state.project}\nFișier activ: ${state.activePath || "niciunul"}\nConținutul fișierului activ:\n\`\`\`${state.activePath?.split(".").pop() || "text"}\n${activeContent}\n\`\`\``;
-  state.chat.push({ role: "user", content: contextualPrompt });
+  state.chat.push({ role: "user", content: contextualPrompt, displayContent: promptText });
   localStorage.setItem(chatKey(), JSON.stringify(state.chat));
   addBubble("user", promptText); el("prompt").value = "";
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
@@ -619,7 +624,7 @@ async function send() {
   state.busy = true; el("sendBtn").disabled = true;
   try {
     if (state.dirty) await saveFile(false);
-    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, messages: state.chat }));
+    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, messages: state.chat.map(({ role, content }) => ({ role, content })) }));
     state.chat.push({ role: "assistant", content: result.content });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
     addBubble("assistant", result.content, result.events);
@@ -697,10 +702,7 @@ el("downloadBtn").addEventListener("click", () => {
 });
 const projectDrawer = el("projectDrawer");
 if (projectDrawer) {
-  const compactNavigation = window.matchMedia("(max-width: 620px)");
-  const syncProjectDrawer = () => { projectDrawer.open = !compactNavigation.matches; };
-  syncProjectDrawer();
-  compactNavigation.addEventListener("change", syncProjectDrawer);
+  projectDrawer.open = false;
 }
 window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
 
