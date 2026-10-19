@@ -210,6 +210,9 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(loginHtml, /Autentificare/);
   assert.match(loginHtml, /Creează un cont de abonat/);
   assert.match(loginHtml, /Cont fără taxă de înscriere/);
+  assert.match(loginHtml, /data-password-toggle="password"/);
+  assert.match(loginHtml, /data-password-toggle="confirm-password"/);
+  assert.match(loginHtml, /password\.maxLength=registering\?8:128/);
   assert.match(loginHtml, /Sesiunea a expirat\. Autentifică-te din nou\./);
   assert.equal((await fetch(`${baseUrl}/api/projects`)).status, 401);
 
@@ -362,9 +365,18 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const registration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: baseUrl },
-    body: JSON.stringify({ username: 'subscriber-one', password: 'private-password-123' })
+    body: JSON.stringify({ username: 'subscriber-one', password: 'pass1234' })
   });
   assert.equal(registration.status, 201, await registration.text());
+  const tooLongSubscriberPassword = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'subscriber-two', password: '123456789' })
+  });
+  assert.equal(tooLongSubscriberPassword.status, 400);
+  assert.deepEqual(await tooLongSubscriberPassword.json(), {
+    error: 'Parola abonatului trebuie să aibă între 1 și 8 caractere.'
+  });
   const subscriberCookie = registration.headers.get('set-cookie').split(';', 1)[0];
   const subscriberRequest = (route, options = {}) => fetch(`${baseUrl}${route}`, {
     ...options,
@@ -382,13 +394,13 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const duplicateRegistration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: baseUrl },
-    body: JSON.stringify({ username: 'SUBSCRIBER-ONE', password: 'another-private-pass-123' })
+    body: JSON.stringify({ username: 'SUBSCRIBER-ONE', password: 'pass1234' })
   });
   assert.equal(duplicateRegistration.status, 409);
   const reservedRegistration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: baseUrl },
-    body: JSON.stringify({ username: 'nova-test-user', password: 'another-private-pass-123' })
+    body: JSON.stringify({ username: 'nova-test-user', password: 'pass1234' })
   });
   assert.equal(reservedRegistration.status, 409);
 
@@ -411,7 +423,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const subscriberLogin = await fetch(`${baseUrl}/api/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', origin: baseUrl },
-    body: JSON.stringify({ username: 'subscriber-one', password: 'private-password-123' })
+    body: JSON.stringify({ username: 'subscriber-one', password: 'pass1234' })
   });
   assert.equal(subscriberLogin.status, 200);
   const ownerLogin = await fetch(`${baseUrl}/api/auth/login`, {
