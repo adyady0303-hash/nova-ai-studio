@@ -1,11 +1,16 @@
 const el = id => document.getElementById(id);
-const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, view: "home" };
+const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, view: "home" };
 let activeMessageStream = null;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 const starterProjectNames = ["Mountain Escape", "Travel App", "Neon Dreams", "Old Beat", "Band City"];
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
+  const remaining = response.headers.get("x-nova-ai-remaining");
+  if (remaining !== null && state.account?.role === "subscriber") {
+    state.account.remainingToday = Number(remaining);
+    el("accountLabel").textContent = `${state.account.username} · Abonat · ${state.account.remainingToday}/${state.account.dailyLimit} cereri AI azi`;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || `Cererea a eșuat (${response.status}).`);
   return data;
@@ -13,8 +18,22 @@ async function api(url, options = {}) {
 function jsonBody(value) { return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) }; }
 function toast(text) { const node = el("toast"); node.textContent = text; node.classList.add("show"); setTimeout(() => node.classList.remove("show"), 2200); }
 function iconFor(name) { return fileIcons[name.split(".").pop().toLowerCase()] || "·"; }
-function activeKey(project = state.project) { return `nova-active-file-${project}`; }
-function chatKey(project = state.project) { return `nova-chat-${project}`; }
+function storageKey(key) { return state.account?.role === "subscriber" ? `${key}-${state.account.id}` : key; }
+function activeKey(project = state.project) { return storageKey(`nova-active-file-${project}`); }
+function chatKey(project = state.project) { return storageKey(`nova-chat-${project}`); }
+
+async function loadAccount() {
+  const account = await api("/api/auth/me"); state.account = account;
+  const subscriber = account.role === "subscriber";
+  el("providerSettingsBtn").hidden = subscriber;
+  el("voiceSettingsBtn").hidden = subscriber;
+  el("adminDashboardLink").hidden = subscriber;
+  el("logoutBtn").hidden = !account.authEnabled;
+  el("accountLabel").textContent = subscriber
+    ? `${account.username} · Abonat · ${account.remainingToday}/${account.dailyLimit} cereri AI azi`
+    : `${account.username} · Administrator`;
+  el("accountAvatarLabel").textContent = account.username.slice(0, 1).toUpperCase();
+}
 
 async function refreshHealth() {
   const badge = el("statusBadge"), dot = el("connectionDot"), label = el("connectionText"), select = el("modelSelect");
@@ -549,9 +568,9 @@ async function loadProjects() {
     const created = await api("/api/projects", jsonBody({ name: "Nova Playground" }));
     state.projects = [created.project];
   }
-  const remembered = localStorage.getItem("nova-project");
+  const remembered = localStorage.getItem(storageKey("nova-project"));
   const selected = state.projects.find(project => project.id === remembered) || state.projects[0];
-  state.project = selected.id; localStorage.setItem("nova-project", selected.id); renderProjects(); await loadProject(selected.id);
+  state.project = selected.id; localStorage.setItem(storageKey("nova-project"), selected.id); renderProjects(); await loadProject(selected.id);
 }
 
 function createProject(name = "") {
@@ -565,7 +584,7 @@ async function saveNewProject(name) {
   if (!name?.trim()) return;
   try {
     const data = await api("/api/projects", jsonBody({ name: name.trim() }));
-    state.projects.push(data.project); state.dirty = false; await loadProject(data.project.id); localStorage.setItem("nova-project", data.project.id); setProjectsOpen(false); toast("Proiect creat"); return true;
+    state.projects.push(data.project); state.dirty = false; await loadProject(data.project.id); localStorage.setItem(storageKey("nova-project"), data.project.id); setProjectsOpen(false); toast("Proiect creat"); return true;
   } catch (error) { toast(error.message); return false; }
 }
 
@@ -585,7 +604,7 @@ async function deleteProject() {
     await api("/api/project/delete", jsonBody({ project: current.id }));
     state.projects = state.projects.filter(project => project.id !== current.id); state.dirty = false; state.project = null;
     if (!state.projects.length) { await loadProjects(); }
-    else { state.project = state.projects[0].id; localStorage.setItem("nova-project", state.project); renderProjects(); await loadProject(state.project); }
+    else { state.project = state.projects[0].id; localStorage.setItem(storageKey("nova-project"), state.project); renderProjects(); await loadProject(state.project); }
     toast("Proiect mutat în coș; îl poți restaura");
   } catch (error) { toast(error.message); }
 }
@@ -601,7 +620,7 @@ async function restoreProject() {
     if (!project) { toast("Număr invalid"); return; }
     await api("/api/project/restore", jsonBody({ project: project.id }));
     const data = await api("/api/projects"); state.projects = data.projects; state.project = project.id;
-    localStorage.setItem("nova-project", project.id); renderProjects(); await loadProject(project.id); toast("Proiect restaurat");
+    localStorage.setItem(storageKey("nova-project"), project.id); renderProjects(); await loadProject(project.id); toast("Proiect restaurat");
   } catch (error) { toast(error.message); }
 }
 
@@ -646,7 +665,7 @@ async function importFolder(files) {
       } catch { failed++; }
     }
     const data = await api("/api/projects"); state.projects = data.projects; state.project = created.project.id;
-    localStorage.setItem("nova-project", state.project); renderProjects(); await loadProject(state.project);
+    localStorage.setItem(storageKey("nova-project"), state.project); renderProjects(); await loadProject(state.project);
     toast(failed ? `Importate ${imported} fișiere; ${failed} au eșuat` : `${imported} fișiere importate`);
   } catch (error) { toast(error.message); }
 }
@@ -776,7 +795,7 @@ el("homeProjects").addEventListener("click", async event => {
   if (!card) return;
   try {
     const id = card.dataset.projectId;
-    if (id !== state.project) { await loadProject(id); localStorage.setItem("nova-project", id); }
+    if (id !== state.project) { await loadProject(id); localStorage.setItem(storageKey("nova-project"), id); }
     setView("chat");
     if (!el("app").classList.contains("workspace-open")) el("openWorkspaceBtn").click();
   } catch (error) { toast(error.message); }
@@ -832,7 +851,11 @@ el("fileSearch").addEventListener("input", event => { state.filter = event.targe
 el("newFileBtn").addEventListener("click", createFile);
 el("deleteFileBtn").addEventListener("click", deleteFile);
 el("undoBtn").addEventListener("click", undoFile);
-el("projectSelect").addEventListener("change", async event => { try { await loadProject(event.target.value); localStorage.setItem("nova-project", event.target.value); } catch (error) { toast(error.message); } });
+el("projectSelect").addEventListener("change", async event => { try { await loadProject(event.target.value); localStorage.setItem(storageKey("nova-project"), event.target.value); } catch (error) { toast(error.message); } });
+el("logoutBtn").addEventListener("click", async () => {
+  try { await api("/api/auth/logout", { method: "POST" }); window.location.replace("/"); }
+  catch (error) { toast(error.message); }
+});
 el("clearChat").addEventListener("click", () => {
   state.chat = [];
   localStorage.setItem(chatKey(), "[]");
@@ -864,10 +887,10 @@ if (projectDrawer) {
 }
 window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
 
-Promise.all([loadProviderSettings(), loadProjects()]).catch(error => {
+loadAccount().then(() => Promise.all([loadProviderSettings(), loadProjects()])).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);
 }).then(() => {
-  if (new URLSearchParams(location.search).get("settings") === "ai") {
+  if (state.account?.role === "owner" && new URLSearchParams(location.search).get("settings") === "ai") {
     const url = new URL(location.href); url.searchParams.delete("settings"); history.replaceState(null, "", url);
     el("providerSettingsBtn").click();
   }

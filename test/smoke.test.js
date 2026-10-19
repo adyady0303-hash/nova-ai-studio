@@ -178,6 +178,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       NOVA_DATA_DIR: dataDir,
       NOVA_ACCESS_USER: 'nova-test-user',
       NOVA_ACCESS_PASSWORD: 'local-test-password-at-least-20',
+      NOVA_SUBSCRIBER_DAILY_AI_LIMIT: '2',
       AI_PROVIDER: '',
       OPENAI_API_KEY: fakeApiKey,
       OPENAI_BASE_URL: `http://127.0.0.1:${providerPort}/v1`
@@ -205,7 +206,10 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
 
   const loginPage = await fetch(`${baseUrl}/`);
   assert.equal(loginPage.status, 200);
-  assert.match(await loginPage.text(), /Autentificare/);
+  const loginHtml = await loginPage.text();
+  assert.match(loginHtml, /Autentificare/);
+  assert.match(loginHtml, /Creează un cont de abonat/);
+  assert.match(loginHtml, /Cont fără taxă de înscriere/);
   assert.equal((await fetch(`${baseUrl}/api/projects`)).status, 401);
 
   const rejectedLogin = await fetch(`${baseUrl}/api/auth/login`, {
@@ -353,6 +357,72 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const logout = await request('/api/auth/logout', { method: 'POST' });
   assert.equal(logout.status, 200);
   assert.equal((await request('/api/projects')).status, 401);
+
+  const registration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'subscriber-one', password: 'private-password-123' })
+  });
+  assert.equal(registration.status, 201, await registration.text());
+  const subscriberCookie = registration.headers.get('set-cookie').split(';', 1)[0];
+  const subscriberRequest = (route, options = {}) => fetch(`${baseUrl}${route}`, {
+    ...options,
+    headers: { cookie: subscriberCookie, ...(options.headers || {}) }
+  });
+  const subscriberPost = (route, value) => subscriberRequest(route, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value)
+  });
+  const subscriberAccount = await (await subscriberRequest('/api/auth/me')).json();
+  assert.equal(subscriberAccount.role, 'subscriber');
+  assert.equal(subscriberAccount.username, 'subscriber-one');
+  assert.equal(subscriberAccount.dailyLimit, 2);
+  assert.equal((await (await subscriberRequest('/api/projects')).json()).projects.length, 0);
+
+  const duplicateRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'SUBSCRIBER-ONE', password: 'another-private-pass-123' })
+  });
+  assert.equal(duplicateRegistration.status, 409);
+  const reservedRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'nova-test-user', password: 'another-private-pass-123' })
+  });
+  assert.equal(reservedRegistration.status, 409);
+
+  const adminPage = await fetch(`${baseUrl}/admin.html`, { headers: { cookie: subscriberCookie }, redirect: 'manual' });
+  assert.equal(adminPage.status, 302);
+  const deniedSettings = await subscriberPost('/api/settings', { provider: 'openai' });
+  assert.equal(deniedSettings.status, 403);
+
+  const privateProjectResponse = await subscriberPost('/api/projects', { name: 'Spațiu Privat' });
+  assert.equal(privateProjectResponse.status, 201);
+  const privateProject = (await privateProjectResponse.json()).project;
+  assert.equal((await subscriberRequest(`/api/files?project=${project.id}`)).status, 404);
+  assert.ok((await (await subscriberRequest('/api/projects')).json()).projects.some(item => item.id === privateProject.id));
+
+  assert.equal((await subscriberPost('/api/ai/test', { model: 'gpt-4.1-mini' })).status, 502);
+  assert.equal((await subscriberPost('/api/ai/test', { model: 'gpt-4.1-mini' })).status, 502);
+  assert.equal((await subscriberPost('/api/ai/test', { model: 'gpt-4.1-mini' })).status, 429);
+
+  assert.equal((await subscriberRequest('/api/auth/logout', { method: 'POST' })).status, 200);
+  const subscriberLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'subscriber-one', password: 'private-password-123' })
+  });
+  assert.equal(subscriberLogin.status, 200);
+  const ownerLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'nova-test-user', password: 'local-test-password-at-least-20' })
+  });
+  assert.equal(ownerLogin.status, 200);
+  const ownerCookie = ownerLogin.headers.get('set-cookie').split(';', 1)[0];
+  const ownerProjects = await (await fetch(`${baseUrl}/api/projects`, { headers: { cookie: ownerCookie } })).json();
+  assert.ok(ownerProjects.projects.some(item => item.id === project.id));
+  assert.ok(!ownerProjects.projects.some(item => item.id === privateProject.id));
 });
 
 async function getFreePort() {
