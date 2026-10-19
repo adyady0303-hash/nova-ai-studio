@@ -314,8 +314,16 @@ const dbPromises = {
         [from, `${from}/`]
       );
       if (!source.rowCount) throw makeError("ENOENT", `No such path: ${fromPath}`);
-      const dest = await client.query("SELECT 1 FROM nova_files WHERE file_path = $1", [to]);
-      if (dest.rowCount) throw makeError("EEXIST", `Destination exists: ${toPath}`);
+      const dest = await client.query("SELECT kind FROM nova_files WHERE file_path = $1", [to]);
+      if (dest.rowCount) {
+        // fs.rename replaces an existing file on Render's Linux runtime. Account
+        // updates use a temporary file followed by rename, so refusing to replace
+        // the existing JSON file makes registration and quota updates fail.
+        if (source.rowCount !== 1 || source.rows[0].kind !== "file" || dest.rows[0].kind !== "file") {
+          throw makeError("EEXIST", `Destination exists: ${toPath}`);
+        }
+        await client.query("DELETE FROM nova_files WHERE file_path = $1", [to]);
+      }
       for (const row of source.rows) {
         const suffix = row.file_path === from ? "" : row.file_path.slice(from.length);
         const newPath = `${to}${suffix}`;
@@ -377,3 +385,4 @@ module.exports = {
   close,
   get enabled() { return Boolean(pool); }
 };
+
