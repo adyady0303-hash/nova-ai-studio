@@ -67,8 +67,22 @@
         </div>
       </article>
       <article class="card wide">
+        <h2>Încasări pentru abonamente</h2>
+        <p class="muted" id="paymentConfiguration">Se verifică metodele de plată…</p>
+        <form id="bankSettingsForm">
+          <p class="muted">Configurează contul de încasare în EUR. Beneficiarul și IBAN-ul vor fi afișate vizitatorilor care aleg transfer bancar. Nu introduce date de card sau parole bancare.</p>
+          <p><label for="bankBeneficiary">Nume beneficiar</label><br><input id="bankBeneficiary" name="beneficiary" maxlength="160" required autocomplete="organization"></p>
+          <p><label for="bankIban">IBAN pentru încasări EUR</label><br><input id="bankIban" name="iban" maxlength="42" required autocomplete="off" spellcheck="false"></p>
+          <button class="btn" type="submit" id="saveBankSettings">Salvează contul de încasare</button>
+        </form>
+        <p class="muted">Confirmă un transfer numai după ce ai verificat în contul bancar încasarea a 9,99 EUR și referința exactă. Confirmarea acordă o lună de Standard cu 300 de cereri AI, fără reînnoire automată.</p>
+        <div id="bankOrders"></div>
+        <p id="bankNotice" role="status" aria-live="polite"></p>
+        <a class="btn" href="/plans.html">Vezi abonamentele</a>
+      </article>
+      <article class="card wide">
         <h2>Acces de administrator</h2>
-        <p class="muted">Panoul folosește aceeași autentificare protejată ca Nova AI Studio. Instanța are un singur cont de acces, configurat prin <code>NOVA_ACCESS_USER</code> și <code>NOVA_ACCESS_PASSWORD</code>. Nu există conturi separate pentru alți utilizatori.</p>
+        <p class="muted">Panoul este rezervat administratorului configurat prin <code>NOVA_ACCESS_USER</code> și <code>NOVA_ACCESS_PASSWORD</code>. Vizitatorii au conturi și proiecte separate și nu pot confirma plăți.</p>
         <div class="notice" id="usageNotice">Starea „cheie configurată” arată doar că serverul are o valoare salvată. Nu confirmă creditul, validitatea cheii sau costul cererilor. Apelurile către OpenAI sunt tarifate separat.</div>
       </article>
     </section>
@@ -77,6 +91,26 @@
   <script>
     const byId = function(id){ return document.getElementById(id); };
     let aiTestModel = "";
+    async function refreshBankOrders(){
+      try{
+        const data=await getJson('/api/billing/bank-orders');
+        byId('paymentConfiguration').textContent='Card: '+(data.cardPaymentsEnabled?'configurat':'neconfigurat')+' · Transfer bancar: '+(data.bankTransferEnabled?'configurat':'neconfigurat — completează contul de încasare mai jos');
+        if(data.bank){byId('bankBeneficiary').value=data.bank.beneficiary;byId('bankIban').value=data.bank.iban;}
+        const list=byId('bankOrders');list.replaceChildren();
+        if(!data.orders.length)list.textContent='Nu există transferuri în așteptare.';
+        data.orders.forEach(order=>{
+          const row=document.createElement('div');row.className='project';
+          const text=document.createElement('p');text.textContent=order.username+' · 9,99 EUR · '+order.reference+' · '+new Date(order.createdAt).toLocaleDateString('ro-RO');
+          const button=document.createElement('button');button.className='btn primary';button.type='button';button.textContent='Confirmă încasarea';
+          button.addEventListener('click',async()=>{
+            if(!confirm('Ai verificat în extrasul bancar încasarea a 9,99 EUR cu referința '+order.reference+' pentru '+order.username+'? Nu confirma doar pe baza unei capturi de ecran.'))return;
+            button.disabled=true;
+            try{await getJson('/api/billing/bank-confirm',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({reference:order.reference})});byId('bankNotice').textContent='Încasare confirmată. Standard este activ pentru o lună.';await refreshBankOrders();}
+            catch(error){byId('bankNotice').textContent=error.message;button.disabled=false;}
+          });row.append(text,button);list.append(row);
+        });
+      }catch(error){byId('bankNotice').textContent=error.message;}
+    }
     async function getJson(url, options){
       const response = await fetch(url, Object.assign({credentials:"same-origin",cache:"no-store"},options||{}));
       const data = await response.json().catch(function(){return {};});
@@ -92,6 +126,7 @@
       node.append(dot,label);
     }
     async function refresh(){
+      await refreshBankOrders();
       byId("serviceState").textContent="Se verifică…";
       byId("serviceDetail").textContent="Încarc starea serviciului.";
       try{
@@ -142,6 +177,11 @@
       }
     }
     byId("refresh").addEventListener("click",refresh);
+    byId('bankSettingsForm').addEventListener('submit',async event=>{
+      event.preventDefault();const button=byId('saveBankSettings');button.disabled=true;
+      try{await getJson('/api/billing/bank-settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({beneficiary:byId('bankBeneficiary').value,iban:byId('bankIban').value})});byId('bankNotice').textContent='Cont salvat. Vizitatorii pot solicita instrucțiunile pentru transfer bancar.';await refreshBankOrders();}
+      catch(error){byId('bankNotice').textContent=error.message;}finally{button.disabled=false;}
+    });
     byId("testAi").addEventListener("click",async function(){
       const button=byId("testAi"),result=byId("aiTestResult");button.disabled=true;button.textContent="Se testează…";result.className="muted";result.textContent="Aștept răspunsul modelului…";
       try{

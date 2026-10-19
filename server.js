@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const dataStore = require("./data-store");
+const { createBilling, quotaFor, consumeQuota } = require("./billing");
 let dataFs = fs;
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -31,7 +32,7 @@ const BACKUPS_DIR = path.join(DATA_DIR, "data", "backups");
 const PROJECT_TRASH_DIR = path.join(DATA_DIR, "data", "project-trash");
 const ACCOUNTS_FILE = path.join(DATA_DIR, "data", "subscriber-accounts.json");
 const MAX_ACCOUNTS = Math.max(1, Math.min(10000, Number.parseInt(process.env.NOVA_MAX_ACCOUNTS || "100", 10) || 100));
-const SUBSCRIBER_DAILY_AI_LIMIT = Math.max(1, Math.min(500, Number.parseInt(process.env.NOVA_SUBSCRIBER_DAILY_AI_LIMIT || "20", 10) || 20));
+const SUBSCRIBER_DAILY_AI_LIMIT = Math.max(1, Math.min(5, Number.parseInt(process.env.NOVA_SUBSCRIBER_DAILY_AI_LIMIT || "5", 10) || 5));
 const MAX_BODY = 1024 * 1024;
 const MAX_FILE = 512 * 1024;
 
@@ -46,7 +47,7 @@ let accountQueue = Promise.resolve();
 let aiSettingsCacheExpiresAt = 0;
 const LOGIN_PAGE = `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Nova AI Studio</title><style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#080b12;color:#eef2ff}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 15%,#1d2948 0,transparent 55%),#080b12}.card{width:min(100%,420px);padding:36px;border:1px solid #30394d;border-radius:24px;background:rgba(17,22,34,.96);box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#8b7cff,#4bd8c2);color:#080b12;font-weight:900;font-size:23px}h1{margin:22px 0 8px;font-size:26px;letter-spacing:-.04em}p{margin:0 0 24px;color:#a9b3c8;line-height:1.5}.benefit{margin:-10px 0 22px;padding:12px 14px;border:1px solid #25433f;border-radius:12px;background:#0b211f;color:#b6f2df;font-size:13px;line-height:1.5}label{display:block;margin:18px 0 8px;font-size:13px;color:#c7d0e2}input{width:100%;height:48px;padding:0 14px;border:1px solid #38445b;border-radius:12px;background:#0d121e;color:#fff;font:inherit;outline:none}input:focus{border-color:#8b7cff;box-shadow:0 0 0 3px #8b7cff33}.password-field{position:relative}.password-field input{padding-right:54px}.password-toggle{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:36px;height:34px;margin:0;padding:0;border:0;border-radius:8px;background:transparent;color:#a9b3c8;cursor:pointer}.password-toggle:hover{background:#ffffff0d;color:#eef2ff}.password-toggle:focus-visible{outline:2px solid #8b7cff;outline-offset:1px}.password-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.password-hint{display:block;margin-top:8px;color:#8490a7;font-size:12px}button{width:100%;height:48px;margin-top:22px;border:0;border-radius:12px;background:#8b7cff;color:#0b0c15;font:700 15px inherit;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.switch{display:block;width:auto;height:auto;margin:16px auto 0;padding:4px;background:transparent;color:#bdb4ff;font:inherit;text-decoration:underline}.status{min-height:22px;margin:14px 0 0;color:#ffaaa9;font-size:13px}.status.ok{color:#91ead1}footer{margin-top:24px;color:#8490a7;font-size:12px;text-align:center}[hidden]{display:none!important}
-</style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău de lucru.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. Conținutul trimis furnizorului configurat poate genera costuri.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><div id="confirm-wrap" hidden><label for="confirm-password">Confirmă parola</label><div class="password-field"><input id="confirm-password" type="password" autocomplete="new-password" maxlength="8"><button class="password-toggle" type="button" data-password-toggle="confirm-password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Parola abonatului poate avea cel mult 8 caractere.</small></div><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><footer>Sesiune protejată · Nova AI Studio</footer></main><script>
+</style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău de lucru.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. Conținutul trimis furnizorului configurat poate genera costuri.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><div id="confirm-wrap" hidden><label for="confirm-password">Confirmă parola</label><div class="password-field"><input id="confirm-password" type="password" autocomplete="new-password" maxlength="8"><button class="password-toggle" type="button" data-password-toggle="confirm-password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Parola abonatului poate avea cel mult 8 caractere.</small></div><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><footer><a href="/plans.html" style="color:#bdb4ff">Vezi abonamentele · Standard 9,99 €/lună</a><br>Sesiune protejată · Nova AI Studio</footer></main><script>
 const form=document.getElementById("auth-form"),button=document.getElementById("submit"),status=document.getElementById("status"),password=document.getElementById("password"),confirmPassword=document.getElementById("confirm-password"),confirmWrap=document.getElementById("confirm-wrap"),switchButton=document.getElementById("switch"),benefit=document.getElementById("benefit"),passwordHint=document.getElementById("password-hint"),passwordToggles=[...document.querySelectorAll("[data-password-toggle]")];let registering=false;
 function resetPasswordVisibility(){for(const toggle of passwordToggles){const input=document.getElementById(toggle.dataset.passwordToggle);input.type="password";toggle.setAttribute("aria-pressed","false");toggle.setAttribute("aria-label","Afișează parola");const slash=toggle.querySelector("[data-password-slash]");if(slash)slash.style.display="none";}}
 for(const toggle of passwordToggles){const input=document.getElementById(toggle.dataset.passwordToggle);toggle.addEventListener("click",()=>{const visible=input.type==="password";input.type=visible?"text":"password";toggle.setAttribute("aria-pressed",String(visible));toggle.setAttribute("aria-label",visible?"Ascunde parola":"Afișează parola");const slash=toggle.querySelector("[data-password-slash]");if(slash)slash.style.display=visible?"block":"none";});}
@@ -229,23 +230,27 @@ async function consumeAiQuota(req, res) {
   const account = req.novaAccount || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   if (account.role === "owner") return true;
   try {
-    const remaining = await withAccountsLock(async () => {
+    if (["/api/media/image", "/api/media/speech"].includes(new URL(req.url, "http://nova").pathname)) {
+      json(res, 403, { error: "Imaginile și vocea AI nu sunt incluse în planurile Gratuit și Standard. Nu au fost consumate mesaje." });
+      return false;
+    }
+    const quota = await withAccountsLock(async () => {
       const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
       if (!record) throw Object.assign(new Error("Contul nu mai este disponibil. Autentifică-te din nou."), { status: 401 });
-      const today = new Date().toISOString().slice(0, 10);
-      if (record.usageDate !== today) { record.usageDate = today; record.usageCount = 0; }
-      if (record.usageCount >= SUBSCRIBER_DAILY_AI_LIMIT) return -1;
-      record.usageCount += 1;
-      await writeAccounts(database);
-      return Math.max(0, SUBSCRIBER_DAILY_AI_LIMIT - record.usageCount);
+      const quota = consumeQuota(record, SUBSCRIBER_DAILY_AI_LIMIT);
+      if (quota.allowed) await writeAccounts(database);
+      return quota;
     });
-    if (remaining < 0) {
-      res.setHeader("x-nova-ai-remaining", "0");
-      json(res, 429, { error: `Ai folosit limita de ${SUBSCRIBER_DAILY_AI_LIMIT} cereri AI pentru astăzi. Încearcă din nou mâine.` });
+    res.setHeader("x-nova-ai-remaining", String(quota.remaining));
+    res.setHeader("x-nova-ai-limit", String(quota.limit));
+    res.setHeader("x-nova-ai-interval", quota.interval);
+    if (!quota.allowed) {
+      json(res, 429, { error: quota.plan === "standard"
+        ? "Ai folosit cele 300 de mesaje AI ale perioadei lunare. Limita se reînnoiește la următoarea perioadă plătită."
+        : `Ai folosit limita de ${quota.limit} mesaje AI pentru astăzi. Revino mâine sau alege abonamentul Standard.` });
       return false;
     }
-    res.setHeader("x-nova-ai-remaining", String(remaining));
     return true;
   } catch (error) {
     json(res, error.status || 503, { error: error.message || "Nu am putut verifica limita contului." });
@@ -276,7 +281,7 @@ function json(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
-function readJson(req) {
+function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -293,15 +298,19 @@ function readJson(req) {
     });
     req.on("end", () => {
       if (settled) return;
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}"));
-      } catch {
-        reject(Object.assign(new Error("Corpul cererii nu este JSON valid."), { status: 400 }));
-      }
+      resolve(Buffer.concat(chunks));
     });
     req.on("error", error => { if (!settled) reject(error); });
   });
 }
+
+async function readJson(req) {
+  const raw = await readBody(req);
+  try { return JSON.parse(raw.toString("utf8") || "{}"); }
+  catch { throw Object.assign(new Error("Corpul cererii nu este JSON valid."), { status: 400 }); }
+}
+
+const billing = createBilling({ readAccounts, writeAccounts, withAccountsLock });
 
 async function ollamaJson(route, options = {}) {
   const response = await fetch(`${OLLAMA}${route}`, {
@@ -628,6 +637,15 @@ async function handle(req, res) {
     catch { return json(res, 503, { ok: false, error: "Storage unavailable" }); }
   }
 
+  if (req.method === "POST" && url.pathname === "/api/billing/webhook") {
+    const result = await billing.webhook(await readBody(req), req.headers["stripe-signature"]);
+    return json(res, 200, result);
+  }
+  if (req.method === "GET" && url.pathname === "/plans.html") {
+    const page = await fs.promises.readFile(path.join(PUBLIC_DIR, "plans.html"));
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+    return res.end(page);
+  }
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/login") return login(req, res);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/register") return register(req, res);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/logout") {
@@ -646,13 +664,27 @@ async function handle(req, res) {
   const account = session || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   req.novaAccount = account;
   const principal = account.userId || "owner";
+  if (req.method === "GET" && url.pathname === "/api/billing/bank-orders") return json(res, 200, await billing.bankOrders(account));
+  if (req.method === "POST" && ["/api/billing/bank-transfer", "/api/billing/bank-confirm", "/api/billing/bank-settings"].includes(url.pathname)) {
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de plată respinsă." });
+    if (url.pathname.endsWith("/bank-transfer")) return json(res, 200, await billing.bankTransfer(account));
+    const body = await readJson(req);
+    if (url.pathname.endsWith("/bank-settings")) return json(res, 200, await billing.saveBankSettings(account, body));
+    return json(res, 200, await billing.confirmBankTransfer(account, body.reference));
+  }
+  if (req.method === "GET" && url.pathname === "/api/billing") return json(res, 200, await billing.summary(account, SUBSCRIBER_DAILY_AI_LIMIT));
+  if (req.method === "POST" && ["/api/billing/checkout", "/api/billing/portal"].includes(url.pathname)) {
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de plată respinsă." });
+    const result = url.pathname.endsWith("/checkout") ? await billing.checkout(account) : await billing.portal(account);
+    return json(res, 200, result);
+  }
   await refreshAiSettings();
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
     if (account.role === "owner") return json(res, 200, { username: account.username, role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), dailyLimit: null, remainingToday: null });
     const record = (await readAccounts()).users.find(user => user.id === account.userId);
     if (!record) return json(res, 401, { error: "Contul nu mai este disponibil. Autentifică-te din nou." });
-    const used = record.usageDate === new Date().toISOString().slice(0, 10) ? record.usageCount : 0;
-    return json(res, 200, { username: account.username, role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), dailyLimit: SUBSCRIBER_DAILY_AI_LIMIT, remainingToday: Math.max(0, SUBSCRIBER_DAILY_AI_LIMIT - used) });
+    const quota = quotaFor(record, SUBSCRIBER_DAILY_AI_LIMIT);
+    return json(res, 200, { username: account.username, role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), plan: quota.plan, quotaLimit: quota.limit, quotaRemaining: quota.remaining, quotaInterval: quota.interval, dailyLimit: quota.interval === "day" ? quota.limit : null, remainingToday: quota.interval === "day" ? quota.remaining : null });
   }
   if (req.method === "GET" && url.pathname === "/api/settings") {
     return json(res, 200, { settings: publicProviderSettings() });

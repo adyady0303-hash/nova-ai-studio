@@ -9,7 +9,10 @@ async function api(url, options = {}) {
   const remaining = response.headers.get("x-nova-ai-remaining");
   if (remaining !== null && state.account?.role === "subscriber") {
     state.account.remainingToday = Number(remaining);
-    el("accountLabel").textContent = `${state.account.username} · Abonat · ${state.account.remainingToday}/${state.account.dailyLimit} cereri AI azi`;
+    state.account.quotaRemaining = Number(remaining);
+    state.account.quotaLimit = Number(response.headers.get("x-nova-ai-limit") || state.account.quotaLimit);
+    state.account.quotaInterval = response.headers.get("x-nova-ai-interval") || state.account.quotaInterval;
+    updateAccountLabel();
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -25,6 +28,13 @@ function storageKey(key) { return state.account?.role === "subscriber" ? `${key}
 function activeKey(project = state.project) { return storageKey(`nova-active-file-${project}`); }
 function chatKey(project = state.project) { return storageKey(`nova-chat-${project}`); }
 
+function updateAccountLabel() {
+  const account = state.account;
+  el("accountLabel").textContent = account.role === "subscriber"
+    ? `${account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} cereri AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
+    : `${account.username} · Administrator`;
+}
+
 async function loadAccount() {
   const account = await api("/api/auth/me"); state.account = account;
   const subscriber = account.role === "subscriber";
@@ -32,9 +42,7 @@ async function loadAccount() {
   el("voiceSettingsBtn").hidden = subscriber;
   el("adminDashboardLink").hidden = subscriber;
   el("logoutBtn").hidden = !account.authEnabled;
-  el("accountLabel").textContent = subscriber
-    ? `${account.username} · Abonat · ${account.remainingToday}/${account.dailyLimit} cereri AI azi`
-    : `${account.username} · Administrator`;
+  updateAccountLabel();
   el("accountAvatarLabel").textContent = account.username.slice(0, 1).toUpperCase();
 }
 

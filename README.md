@@ -23,7 +23,7 @@ Apelurile către modele cloud pot fi tarifate de furnizor. Nova nu include chei 
 3. Introdu cheia API numai în formularul privat Render. Nu o adăuga în GitHub, în pagina publică sau în conversații.
 4. După deploy, administratorul intră cu utilizatorul și parola din dashboard. Vizitatorii pot apăsa „Creează un cont de abonat” pentru un spațiu privat separat.
 
-Pagina de autentificare permite vizitatorilor să-și creeze conturi separate de abonat. Proiectele lor sunt private, iar administratorul păstrează spațiul și setările AI existente. Un cont de abonat are implicit 20 de cereri AI pe zi și cel mult 10 proiecte; apelurile folosesc furnizorul AI configurat de administrator și pot avea costuri.
+Pagina de autentificare permite vizitatorilor să-și creeze conturi separate de abonat. Proiectele lor sunt private, iar administratorul păstrează spațiul și setările AI existente. Un cont de abonat are implicit 5 cereri AI pe zi și cel mult 10 proiecte; apelurile folosesc furnizorul AI configurat de administrator și pot avea costuri.
 
 ### Deploy cu Docker
 
@@ -51,7 +51,7 @@ Nu sunt necesare pachete npm. Proiectele și backup-urile rămân în dosarul ap
 | `NOVA_ACCESS_USER` / `NOVA_ACCESS_PASSWORD` | Autentificare prin formular Nova și cookie de sesiune `HttpOnly`, `Secure` și `SameSite`; parola trebuie să aibă cel puțin 20 de caractere pe host public. |
 | `NOVA_DATA_DIR` | Rădăcina proiectelor, backup-urilor și coșului de gunoi. Montează aici storage persistent. |
 | `NOVA_MAX_ACCOUNTS` | Numărul maxim de conturi de abonat; implicit `100`. |
-| `NOVA_SUBSCRIBER_DAILY_AI_LIMIT` | Cereri AI permise zilnic fiecărui abonat; implicit `20`. |
+| `NOVA_SUBSCRIBER_DAILY_AI_LIMIT` | Cereri AI gratuite zilnice; implicit `5`, cel mult `5`. Planul Standard are o cotă separată de 300 pe perioadă lunară plătită. |
 | `AI_PROVIDER` | `ollama` sau `openai`. |
 | `OLLAMA_URL` | Endpoint-ul Ollama accesibil serverului; implicit `http://127.0.0.1:11434`. |
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` | Endpoint și cheie API pentru serviciu OpenAI compatibil. |
@@ -66,3 +66,42 @@ Conturile sunt salvate în `NOVA_DATA_DIR/data/subscriber-accounts.json`, cu par
 - GitHub Pages publică automat directorul `site/` la `https://adyady0303-hash.github.io/nova-ai-studio/`.
 - Schimbarea versiunii din `package.json` pe ramura `main` creează automat o arhivă Windows/Linux și suma SHA-256 în GitHub Releases. Workflow-ul poate fi pornit și manual din Actions.
 - Pentru sursă, bug-uri și actualizări: [repository Nova AI Studio](https://github.com/adyady0303-hash/nova-ai-studio).
+
+
+## Abonamente pentru vizitatori
+
+Pagina publică `/plans.html` prezintă planurile, iar meniul contului oferă acces la abonamente:
+
+- Gratuit: 5 cereri AI pe zi (UTC), chat, cod și texte, până la 10 proiecte private.
+- Standard: 9,99 EUR/lună, 300 de cereri AI pe perioada lunară plătită și până la 10 proiecte private. Cota nu se reportează.
+- Imaginile și vocea AI nu sunt incluse; endpointurile respective sunt blocate pentru vizitatori, fără consumarea cotei. Administratorul își păstrează accesul existent.
+- O cerere AI acceptată consumă o unitate, inclusiv în cazul unei erori a furnizorului. Testul care generează un răspuns consumă o cerere; verificarea conexiunii `/api/health` nu consumă mesaje.
+
+Contul bancar este destinația încasărilor. Pentru plata online cu Visa/Mastercard este necesar un procesator de plăți; datele cardului nu sunt colectate de Nova.
+
+### Transfer bancar, fără cont Stripe
+
+1. Administratorul deschide `/admin.html`, secțiunea **Încasări pentru abonamente**, și salvează numele beneficiarului și un IBAN valid pentru încasări EUR. Sunt date afișate plătitorilor, nu credențiale de acces la bancă. Se păstrează în depozitul de conturi existent. Opțional, `NOVA_BANK_IBAN` și `NOVA_BANK_BENEFICIARY` furnizează configurația inițială din variabilele serverului, dacă nu există deja una salvată în panou.
+2. Vizitatorul autentificat alege **Plătește prin transfer bancar** din `/plans.html`. Primește beneficiarul, IBAN-ul, suma fixă de 9,99 EUR și o referință unică `NOVA-...`. Solicitările repetate reutilizează aceeași referință în așteptare.
+3. Administratorul verifică extrasul bancar și confirmă încasarea exactă în panou. Nu există verificare bancară automată; o solicitare sau o captură de ecran a vizitatorului nu dovedește încasarea. Confirmarea este disponibilă exclusiv contului de administrator și protejată împotriva cererilor din alte origini.
+4. Confirmarea acordă 300 de cereri pentru o lună calendaristică de la confirmare, cu limitare la ultima zi a lunii când este necesar. Nu există debitare sau reînnoire automată. Confirmarea repetată a aceleiași referințe nu extinde accesul și nu reînnoiește cota.
+5. La expirare contul revine automat la Gratuit; vizitatorul poate solicita un nou transfer. Abonamentele deja active nu pot fi activate din nou printr-un transfer duplicat. Instrucțiunile unui transfer existent păstrează contul și beneficiarul originale chiar dacă administratorul schimbă ulterior contul de încasare.
+
+### Activarea plăților prin Stripe (opțional, necesită cont de comerciant)
+
+Fără configurare Stripe, aplicația, planul Gratuit și transferul bancar configurat funcționează, dar butonul de plată cu cardul este dezactivat. Nicio încasare sau activare Standard nu este simulată. Cheia OpenAI existentă nu se modifică.
+
+1. În Stripe creează produsul Standard cu un preț recurent lunar de exact **9,99 EUR** (fără perioadă de probă, cupoane sau modificări ale cantității în această integrare). Folosește inițial modul de testare.
+2. În setările securizate ale serverului Render, configurează:
+   - `STRIPE_SECRET_KEY`: cheia secretă Stripe; niciodată în Git sau browser.
+   - `STRIPE_STANDARD_PRICE_ID`: identificatorul `price_...` al prețului lunar.
+   - `STRIPE_WEBHOOK_SECRET`: secretul de semnare al endpointului webhook. Este necesară valoarea reală în procesul serverului pentru verificarea HMAC; un substituent de proxy nu funcționează.
+   - `NOVA_PUBLIC_URL`: `https://www.nova-ai-studio.eu` (originea publică HTTPS, fără cale).
+3. În Stripe configurează endpointul `https://www.nova-ai-studio.eu/api/billing/webhook`, cu versiunea API **2024-06-20**, pentru `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated` și `customer.subscription.deleted`. Cererile API ale aplicației folosesc aceeași versiune explicită.
+4. Activează Stripe Customer Portal pentru istoricul facturilor, actualizarea metodei de plată și anularea la sfârșitul perioadei. Dezactivează schimbarea planului și a cantității în portal; integrarea acceptă un singur produs/preț.
+5. Publică serverul și verifică fluxul în modul Stripe de test: cont vizitator → `/plans.html` → Checkout → webhook semnat → Standard activ cu 300 de cereri. Revenirea la `?checkout=success` singură NU activează planul. Dacă notificarea întârzie, folosește „Verifică abonamentul”.
+6. Verifică anularea, plata eșuată și expirarea accesului. Pentru încasări reale, completează verificarea comercială Stripe și contul bancar de decontare, apoi înlocuiește împreună cheia, prețul și secretul webhook cu cele din modul live. Completează datele firmei și obligațiile fiscale înainte de încasări reale; aplicația nu configurează automat taxele.
+
+Accesul plătit și cotele se păstrează în depozitul de conturi existent, inclusiv PostgreSQL dacă acesta este activ. Nu elimina `NOVA_DATA_DIR` sau baza de date la publicare. Webhookurile sunt verificate pe corpul original al cererii; aplicația citește starea curentă a abonamentului și factura plătită din Stripe, prevenind reactivarea pe baza unor evenimente vechi. Checkout reutilizează sesiunile deschise și blochează abonamentele duplicate pentru același cont.
+
+Validare locală: `npm ci` și `npm test`. Testele Stripe folosesc răspunsuri simulate și nu debitează carduri; validarea unei plăți Stripe reale rămâne necesară după configurarea contului.
