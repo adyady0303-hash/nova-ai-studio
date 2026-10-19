@@ -1,6 +1,7 @@
 const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null };
 const welcomeTemplate = el("welcomeTemplate");
+let activeMessageStream = null;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 
 async function api(url, options = {}) {
@@ -111,14 +112,20 @@ function updateLines() {
 function renderChat() {
   const box = el("messages");
   box.replaceChildren();
+  activeMessageStream = null;
   if (!state.chat.length) {
     const welcome = welcomeTemplate?.content?.firstElementChild?.cloneNode(true);
     if (welcome) box.append(welcome);
     return;
   }
+  activeMessageStream = document.createElement("div");
+  activeMessageStream.className = "message-stream";
+  box.append(activeMessageStream);
   for (const message of state.chat) addBubble(message.role, message.content, message.events);
   box.scrollTop = box.scrollHeight;
 }
+
+function messageContainer() { return activeMessageStream || el("messages"); }
 
 function setTask(task) {
   const supported = ["auto", "code", "lyrics", "music", "video"];
@@ -294,7 +301,7 @@ function addVoiceCard(text, result) {
   const player = document.createElement("audio"); player.controls = true; player.src = result.dataUrl;
   const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = result.dataUrl; link.download = "nova-voice-over.mp3";
   output.append(player, link); node.append(meta, transcript, output);
-  el("messages").append(node); el("messages").scrollTop = el("messages").scrollHeight;
+  messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
 async function generateVoiceFromDialog() {
@@ -333,14 +340,14 @@ function addImageCard(prompt, result) {
   const caption = document.createElement("div"); caption.textContent = prompt;
   const img = document.createElement("img"); img.className = "creative-image"; img.alt = prompt; img.src = result.dataUrl;
   const link = document.createElement("a"); link.className = "btn small"; link.textContent = `Descarcă ${(result.format || "png").toUpperCase()}`; link.href = result.dataUrl; link.download = safeMediaName(prompt.slice(0, 48), result.format || "png");
-  node.append(meta, caption, img, link); el("messages").append(node); el("messages").scrollTop = el("messages").scrollHeight;
+  node.append(meta, caption, img, link); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
 async function generateImageFromPrompt() {
   const prompt = el("prompt").value.trim(); if (!prompt) { toast("Descrie imaginea în caseta de chat."); return; }
   const button = el("generateImageBtn"); button.disabled = true;
   addBubble("user", `Creează imagine: ${prompt}`);
-  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = "Se generează imaginea…"; el("messages").append(pending);
+  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = "Se generează imaginea…"; messageContainer().append(pending);
   el("prompt").value = "";
   try { const result = await api("/api/media/image", jsonBody({ prompt })); addImageCard(prompt, result); }
   catch (error) { addBubble("assistant", error.message); }
@@ -411,7 +418,7 @@ function addBubble(role, content, events = []) {
   if (role === "assistant" && creative.text.trim() && state.settings?.provider === "openai") {
     const row = document.createElement("div"); row.className = "apply-row"; addSpeechButton(row, creative.text); node.append(row);
   }
-  el("messages").append(node); el("messages").scrollTop = el("messages").scrollHeight;
+  messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
 async function saveFile(showToast = false) {
@@ -608,7 +615,7 @@ async function send() {
   localStorage.setItem(chatKey(), JSON.stringify(state.chat));
   addBubble("user", promptText); el("prompt").value = "";
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
-  el("messages").append(pending); el("messages").scrollTop = el("messages").scrollHeight;
+  messageContainer().append(pending); el("messages").scrollTop = el("messages").scrollHeight;
   state.busy = true; el("sendBtn").disabled = true;
   try {
     if (state.dirty) await saveFile(false);
