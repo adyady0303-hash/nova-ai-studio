@@ -1,6 +1,5 @@
 const el = id => document.getElementById(id);
-const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null };
-const welcomeTemplate = el("welcomeTemplate");
+const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, view: "home" };
 let activeMessageStream = null;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 
@@ -89,6 +88,64 @@ function renderProjects() {
   if (state.project) select.value = state.project;
   const current = state.projects.find(project => project.id === state.project);
   el("projectName").textContent = current?.name || "Niciun proiect";
+  renderHomeProjects();
+}
+
+function renderHomeProjects() {
+  const list = el("homeProjects");
+  if (!list) return;
+  list.replaceChildren();
+  const projects = state.projects.slice(0, 4);
+  if (!projects.length) {
+    const empty = document.createElement("div"); empty.className = "home-project-empty";
+    empty.innerHTML = '<span class="empty-project-icon">＋</span><strong>Începe un proiect</strong><small>Creează un spațiu pentru fișierele tale.</small>';
+    empty.addEventListener("click", createProject);
+    list.append(empty);
+    return;
+  }
+  projects.forEach((project, index) => {
+    const card = document.createElement("button"); card.className = `home-project-card project-tone-${index % 4}`; card.type = "button";
+    card.dataset.projectId = project.id;
+    const art = document.createElement("span"); art.className = "project-preview"; art.setAttribute("aria-hidden", "true");
+    const glyph = document.createElement("span"); glyph.textContent = ["⌘", "◇", "▤", "✦"][index % 4]; art.append(glyph);
+    const name = document.createElement("strong"); name.textContent = project.name;
+    const detail = document.createElement("small"); detail.textContent = project.id === state.project ? `${state.files.length} fișier${state.files.length === 1 ? "" : "e"} · Deschis` : "Deschide proiectul";
+    const arrow = document.createElement("span"); arrow.className = "project-open-arrow"; arrow.textContent = "↗";
+    card.append(art, name, detail, arrow); list.append(card);
+  });
+}
+
+function updateHomeHistory() {
+  const section = el("homeHistory");
+  if (!section) return;
+  const lastUser = [...state.chat].reverse().find(message => message.role === "user");
+  section.hidden = !lastUser;
+  if (lastUser) {
+    const preview = lastUser.displayContent || String(lastUser.content || "").split(/\n\nProiect:\s/)[0];
+    el("resumeChatPreview").textContent = preview.slice(0, 120) || "Redeschide conversația salvată în acest proiect.";
+  }
+}
+
+function setView(view) {
+  state.view = view === "chat" ? "chat" : "home";
+  if (state.view === "home" && el("prompt").value.trim() && !el("homePrompt").value.trim()) el("homePrompt").value = el("prompt").value;
+  el("chat").classList.toggle("home-active", state.view === "home");
+  setProjectsOpen(false);
+  const activeView = view === "create" ? "create" : state.view;
+  document.querySelectorAll(".global-nav-link[data-view]").forEach(button => {
+    const active = button.dataset.view === activeView;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+  });
+  updateHomeHistory();
+}
+
+function setProjectsOpen(open) {
+  const app = el("app"), drawer = el("projectDrawer"), button = el("projectsNavBtn");
+  app?.classList.toggle("projects-open", open);
+  if (drawer) drawer.open = open;
+  if (button) button.setAttribute("aria-expanded", String(open));
+  button?.classList.toggle("active", open);
 }
 
 function renderFiles() {
@@ -112,12 +169,6 @@ function updateLines() {
 function renderChat() {
   const box = el("messages");
   box.replaceChildren();
-  activeMessageStream = null;
-  if (!state.chat.length) {
-    const welcome = welcomeTemplate?.content?.firstElementChild?.cloneNode(true);
-    if (welcome) box.append(welcome);
-    return;
-  }
   activeMessageStream = document.createElement("div");
   activeMessageStream.className = "message-stream";
   box.append(activeMessageStream);
@@ -128,9 +179,16 @@ function renderChat() {
     addBubble(message.role, visibleContent, message.events);
   }
   box.scrollTop = box.scrollHeight;
+  updateHomeHistory();
 }
 
-function messageContainer() { return activeMessageStream || el("messages"); }
+function messageContainer() {
+  if (!activeMessageStream) {
+    activeMessageStream = document.createElement("div"); activeMessageStream.className = "message-stream";
+    el("messages").replaceChildren(activeMessageStream);
+  }
+  return activeMessageStream;
+}
 
 function setTask(task) {
   const supported = ["auto", "code", "lyrics", "music", "video"];
@@ -316,6 +374,7 @@ async function generateVoiceFromDialog() {
   button.disabled = true; button.textContent = "Se generează MP3…"; status.textContent = "Trimit textul către furnizorul vocal configurat…";
   try {
     const result = await generateSpeech(text);
+    setView("chat");
     addBubble("user", `Creează un voice-over MP3: ${text}`);
     addVoiceCard(text, result);
     el("voiceDialog").close(); el("voiceText").value = ""; status.hidden = true;
@@ -350,6 +409,7 @@ function addImageCard(prompt, result) {
 
 async function generateImageFromPrompt() {
   const prompt = el("prompt").value.trim(); if (!prompt) { toast("Descrie imaginea în caseta de chat."); return; }
+  setView("chat");
   const button = el("generateImageBtn"); button.disabled = true;
   addBubble("user", `Creează imagine: ${prompt}`);
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = "Se generează imaginea…"; messageContainer().append(pending);
@@ -466,7 +526,7 @@ async function loadProject(id) {
   const savedActive = localStorage.getItem(activeKey());
   const data = await api(`/api/files?project=${encodeURIComponent(id)}`); state.files = data.files;
   state.activePath = state.files.some(file => file.path === savedActive) ? savedActive : (state.files.find(file => /\.(js|ts|py|gpc|html|css)$/i.test(file.path))?.path || state.files[0]?.path || null);
-  renderFiles();
+  renderFiles(); renderHomeProjects();
   if (state.activePath) await openFile(state.activePath, true);
 }
 
@@ -610,6 +670,7 @@ async function send() {
   const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
   if (!promptText) return;
   if (!model) { toast("Configurează furnizorul AI și alege un model."); return; }
+  setView("chat");
   const mode = el("modeSelect").value;
   const task = el("taskSelect").value;
   const allowChanges = mode === "build" && el("allowChanges").checked;
@@ -659,8 +720,68 @@ el("taskSelect").addEventListener("change", event => {
 });
 document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.addEventListener("click", () => {
   setTask(button.dataset.task);
+  setView("chat");
   el("prompt").focus();
 }));
+document.querySelectorAll(".global-nav-link[data-view]").forEach(button => button.addEventListener("click", () => {
+  const view = button.dataset.view;
+  if (view === "create") {
+    setView("create");
+    requestAnimationFrame(() => el("homeTools").scrollIntoView({ behavior: "smooth", block: "start" }));
+  } else setView(view);
+  if (view === "chat") el("prompt").focus();
+}));
+el("projectsNavBtn").addEventListener("click", () => setProjectsOpen(!el("app").classList.contains("projects-open")));
+el("projectDrawer").addEventListener("toggle", event => {
+  const open = event.currentTarget.open;
+  el("app").classList.toggle("projects-open", open);
+  el("projectsNavBtn").setAttribute("aria-expanded", String(open));
+  el("projectsNavBtn").classList.toggle("active", open);
+});
+el("app").addEventListener("click", event => {
+  if (event.target === el("app") && el("app").classList.contains("projects-open")) setProjectsOpen(false);
+});
+el("seeProjectsBtn").addEventListener("click", () => setProjectsOpen(true));
+el("homeProjects").addEventListener("click", async event => {
+  const card = event.target.closest("[data-project-id]");
+  if (!card) return;
+  try {
+    const id = card.dataset.projectId;
+    if (id !== state.project) { await loadProject(id); localStorage.setItem("nova-project", id); }
+    setView("chat");
+    if (!el("app").classList.contains("workspace-open")) el("openWorkspaceBtn").click();
+  } catch (error) { toast(error.message); }
+});
+el("resumeChatBtn").addEventListener("click", () => { setView("chat"); el("prompt").focus(); });
+function submitHomePrompt() {
+  const value = el("homePrompt").value.trim();
+  if (!value || state.busy) return;
+  el("prompt").value = value; el("homePrompt").value = ""; resizePrompt(); setView("chat"); send();
+}
+el("homeSendBtn").addEventListener("click", submitHomePrompt);
+el("homePrompt").addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submitHomePrompt(); }
+});
+el("homeVoiceBtn").addEventListener("click", () => {
+  const value = el("homePrompt").value.trim();
+  if (value) { el("prompt").value = value; el("voiceText").value = value; el("homePrompt").value = ""; }
+  setView("chat"); openVoiceDialog();
+});
+el("creatorHome").addEventListener("click", async event => {
+  const card = event.target.closest("[data-home-action]");
+  if (!card) return;
+  const action = card.dataset.homeAction;
+  const draft = el("homePrompt").value.trim();
+  if (["chat", "code", "lyrics", "music", "video"].includes(action)) {
+    const task = action === "chat" ? "auto" : action;
+    setTask(task); if (draft) { el("prompt").value = draft; el("homePrompt").value = ""; resizePrompt(); }
+    setView("chat"); el("prompt").focus(); return;
+  }
+  if (action === "image") {
+    if (!draft) { setView("chat"); el("prompt").placeholder = "Descrie imaginea pe care vrei s-o creezi…"; el("prompt").focus(); return; }
+    el("prompt").value = draft; el("homePrompt").value = ""; await generateImageFromPrompt(); return;
+  }
+});
 el("prompt").addEventListener("input", resizePrompt);
 el("prompt").addEventListener("keydown", event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } });
 el("refreshModels").addEventListener("click", refreshHealth);
@@ -682,10 +803,12 @@ el("clearChat").addEventListener("click", () => {
   localStorage.setItem(chatKey(), "[]");
   setTask("auto");
   el("prompt").value = "";
+  el("homePrompt").value = "";
   resizePrompt();
   renderChat();
-  el("prompt").focus();
+  setView("home");
 });
+el("newChatTop").addEventListener("click", () => el("clearChat").click());
 el("openWorkspaceBtn").addEventListener("click", () => {
   const app = el("app");
   const open = !app.classList.contains("workspace-open");
