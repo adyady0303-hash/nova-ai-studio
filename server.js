@@ -2,6 +2,8 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const dataStore = require("./data-store");
+let dataFs = fs;
 
 const HOST = process.env.HOST || "127.0.0.1";
 const PORT = Number(process.env.PORT || 4173);
@@ -41,6 +43,7 @@ const AUTH_COOKIE = "nova_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 let accountQueue = Promise.resolve();
+let aiSettingsCacheExpiresAt = 0;
 const LOGIN_PAGE = `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Nova AI Studio</title><style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#080b12;color:#eef2ff}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 15%,#1d2948 0,transparent 55%),#080b12}.card{width:min(100%,420px);padding:36px;border:1px solid #30394d;border-radius:24px;background:rgba(17,22,34,.96);box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#8b7cff,#4bd8c2);color:#080b12;font-weight:900;font-size:23px}h1{margin:22px 0 8px;font-size:26px;letter-spacing:-.04em}p{margin:0 0 24px;color:#a9b3c8;line-height:1.5}.benefit{margin:-10px 0 22px;padding:12px 14px;border:1px solid #25433f;border-radius:12px;background:#0b211f;color:#b6f2df;font-size:13px;line-height:1.5}label{display:block;margin:18px 0 8px;font-size:13px;color:#c7d0e2}input{width:100%;height:48px;padding:0 14px;border:1px solid #38445b;border-radius:12px;background:#0d121e;color:#fff;font:inherit;outline:none}input:focus{border-color:#8b7cff;box-shadow:0 0 0 3px #8b7cff33}.password-field{position:relative}.password-field input{padding-right:54px}.password-toggle{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:36px;height:34px;margin:0;padding:0;border:0;border-radius:8px;background:transparent;color:#a9b3c8;cursor:pointer}.password-toggle:hover{background:#ffffff0d;color:#eef2ff}.password-toggle:focus-visible{outline:2px solid #8b7cff;outline-offset:1px}.password-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.password-hint{display:block;margin-top:8px;color:#8490a7;font-size:12px}button{width:100%;height:48px;margin-top:22px;border:0;border-radius:12px;background:#8b7cff;color:#0b0c15;font:700 15px inherit;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.switch{display:block;width:auto;height:auto;margin:16px auto 0;padding:4px;background:transparent;color:#bdb4ff;font:inherit;text-decoration:underline}.status{min-height:22px;margin:14px 0 0;color:#ffaaa9;font-size:13px}.status.ok{color:#91ead1}footer{margin-top:24px;color:#8490a7;font-size:12px;text-align:center}[hidden]{display:none!important}
 </style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău de lucru.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. Conținutul trimis furnizorului configurat poate genera costuri.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><div id="confirm-wrap" hidden><label for="confirm-password">Confirmă parola</label><div class="password-field"><input id="confirm-password" type="password" autocomplete="new-password" maxlength="8"><button class="password-toggle" type="button" data-password-toggle="confirm-password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Parola abonatului poate avea cel mult 8 caractere.</small></div><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><footer>Sesiune protejată · Nova AI Studio</footer></main><script>
@@ -69,19 +72,17 @@ function readCookie(req, name) {
   return "";
 }
 
-function sessionFor(req) {
+async function sessionFor(req) {
   const token = readCookie(req, AUTH_COOKIE);
-  const session = token ? sessions.get(token) : null;
+  if (!token) return null;
+  const session = dataStore.enabled ? await dataStore.getSession(token) : sessions.get(token);
   if (!session) return null;
   if (session.expiresAt <= Date.now()) {
     sessions.delete(token);
+    if (dataStore.enabled) await dataStore.deleteSession(token);
     return null;
   }
   return session;
-}
-
-function hasValidSession(req) {
-  return Boolean(sessionFor(req));
 }
 
 function normalizedUsername(value) {
@@ -92,9 +93,9 @@ function passwordHash(password, salt) {
   return crypto.scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 }).toString("base64");
 }
 
-function readAccounts() {
+async function readAccounts() {
   try {
-    const data = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, "utf8"));
+    const data = JSON.parse(await dataFs.promises.readFile(ACCOUNTS_FILE, "utf8"));
     if (data?.version !== 1 || !Array.isArray(data.users)) throw new Error("Invalid account store");
     return data;
   } catch (error) {
@@ -105,11 +106,11 @@ function readAccounts() {
 
 async function writeAccounts(data) {
   const directory = path.dirname(ACCOUNTS_FILE);
-  await fs.promises.mkdir(directory, { recursive: true });
+  await dataFs.promises.mkdir(directory, { recursive: true });
   const temp = `${ACCOUNTS_FILE}.${crypto.randomBytes(8).toString("hex")}.tmp`;
-  await fs.promises.writeFile(temp, JSON.stringify(data), { encoding: "utf8", mode: 0o600, flag: "wx" });
-  try { await fs.promises.rename(temp, ACCOUNTS_FILE); }
-  catch (error) { await fs.promises.unlink(temp).catch(() => {}); throw error; }
+  await dataFs.promises.writeFile(temp, JSON.stringify(data), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  try { await dataFs.promises.rename(temp, ACCOUNTS_FILE); }
+  catch (error) { await dataFs.promises.unlink(temp).catch(() => {}); throw error; }
 }
 
 async function withAccountsLock(operation) {
@@ -117,7 +118,7 @@ async function withAccountsLock(operation) {
   let release;
   accountQueue = new Promise(resolve => { release = resolve; });
   await previous;
-  try { return await operation(); }
+  try { return await dataStore.withLock(operation); }
   finally { release(); }
 }
 
@@ -125,13 +126,18 @@ function cookieSecurityAttribute() {
   return new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) ? "" : "; Secure";
 }
 
-function createSession(res, account) {
+async function createSession(res, account) {
   for (const [token, session] of sessions) {
     if (session.expiresAt <= Date.now()) sessions.delete(token);
   }
-  if (sessions.size >= 1000) return false;
   const token = crypto.randomBytes(32).toString("base64url");
-  sessions.set(token, { ...account, expiresAt: Date.now() + SESSION_TTL_MS });
+  const session = { ...account, expiresAt: Date.now() + SESSION_TTL_MS };
+  if (dataStore.enabled) {
+    if (!await dataStore.createSession(token, account, session.expiresAt, 1000)) return false;
+  } else {
+    if (sessions.size >= 1000) return false;
+    sessions.set(token, session);
+  }
   res.setHeader("set-cookie", AUTH_COOKIE + "=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=43200" + cookieSecurityAttribute());
   return true;
 }
@@ -168,7 +174,7 @@ async function login(req, res) {
   if (constantTimeTextEqual(username, ACCESS_USER) && constantTimeTextEqual(password, ACCESS_PASSWORD)) {
     account = { userId: "owner", role: "owner", username: ACCESS_USER };
   } else {
-    const record = readAccounts().users.find(item => item.usernameKey === normalizedUsername(username));
+    const record = (await readAccounts()).users.find(item => item.usernameKey === normalizedUsername(username));
     if (record && typeof record.salt === "string" && typeof record.passwordHash === "string") {
       const candidate = Buffer.from(passwordHash(password, record.salt), "base64");
       const expected = Buffer.from(record.passwordHash, "base64");
@@ -178,7 +184,7 @@ async function login(req, res) {
     }
   }
   if (!account) return json(res, 401, { error: "Utilizatorul sau parola nu sunt corecte." });
-  if (!createSession(res, account)) return json(res, 503, { error: "Sunt prea multe sesiuni active. Încearcă mai târziu." });
+  if (!await createSession(res, account)) return json(res, 503, { error: "Sunt prea multe sesiuni active. Încearcă mai târziu." });
   return json(res, 200, { ok: true });
 }
 
@@ -203,7 +209,7 @@ async function register(req, res) {
   let account;
   try {
     account = await withAccountsLock(async () => {
-      const database = readAccounts();
+      const database = await readAccounts();
       if (database.users.some(user => user.usernameKey === usernameKey)) throw Object.assign(new Error("Acest nume de utilizator este deja folosit."), { status: 409 });
       if (database.users.length >= MAX_ACCOUNTS) throw Object.assign(new Error("Înregistrările sunt momentan închise. Numărul maxim de conturi a fost atins."), { status: 503 });
       const salt = crypto.randomBytes(16).toString("base64url");
@@ -215,20 +221,16 @@ async function register(req, res) {
   } catch (error) {
     return json(res, error.status || 503, { error: error.message || "Contul nu a putut fi creat." });
   }
-  if (!createSession(res, account)) return json(res, 503, { error: "Contul a fost creat, dar sunt prea multe sesiuni active. Autentifică-te." });
+  if (!await createSession(res, account)) return json(res, 503, { error: "Contul a fost creat, dar sunt prea multe sesiuni active. Autentifică-te." });
   return json(res, 201, { ok: true });
 }
 
-function currentAccount(req) {
-  return sessionFor(req) || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
-}
-
 async function consumeAiQuota(req, res) {
-  const account = currentAccount(req);
+  const account = req.novaAccount || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   if (account.role === "owner") return true;
   try {
     const remaining = await withAccountsLock(async () => {
-      const database = readAccounts();
+      const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
       if (!record) throw Object.assign(new Error("Contul nu mai este disponibil. Autentifică-te din nou."), { status: 401 });
       const today = new Date().toISOString().slice(0, 10);
@@ -254,10 +256,6 @@ async function consumeAiQuota(req, res) {
 if (!new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) && (!ACCESS_USER || ACCESS_PASSWORD.length < 20 || /^(replace-|change-me|changeme)/i.test(ACCESS_PASSWORD))) {
   throw new Error("Public binding needs NOVA_ACCESS_USER and a unique NOVA_ACCESS_PASSWORD of at least 20 characters; replace the example value first.");
 }
-
-fs.mkdirSync(PROJECTS_DIR, { recursive: true });
-fs.mkdirSync(BACKUPS_DIR, { recursive: true });
-fs.mkdirSync(PROJECT_TRASH_DIR, { recursive: true });
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -330,6 +328,64 @@ function publicProviderSettings() {
   };
 }
 
+function aiSettingsCipherKey() {
+  const secret = process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD || process.env.DATABASE_URL || "";
+  if (!secret) throw new Error("Lipsește cheia pentru criptarea configurării AI persistente.");
+  return crypto.createHash("sha256").update(secret).digest();
+}
+
+function storedAiSettings() {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", aiSettingsCipherKey(), iv);
+  const encryptedKey = Buffer.concat([cipher.update(aiProvider.apiKey || "", "utf8"), cipher.final()]);
+  return {
+    provider: aiProvider.provider,
+    baseUrl: aiProvider.baseUrl,
+    textModel: aiProvider.textModel,
+    imageModel: aiProvider.imageModel,
+    speechModel: aiProvider.speechModel,
+    voice: aiProvider.voice,
+    apiKeyCipher: encryptedKey.toString("base64"),
+    apiKeyIv: iv.toString("base64"),
+    apiKeyTag: cipher.getAuthTag().toString("base64")
+  };
+}
+
+function applyStoredAiSettings(value) {
+  if (!value || !["openai", "ollama"].includes(value.provider)) return;
+  try {
+    const decipher = crypto.createDecipheriv("aes-256-gcm", aiSettingsCipherKey(), Buffer.from(value.apiKeyIv, "base64"));
+    decipher.setAuthTag(Buffer.from(value.apiKeyTag, "base64"));
+    const apiKey = Buffer.concat([
+      decipher.update(Buffer.from(value.apiKeyCipher || "", "base64")),
+      decipher.final()
+    ]).toString("utf8");
+    Object.assign(aiProvider, {
+      provider: value.provider,
+      baseUrl: String(value.baseUrl || aiProvider.baseUrl),
+      textModel: String(value.textModel || aiProvider.textModel),
+      imageModel: String(value.imageModel || aiProvider.imageModel),
+      speechModel: String(value.speechModel || aiProvider.speechModel),
+      voice: String(value.voice || aiProvider.voice),
+      apiKey: apiKey || aiProvider.apiKey
+    });
+  } catch (error) {
+    console.error("Nova AI settings could not be decrypted; using environment configuration.");
+  }
+}
+
+async function refreshAiSettings(force = false) {
+  if (!dataStore.enabled || (!force && Date.now() < aiSettingsCacheExpiresAt)) return;
+  const value = await dataStore.getSetting("ai-provider");
+  if (value) applyStoredAiSettings(value);
+  aiSettingsCacheExpiresAt = Date.now() + 1000;
+}
+
+async function persistAiSettings() {
+  if (dataStore.enabled) await dataStore.setSetting("ai-provider", storedAiSettings());
+  aiSettingsCacheExpiresAt = 0;
+}
+
 function configuredAiUrl(route) {
   return `${aiProvider.baseUrl.replace(/\/+$/, "")}${route}`;
 }
@@ -398,7 +454,6 @@ function workspacePaths(principal = "owner") {
 function projectRoot(project, principal = "owner") {
   if (!validProjectId(project)) throw Object.assign(new Error("Proiect invalid."), { status: 400 });
   const base = workspacePaths(principal).projects;
-  fs.mkdirSync(base, { recursive: true });
   const root = path.resolve(base, project);
   if (!root.startsWith(`${base}${path.sep}`)) throw Object.assign(new Error("Cale de proiect invalidă."), { status: 400 });
   return root;
@@ -406,12 +461,23 @@ function projectRoot(project, principal = "owner") {
 
 async function assertProjectParent(target) {
   let rootStat;
-  try { rootStat = await fs.promises.lstat(target.root); }
+  try { rootStat = await dataFs.promises.lstat(target.root); }
   catch (error) { if (error.code === "ENOENT") throw Object.assign(new Error("Proiectul nu există."), { status: 404 }); throw error; }
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw Object.assign(new Error("Proiectul nu este un dosar local obișnuit."), { status: 403 });
-  const rootReal = await fs.promises.realpath(target.root);
-  const parentReal = await fs.promises.realpath(path.dirname(target.full));
-  if (parentReal !== rootReal && !parentReal.startsWith(`${rootReal}${path.sep}`)) throw Object.assign(new Error("Calea nu poate ieși din proiectul deschis."), { status: 403 });
+  if (dataStore.enabled) {
+    let parent = path.dirname(target.full);
+    while (parent !== target.root && parent.startsWith(`${target.root}${path.sep}`)) {
+      let stat;
+      try { stat = await dataFs.promises.lstat(parent); }
+      catch (error) { if (error.code === "ENOENT") throw Object.assign(new Error("Dosarul părinte nu există."), { status: 404 }); throw error; }
+      if (!stat.isDirectory()) throw Object.assign(new Error("Dosarul părinte nu este valid."), { status: 403 });
+      parent = path.dirname(parent);
+    }
+  } else {
+    const rootReal = await dataFs.promises.realpath(target.root);
+    const parentReal = await dataFs.promises.realpath(path.dirname(target.full));
+    if (parentReal !== rootReal && !parentReal.startsWith(`${rootReal}${path.sep}`)) throw Object.assign(new Error("Calea nu poate ieși din proiectul deschis."), { status: 403 });
+  }
 }
 
 function projectFile(project, name, principal = "owner") {
@@ -426,20 +492,25 @@ function projectFile(project, name, principal = "owner") {
   return { root, full, relative: portable };
 }
 
+async function pathExists(filePath) {
+  try { await dataFs.promises.lstat(filePath); return true; }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+}
+
 async function listProjectFiles(root) {
   let rootStat;
-  try { rootStat = await fs.promises.lstat(root); }
+  try { rootStat = await dataFs.promises.lstat(root); }
   catch (error) { if (error.code === "ENOENT") throw Object.assign(new Error("Proiectul nu există."), { status: 404 }); throw error; }
   if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw Object.assign(new Error("Proiectul nu este un dosar local obișnuit."), { status: 404 });
   const out = [];
   async function visit(folder, relative = "") {
-    for (const entry of await fs.promises.readdir(folder, { withFileTypes: true })) {
+    for (const entry of await dataFs.promises.readdir(folder, { withFileTypes: true })) {
       if (entry.name === ".git" || entry.name === "node_modules" || entry.name === ".nova-backups" || entry.name === ".nova-project.json") continue;
       const abs = path.join(folder, entry.name);
       const rel = relative ? `${relative}/${entry.name}` : entry.name;
       if (entry.isDirectory()) await visit(abs, rel);
       else if (entry.isFile()) {
-        const stat = await fs.promises.stat(abs);
+        const stat = await dataFs.promises.stat(abs);
         out.push({ path: rel, size: stat.size, modified: stat.mtime.toISOString() });
       }
     }
@@ -451,35 +522,35 @@ async function listProjectFiles(root) {
 async function readProjectFile(project, name, principal = "owner") {
   const target = projectFile(project, name, principal);
   await assertProjectParent(target);
-  const stat = await fs.promises.lstat(target.full);
+  const stat = await dataFs.promises.lstat(target.full);
   if (!stat.isFile() || stat.isSymbolicLink()) throw Object.assign(new Error("Fișierul nu există sau nu este un fișier obișnuit."), { status: 404 });
   if (stat.size > MAX_FILE) throw Object.assign(new Error("Fișierul depășește limita de 512 KiB."), { status: 413 });
-  return await fs.promises.readFile(target.full, "utf8");
+  return await dataFs.promises.readFile(target.full, "utf8");
 }
 
 async function writeProjectFile(project, name, content, principal = "owner") {
   if (typeof content !== "string") throw Object.assign(new Error("Conținutul fișierului trebuie să fie text."), { status: 400 });
   if (Buffer.byteLength(content, "utf8") > MAX_FILE) throw Object.assign(new Error("Fișierul depășește limita de 512 KiB."), { status: 413 });
   const target = projectFile(project, name, principal);
-  await fs.promises.mkdir(path.dirname(target.full), { recursive: true });
+  await dataFs.promises.mkdir(path.dirname(target.full), { recursive: true });
   await assertProjectParent(target);
   let existed = false;
   try {
-    const stat = await fs.promises.lstat(target.full);
+    const stat = await dataFs.promises.lstat(target.full);
     if (stat.isSymbolicLink() || !stat.isFile()) throw Object.assign(new Error("Ținta nu este un fișier obișnuit."), { status: 400 });
     existed = true;
     const backupFile = path.join(workspacePaths(principal).backups, project, ...target.relative.split("/")) + `.${Date.now()}-${Math.random().toString(36).slice(2, 6)}.bak`;
-    await fs.promises.mkdir(path.dirname(backupFile), { recursive: true });
-    await fs.promises.copyFile(target.full, backupFile);
+    await dataFs.promises.mkdir(path.dirname(backupFile), { recursive: true });
+    await dataFs.promises.copyFile(target.full, backupFile);
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
   if (!existed) {
     const marker = path.join(workspacePaths(principal).backups, project, ...target.relative.split("/")) + `.${Date.now()}-${Math.random().toString(36).slice(2, 6)}.created`;
-    await fs.promises.mkdir(path.dirname(marker), { recursive: true });
-    await fs.promises.writeFile(marker, "", "utf8");
+    await dataFs.promises.mkdir(path.dirname(marker), { recursive: true });
+    await dataFs.promises.writeFile(marker, "", "utf8");
   }
-  await fs.promises.writeFile(target.full, content, "utf8");
+  await dataFs.promises.writeFile(target.full, content, "utf8");
   return { path: target.relative, action: existed ? "updated" : "created" };
 }
 
@@ -552,26 +623,33 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
 async function handle(req, res) {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
 
-  if (req.method === "GET" && url.pathname === "/healthz") return json(res, 200, { ok: true });
+  if (req.method === "GET" && url.pathname === "/healthz") {
+    try { await dataStore.healthCheck(); return json(res, 200, { ok: true }); }
+    catch { return json(res, 503, { ok: false, error: "Storage unavailable" }); }
+  }
 
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/login") return login(req, res);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/register") return register(req, res);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/logout") {
     const token = readCookie(req, AUTH_COOKIE);
     if (token) sessions.delete(token);
+    if (token && dataStore.enabled) await dataStore.deleteSession(token);
     res.setHeader("set-cookie", AUTH_COOKIE + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + cookieSecurityAttribute());
     return json(res, 200, { ok: true });
   }
-  if (ACCESS_PASSWORD && !hasValidSession(req)) {
+  const session = ACCESS_PASSWORD ? await sessionFor(req) : null;
+  if (ACCESS_PASSWORD && !session) {
     if (url.pathname.startsWith("/api/")) return json(res, 401, { error: "Sesiunea a expirat. Autentifică-te din nou." });
     if (req.method === "GET" || req.method === "HEAD") return sendLoginPage(res, req.method === "HEAD");
     return json(res, 401, { error: "Sesiunea a expirat. Autentifică-te din nou." });
   }
-  const account = currentAccount(req);
+  const account = session || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
+  req.novaAccount = account;
   const principal = account.userId || "owner";
+  await refreshAiSettings();
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
     if (account.role === "owner") return json(res, 200, { username: account.username, role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), dailyLimit: null, remainingToday: null });
-    const record = readAccounts().users.find(user => user.id === account.userId);
+    const record = (await readAccounts()).users.find(user => user.id === account.userId);
     if (!record) return json(res, 401, { error: "Contul nu mai este disponibil. Autentifică-te din nou." });
     const used = record.usageDate === new Date().toISOString().slice(0, 10) ? record.usageCount : 0;
     return json(res, 200, { username: account.username, role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), dailyLimit: SUBSCRIBER_DAILY_AI_LIMIT, remainingToday: Math.max(0, SUBSCRIBER_DAILY_AI_LIMIT - used) });
@@ -601,7 +679,8 @@ async function handle(req, res) {
       if (!aiProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
     }
     aiProvider.provider = body.provider;
-    return json(res, 200, { settings: publicProviderSettings(), notice: "Cheia API rămâne numai în memoria acestui proces și nu este returnată în interfață." });
+    await persistAiSettings();
+    return json(res, 200, { settings: publicProviderSettings(), notice: "Configurarea AI este sincronizată între instanțe; cheia este criptată și nu este returnată în interfață." });
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/image") {
@@ -679,11 +758,11 @@ async function handle(req, res) {
   if (req.method === "GET" && url.pathname === "/api/projects") {
     const projects = [];
     const projectsDir = workspacePaths(principal).projects;
-    await fs.promises.mkdir(projectsDir, { recursive: true });
-    for (const entry of await fs.promises.readdir(projectsDir, { withFileTypes: true })) {
+    await dataFs.promises.mkdir(projectsDir, { recursive: true });
+    for (const entry of await dataFs.promises.readdir(projectsDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || !validProjectId(entry.name)) continue;
       let name = entry.name;
-      try { name = JSON.parse(await fs.promises.readFile(path.join(projectsDir, entry.name, ".nova-project.json"), "utf8")).name || name; } catch {}
+      try { name = JSON.parse(await dataFs.promises.readFile(path.join(projectsDir, entry.name, ".nova-project.json"), "utf8")).name || name; } catch {}
       projects.push({ id: entry.name, name });
     }
     return json(res, 200, { projects: projects.sort((a, b) => a.name.localeCompare(b.name)) });
@@ -694,21 +773,21 @@ async function handle(req, res) {
     const originalName = typeof body.name === "string" ? body.name.trim() : "";
     if (!originalName || originalName.length > 80) return json(res, 400, { error: "Numele proiectului trebuie să aibă între 1 și 80 de caractere." });
     if (account.role === "subscriber") {
-      const currentProjects = await fs.promises.readdir(workspacePaths(principal).projects).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
+      const currentProjects = await dataFs.promises.readdir(workspacePaths(principal).projects).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
       if (currentProjects.length >= 10) return json(res, 403, { error: "Un cont de abonat poate avea cel mult 10 proiecte." });
     }
     const slug = originalName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 45) || "proiect";
     let id = slug;
     const paths = workspacePaths(principal);
-    await fs.promises.mkdir(paths.trash, { recursive: true });
-    while (fs.existsSync(path.join(paths.projects, id)) || (await fs.promises.readdir(paths.trash)).some(name => name.startsWith(`${id}.`))) id = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+    await dataFs.promises.mkdir(paths.trash, { recursive: true });
+    while (await pathExists(path.join(paths.projects, id)) || (await dataFs.promises.readdir(paths.trash)).some(name => name.startsWith(`${id}.`))) id = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
     const root = projectRoot(id, principal);
-    await fs.promises.mkdir(path.join(root, "src"), { recursive: true });
-    await fs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name: originalName }, null, 2), "utf8");
+    await dataFs.promises.mkdir(path.join(root, "src"), { recursive: true });
+    await dataFs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name: originalName }, null, 2), "utf8");
     if (body.empty !== true) {
-      await fs.promises.writeFile(path.join(root, "README.md"), `# ${originalName}\n\nProiect creat în Nova AI Studio.\n`, "utf8");
-      await fs.promises.writeFile(path.join(root, "src", "index.js"), `// Începe să construiești ${originalName}.\n\nfunction main() {\n  console.log("Salut, Nova!");\n}\n\nmain();\n`, "utf8");
-      await fs.promises.writeFile(path.join(root, "package.json"), JSON.stringify({ name: id, version: "0.1.0", private: true }, null, 2) + "\n", "utf8");
+      await dataFs.promises.writeFile(path.join(root, "README.md"), `# ${originalName}\n\nProiect creat în Nova AI Studio.\n`, "utf8");
+      await dataFs.promises.writeFile(path.join(root, "src", "index.js"), `// Începe să construiești ${originalName}.\n\nfunction main() {\n  console.log("Salut, Nova!");\n}\n\nmain();\n`, "utf8");
+      await dataFs.promises.writeFile(path.join(root, "package.json"), JSON.stringify({ name: id, version: "0.1.0", private: true }, null, 2) + "\n", "utf8");
     }
     return json(res, 201, { project: { id, name: originalName } });
   }
@@ -717,7 +796,7 @@ async function handle(req, res) {
     const body = await readJson(req);
     const root = projectRoot(body.project, principal);
     if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80) return json(res, 400, { error: "Numele trebuie să aibă între 1 și 80 de caractere." });
-    await fs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name: body.name.trim() }, null, 2), "utf8");
+    await dataFs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name: body.name.trim() }, null, 2), "utf8");
     return json(res, 200, { id: body.project, name: body.name.trim() });
   }
 
@@ -725,24 +804,24 @@ async function handle(req, res) {
     const body = await readJson(req);
     const paths = workspacePaths(principal);
     const root = projectRoot(body.project, principal);
-    const stat = await fs.promises.lstat(root);
+    const stat = await dataFs.promises.lstat(root);
     if (!stat.isDirectory() || stat.isSymbolicLink()) return json(res, 400, { error: "Proiectul nu este un dosar local obișnuit." });
-    await fs.promises.mkdir(paths.trash, { recursive: true });
+    await dataFs.promises.mkdir(paths.trash, { recursive: true });
     const trashed = path.join(paths.trash, `${body.project}.${Date.now()}-${Math.random().toString(36).slice(2, 6)}.deleted`);
-    await fs.promises.rename(root, trashed);
+    await dataFs.promises.rename(root, trashed);
     return json(res, 200, { id: body.project, deleted: true });
   }
 
   if (req.method === "GET" && url.pathname === "/api/projects/trash") {
     const projects = [];
     const trashDir = workspacePaths(principal).trash;
-    await fs.promises.mkdir(trashDir, { recursive: true });
-    for (const entry of await fs.promises.readdir(trashDir, { withFileTypes: true })) {
+    await dataFs.promises.mkdir(trashDir, { recursive: true });
+    for (const entry of await dataFs.promises.readdir(trashDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const match = entry.name.match(/^([a-z0-9][a-z0-9-]{0,63})\.(\d+-[a-z0-9]+)\.deleted$/);
       if (!match) continue;
       let name = match[1];
-      try { name = JSON.parse(await fs.promises.readFile(path.join(trashDir, entry.name, ".nova-project.json"), "utf8")).name || name; } catch {}
+      try { name = JSON.parse(await dataFs.promises.readFile(path.join(trashDir, entry.name, ".nova-project.json"), "utf8")).name || name; } catch {}
       projects.push({ id: match[1], name, trashed: entry.name });
     }
     return json(res, 200, { projects: projects.sort((a, b) => b.trashed.localeCompare(a.trashed)) });
@@ -752,15 +831,15 @@ async function handle(req, res) {
     const body = await readJson(req);
     if (!validProjectId(body.project)) return json(res, 400, { error: "Proiect invalid." });
     const paths = workspacePaths(principal);
-    await fs.promises.mkdir(paths.trash, { recursive: true });
+    await dataFs.promises.mkdir(paths.trash, { recursive: true });
     const root = projectRoot(body.project, principal);
-    if (fs.existsSync(root)) return json(res, 409, { error: "Există deja un proiect cu acest identificator." });
+    if (await pathExists(root)) return json(res, 409, { error: "Există deja un proiect cu acest identificator." });
     const prefix = `${body.project}.`;
-    const entries = (await fs.promises.readdir(paths.trash, { withFileTypes: true }))
+    const entries = (await dataFs.promises.readdir(paths.trash, { withFileTypes: true }))
       .filter(entry => entry.isDirectory() && !entry.isSymbolicLink() && entry.name.startsWith(prefix) && entry.name.endsWith(".deleted"))
       .sort((a, b) => b.name.localeCompare(a.name));
     if (!entries.length) return json(res, 404, { error: "Nu există un proiect șters care poate fi restaurat." });
-    await fs.promises.rename(path.join(paths.trash, entries[0].name), root);
+    await dataFs.promises.rename(path.join(paths.trash, entries[0].name), root);
     return json(res, 200, { id: body.project, restored: true });
   }
 
@@ -777,7 +856,7 @@ async function handle(req, res) {
       contents.push({ path: file.path, content });
     }
     let name = project;
-    try { name = JSON.parse(await fs.promises.readFile(path.join(root, ".nova-project.json"), "utf8")).name || name; } catch {}
+    try { name = JSON.parse(await dataFs.promises.readFile(path.join(root, ".nova-project.json"), "utf8")).name || name; } catch {}
     return json(res, 200, { format: "nova-project", version: 1, name, files: contents });
   }
 
@@ -805,11 +884,11 @@ async function handle(req, res) {
     const name = url.searchParams.get("path");
     const target = projectFile(project, name, principal);
     await assertProjectParent(target);
-    const stat = await fs.promises.lstat(target.full);
+    const stat = await dataFs.promises.lstat(target.full);
     if (!stat.isFile() || stat.isSymbolicLink()) return json(res, 400, { error: "Poți elimina numai fișiere obișnuite." });
     const trashFile = path.join(workspacePaths(principal).backups, project, ...target.relative.split("/")) + `.${Date.now()}-${Math.random().toString(36).slice(2, 6)}.deleted`;
-    await fs.promises.mkdir(path.dirname(trashFile), { recursive: true });
-    await fs.promises.rename(target.full, trashFile);
+    await dataFs.promises.mkdir(path.dirname(trashFile), { recursive: true });
+    await dataFs.promises.rename(target.full, trashFile);
     return json(res, 200, { path: target.relative, deleted: true });
   }
 
@@ -821,22 +900,22 @@ async function handle(req, res) {
     const backupDir = path.dirname(backupBase);
     const prefix = `${path.basename(backupBase)}.`;
     let backups = [];
-    try { backups = (await fs.promises.readdir(backupDir)).filter(name => name.startsWith(prefix) && /\.(bak|deleted|created)$/.test(name)).sort().reverse(); } catch {}
+    try { backups = (await dataFs.promises.readdir(backupDir)).filter(name => name.startsWith(prefix) && /\.(bak|deleted|created)$/.test(name)).sort().reverse(); } catch {}
     if (!backups.length) return json(res, 404, { error: "Nu există o versiune anterioară pentru acest fișier." });
     const backupFile = path.join(backupDir, backups[0]);
-    await fs.promises.mkdir(path.dirname(target.full), { recursive: true });
+    await dataFs.promises.mkdir(path.dirname(target.full), { recursive: true });
     await assertProjectParent(target);
     if (backupFile.endsWith(".created")) {
-      try { await fs.promises.unlink(target.full); } catch (error) { if (error.code !== "ENOENT") throw error; }
-      await fs.promises.unlink(backupFile);
+      try { await dataFs.promises.unlink(target.full); } catch (error) { if (error.code !== "ENOENT") throw error; }
+      await dataFs.promises.unlink(backupFile);
       return json(res, 200, { path: target.relative, reverted: true });
     }
     try {
-      const current = await fs.promises.lstat(target.full);
+      const current = await dataFs.promises.lstat(target.full);
       if (current.isSymbolicLink() || !current.isFile()) throw Object.assign(new Error("Ținta nu este un fișier obișnuit."), { status: 400 });
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    await fs.promises.copyFile(backupFile, target.full);
-    await fs.promises.unlink(backupFile);
+    await dataFs.promises.copyFile(backupFile, target.full);
+    await dataFs.promises.unlink(backupFile);
     return json(res, 200, { path: target.relative, restored: true });
   }
 
@@ -1016,8 +1095,22 @@ appServer.on("error", error => {
   process.exitCode = 1;
 });
 
-appServer.listen(PORT, HOST, () => {
-  console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
-  console.log(`Ollama: ${OLLAMA}`);
+async function startNova() {
+  await dataStore.init(DATA_DIR);
+  dataFs = dataStore.filesystem(DATA_DIR);
+  await dataFs.promises.mkdir(PROJECTS_DIR, { recursive: true });
+  await dataFs.promises.mkdir(BACKUPS_DIR, { recursive: true });
+  await dataFs.promises.mkdir(PROJECT_TRASH_DIR, { recursive: true });
+  await refreshAiSettings(true);
+  appServer.listen(PORT, HOST, () => {
+    console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
+    console.log(`Ollama: ${OLLAMA}`);
+    console.log(`Storage: ${dataStore.enabled ? "PostgreSQL shared" : "local filesystem"}`);
+  });
+}
+
+startNova().catch(error => {
+  console.error("Nova AI Studio could not initialize persistent storage:", error.message);
+  process.exitCode = 1;
 });
 
