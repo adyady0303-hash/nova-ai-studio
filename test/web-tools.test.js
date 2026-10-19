@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
-const { webUrl, publicIpv4, downloadPage, pageText, searchResults, callWebTool } = require('../web-tools');
+const { webUrl, publicIpv4, downloadPage, pageText, searchResults, callWebTool, createWebHealthChecker } = require('../web-tools');
 
 test('web URLs and DNS validation reject private, reserved and credential destinations', async () => {
   for (const url of ['http://example.com', 'https://user:pass@example.com', 'https://example.com:8443', 'https://127.1', 'https://[::1]', 'https://169.254.169.254', 'file:///etc/passwd']) {
@@ -15,7 +15,7 @@ test('web URLs and DNS validation reject private, reserved and credential destin
   }), /rezervate/);
 });
 
-function transport({ status = 200, type = 'text/html', body = '<h1>Hello</h1>', location } = {}, inspect = () => {}) {
+function transport({ status = 200, type = 'text/html', body = '<h1>Hello</h1>', location, encoding }  = {}, inspect = () => {}) {
   return (url, options, callback) => {
     inspect(url, options);
     const req = new EventEmitter();
@@ -23,7 +23,7 @@ function transport({ status = 200, type = 'text/html', body = '<h1>Hello</h1>', 
     req.end = () => queueMicrotask(() => {
       const res = new EventEmitter();
       res.statusCode = status;
-      res.headers = { 'content-type': type, location };
+      res.headers = { 'content-type': type, location, 'content-encoding': encoding };
       res.resume = () => req.emit('close');
       res.destroy = () => req.emit('close');
       callback(res);
@@ -111,4 +111,44 @@ test('RSS search accepts text/xml responses and extracts cited source links', as
     })));
     assert.deepEqual(result.sources, [{ title:'Știre de azi', url:'https://example.com/stiri', excerpt:'Rezumat verificat' }]);
   }
+});
+
+test('compressed XML is decoded with a strict uncompressed size limit', async () => {
+  const zlib = require('node:zlib');
+  const xml = '<rss><channel><item><title>Nova</title><link>https://example.com/</link></item></channel></rss>';
+  for (const [encoding, compress] of [['gzip',zlib.gzipSync], ['br',zlib.brotliCompressSync], ['deflate',zlib.deflateSync]]) {
+    const page = await downloadPage('https://example.com/', { lookup, request: transport({ type:' Text/XML ; charset=utf-8', encoding, body:compress(xml) }) });
+    assert.equal(page.body, xml);
+  }
+  await assert.rejects(downloadPage('https://example.com/', {
+    lookup, request: transport({ type:'text/xml', encoding:'gzip', body:zlib.gzipSync('x'.repeat(1024 * 1024 + 1)) })
+  }), /decomprimată.*1 MiB/);
+  await assert.rejects(downloadPage('https://example.com/', {
+    lookup, request: transport({ type:'text/xml', encoding:'gzip', body:'invalid' })
+  }), /comprimate/);
+  await assert.rejects(downloadPage('https://example.com/', {
+    lookup, request: transport({ type:'application/json', body:'{}' })
+  }), /format primit: application\/json/);
+});
+
+test('web health requires actual sources, caches and shares concurrent checks, then retries', async () => {
+  let time = Date.now(), calls = 0;
+  let resolve;
+  const response = new Promise(done => { resolve = done; });
+  const check = createWebHealthChecker(async () => { calls++; return response; }, () => time);
+  const first = check(), second = check();
+  assert.equal(calls,1);
+  resolve({ body:'<rss><item><title>Nova</title><link>https://example.com/</link></item></rss>' });
+  assert.deepEqual(await first, await second);
+  assert.equal((await check()).connected, true);
+  assert.equal(calls,1);
+  time += 60001;
+  await check();
+  assert.equal(calls,2);
+  const empty = createWebHealthChecker(async () => ({ body:'<rss></rss>' }));
+  assert.equal((await empty()).connected, false);
+  const failed = createWebHealthChecker(async () => { throw new Error('DNS indisponibil'); });
+  assert.deepEqual(await failed(), await failed());
+  assert.equal((await failed()).connected,false);
+  assert.equal((await failed()).error,'DNS indisponibil');
 });

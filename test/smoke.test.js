@@ -296,6 +296,14 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const settingsText = await settings.text();
   assert.match(settingsText, /"apiKeyConfigured":true/);
   assert.doesNotMatch(settingsText, new RegExp(fakeApiKey));
+  const beforeInvalidSettings = await (await request('/api/settings')).json();
+  for (const invalid of [
+    { provider: 'openai', baseUrl: 'invalid-url', clearApiKey: true },
+    { provider: 'openai', baseUrl: 'https://example.com/v1', clearApiKey: true }
+  ]) {
+    assert.equal((await post('/api/settings', invalid)).status, 400);
+    assert.deepEqual(await (await request('/api/settings')).json(), beforeInvalidSettings);
+  }
   const aiHealth = await request('/api/health');
   assert.deepEqual(await aiHealth.json(), {
     connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-4.1-mini']
@@ -453,6 +461,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const logout = await request('/api/auth/logout', { method: 'POST' });
   assert.equal(logout.status, 200);
   assert.equal((await request('/api/projects')).status, 401);
+  assert.equal((await request('/api/web/health')).status, 401);
 
   const registration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
@@ -504,6 +513,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const privateProjectResponse = await subscriberPost('/api/projects', { name: 'Spațiu Privat' });
   assert.equal(privateProjectResponse.status, 201);
   const privateProject = (await privateProjectResponse.json()).project;
+  assert.equal((await subscriberRequest('/api/web/health')).status, 403);
   assert.equal((await subscriberRequest(`/api/files?project=${project.id}`)).status, 404);
   assert.ok((await (await subscriberRequest('/api/projects')).json()).projects.some(item => item.id === privateProject.id));
 

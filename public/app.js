@@ -96,6 +96,19 @@ async function loadProviderSettings() {
   await refreshHealth();
 }
 
+async function testWebConnection() {
+  const button = el("testWebConnection"), status = el("webConnectionStatus");
+  button.disabled = true;
+  status.textContent = "Se verifică o căutare reală pe internet…";
+  try {
+    const data = await api("/api/web/health");
+    status.textContent = data.connected
+      ? `Internet verificat: căutarea a returnat ${data.sourceCount} surse. Versiune server: ${data.version}.`
+      : `Acces web neconfirmat: ${data.error || "Căutarea a eșuat."} Versiune server: ${data.version}.`;
+  } catch (error) { status.textContent = `Verificarea accesului web a eșuat: ${error.message}`; }
+  finally { button.disabled = false; }
+}
+
 async function saveProviderSettings() {
   const settings = {
     provider: el("providerSelect").value,
@@ -830,6 +843,7 @@ el("providerSettingsBtn").addEventListener("click", async () => {
   catch (error) { toast(error.message); }
 });
 el("providerSelect").addEventListener("change", event => { el("openAiFields").hidden = event.target.value !== "openai"; });
+el("testWebConnection").addEventListener("click", testWebConnection);
 el("saveProviderSettings").addEventListener("click", () => saveProviderSettings().catch(error => toast(error.message)));
 el("taskSelect").addEventListener("change", event => {
   setTask(event.target.value);

@@ -1,6 +1,7 @@
 const https = require('node:https');
 const dns = require('node:dns').promises;
 const net = require('node:net');
+const zlib = require('node:zlib');
 
 const webTools = [
   { type: 'function', function: { name: 'web_search', description: 'Search the public web for current information. Returns source URLs and excerpts. Do not send secrets or private project contents.', parameters: { type: 'object', required: ['query'], properties: { query: { type: 'string' } }, additionalProperties: false } } },
@@ -53,8 +54,14 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
         return;
       }
       if (res.statusCode !== 200) { res.destroy(); return reject(new Error(`Site-ul a răspuns cu HTTP ${res.statusCode}.`)); }
-      if (!/^(text\/(html|plain|xml)|application\/(rss\+xml|xml|xhtml\+xml))(;|$)/i.test(res.headers['content-type'] || '')) {
-        res.destroy(); return reject(new Error('Pagina nu este HTML, XML sau text.'));
+      const contentType = String(res.headers['content-type'] || '');
+      const mime = contentType.split(';')[0].trim().toLowerCase();
+      if (!['text/html', 'text/plain', 'text/xml', 'application/rss+xml', 'application/xml', 'application/xhtml+xml'].includes(mime)) {
+        res.destroy(); return reject(new Error(`Pagina nu este HTML, XML sau text (format primit: ${mime.slice(0,100) || 'nespecificat'}).`));
+      }
+      const encoding = String(res.headers['content-encoding'] || 'identity').trim().toLowerCase();
+      if (!['identity', 'gzip', 'br', 'deflate'].includes(encoding)) {
+        res.destroy(); return reject(new Error('Compresia paginii nu este acceptată.'));
       }
       let bytes = 0;
       const chunks = [];
@@ -66,8 +73,15 @@ async function downloadPage(value, { lookup = hostname => dns.lookup(hostname, {
       res.on('error', reject);
       res.on('aborted', () => reject(new Error('Site-ul a întrerupt descărcarea paginii.')));
       res.on('end', () => {
-        const charset = res.headers['content-type'].match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1] || 'utf-8';
-        try { resolve({ url: url.href, body: new TextDecoder(charset).decode(Buffer.concat(chunks)) }); }
+        let buffer = Buffer.concat(chunks);
+        try {
+          const options = { maxOutputLength: 1024 * 1024 };
+          if (encoding === 'gzip') buffer = zlib.gunzipSync(buffer, options);
+          if (encoding === 'br') buffer = zlib.brotliDecompressSync(buffer, options);
+          if (encoding === 'deflate') buffer = zlib.inflateSync(buffer, options);
+        } catch { return reject(new Error('Datele comprimate sunt invalide sau pagina decomprimată depășește limita de 1 MiB.')); }
+        const charset = contentType.match(/charset\s*=\s*["']?([^;\s"']+)/i)?.[1] || 'utf-8';
+        try { resolve({ url: url.href, body: new TextDecoder(charset).decode(buffer) }); }
         catch { reject(new Error('Codificarea textului paginii nu este acceptată.')); }
       });
     });
@@ -121,4 +135,24 @@ async function callWebTool(name, args, download = downloadPage) {
   }
   throw new Error('Unealtă web necunoscută.');
 }
-module.exports = { webTools, webPrompt, callWebTool, publicIpv4, webUrl, downloadPage, pageText, searchResults };
+function createWebHealthChecker(download = downloadPage, now = Date.now) {
+  let cached;
+  let pending;
+  return async function checkWebHealth() {
+    if (cached && now() - cached.time < 60000) return cached.result;
+    if (pending) return pending;
+    pending = (async () => {
+      let result;
+      try {
+        const search = JSON.parse(await callWebTool('web_search', { query: 'site:nodejs.org Node.js' }, download));
+        if (!search.sources.length) throw new Error('Căutarea nu a returnat surse utilizabile. Accesul web nu poate fi confirmat.');
+        result = { connected: true, sourceCount: search.sources.length };
+      } catch (error) { result = { connected: false, error: error.message }; }
+      result.checkedAt = new Date(now()).toISOString();
+      cached = { time: now(), result };
+      return result;
+    })();
+    try { return await pending; } finally { pending = null; }
+  };
+}
+module.exports = { createWebHealthChecker, webTools, webPrompt, callWebTool, publicIpv4, webUrl, downloadPage, pageText, searchResults };

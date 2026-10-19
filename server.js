@@ -567,7 +567,9 @@ async function writeProjectFile(project, name, content, principal = "owner") {
   return { path: target.relative, action: existed ? "updated" : "created" };
 }
 
-const { webTools, webPrompt, callWebTool } = require("./web-tools");
+const { webTools, webPrompt, callWebTool, createWebHealthChecker } = require("./web-tools");
+
+const checkWebHealth = createWebHealthChecker();
 
 const agentTools = [
   ...webTools,
@@ -709,12 +711,18 @@ async function handle(req, res) {
     return json(res, 200, { settings: publicProviderSettings() });
   }
 
+  if (req.method === "GET" && url.pathname === "/api/web/health") {
+    if (account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate verifica accesul web al serverului." });
+    return json(res, 200, { ...await checkWebHealth(), version: require("./package.json").version });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/settings") {
     if (account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate schimba furnizorul AI al platformei." });
     const body = await readJson(req);
     if (!["ollama", "openai"].includes(body.provider)) return json(res, 400, { error: "Alege Ollama sau OpenAI / compatibil." });
-    if (body.clearApiKey === true) aiProvider.apiKey = "";
-    else if (typeof body.apiKey === "string" && body.apiKey.trim()) aiProvider.apiKey = body.apiKey.trim().slice(0, 500);
+    const nextProvider = { ...aiProvider };
+    if (body.clearApiKey === true) nextProvider.apiKey = "";
+    else if (typeof body.apiKey === "string" && body.apiKey.trim()) nextProvider.apiKey = body.apiKey.trim().slice(0, 500);
     if (body.provider === "openai") {
       let endpoint;
       try { endpoint = new URL(String(body.baseUrl || "")); }
@@ -722,14 +730,15 @@ async function handle(req, res) {
       if (!["https:", "http:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
         return json(res, 400, { error: "Adresa API trebuie să fie HTTP(S), fără autentificare în URL." });
       }
-      aiProvider.baseUrl = endpoint.toString().replace(/\/+$/, "");
-      aiProvider.textModel = String(body.textModel || "gpt-4.1-mini").trim().slice(0, 120);
-      aiProvider.imageModel = String(body.imageModel || "gpt-image-1-mini").trim().slice(0, 120);
-      aiProvider.speechModel = String(body.speechModel || "gpt-4o-mini-tts").trim().slice(0, 120);
-      aiProvider.voice = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"].includes(body.voice) ? body.voice : "nova";
-      if (!aiProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
+      nextProvider.baseUrl = endpoint.toString().replace(/\/+$/, "");
+      nextProvider.textModel = String(body.textModel || "gpt-4.1-mini").trim().slice(0, 120);
+      nextProvider.imageModel = String(body.imageModel || "gpt-image-1-mini").trim().slice(0, 120);
+      nextProvider.speechModel = String(body.speechModel || "gpt-4o-mini-tts").trim().slice(0, 120);
+      nextProvider.voice = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"].includes(body.voice) ? body.voice : "nova";
+      if (!nextProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
     }
-    aiProvider.provider = body.provider;
+    nextProvider.provider = body.provider;
+    Object.assign(aiProvider, nextProvider);
     await persistAiSettings();
     return json(res, 200, { settings: publicProviderSettings(), notice: "Configurarea AI este sincronizată între instanțe; cheia este criptată și nu este returnată în interfață." });
   }
@@ -1052,7 +1061,7 @@ async function handle(req, res) {
     try {
       const body = await readJson(req);
       if (typeof body.model !== "string" || !body.model.trim()) {
-        return json(res, 400, { error: "Alege un model Ollama înainte să trimiți mesajul." });
+        return json(res, 400, { error: "Alege un model AI înainte să trimiți mesajul." });
       }
       if (!Array.isArray(body.messages) || body.messages.length === 0) {
         return json(res, 400, { error: "Adaugă un mesaj pentru model." });
@@ -1104,7 +1113,7 @@ async function handle(req, res) {
         done: true
       });
     } catch (error) {
-      return json(res, error.status || 502, { error: error.message || "Nu am putut contacta Ollama." });
+      return json(res, error.status || 502, { error: error.message || "Nu am putut contacta furnizorul AI." });
     }
   }
 
