@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0d0f14">
-  <meta name="nova-version" content="0.8.0">
-  <meta name="nova-build" content="NOVA_STUDIO_REFRESH_2026_10_19">
+  <meta name="nova-version" content="0.9.0">
+  <meta name="nova-build" content="NOVA_CHAT_LAYOUT_2026_10_19">
   <meta name="description" content="Nova AI Studio: creează și construiește într-un singur spațiu de lucru AI.">
   <title>Nova AI Studio</title>
   <style>
@@ -367,7 +367,7 @@ body {background:#080b13;}
 }
 
 </style>
-  <link rel="stylesheet" href="/studio.css?v=0.8.0">
+  <link rel="stylesheet" href="/studio.css?v=0.9.0">
 </head>
 <body>
   <div class="app" id="app">
@@ -398,8 +398,8 @@ body {background:#080b13;}
       </nav>
 
       <div class="side-divider"></div>
-      <details class="project-drawer" id="projectDrawer" open>
-        <summary>Proiecte și fișiere <span aria-hidden="true">⌄</span></summary>
+      <details class="project-drawer" id="projectDrawer">
+        <summary><span>Proiecte și fișiere</span><span class="drawer-chevron" aria-hidden="true">⌄</span></summary>
       <div class="side-title-row"><div class="side-title">Proiectul tău</div><div class="row"><button class="btn subtle iconbtn" id="newProjectBtn" title="Proiect nou">＋</button><button class="btn subtle iconbtn" id="renameProjectBtn" title="Redenumește proiectul">✎</button></div></div>
       <div class="project-controls"><select id="projectSelect" aria-label="Alege proiectul"></select></div>
       <div class="project-card"><div class="project-icon">⌘</div><div><div class="project-name" id="projectName">Se încarcă proiectul…</div><div class="project-path" id="projectStorageLabel">Fișierele proiectului</div></div></div>
@@ -505,7 +505,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js"></script><script>
+  <script src="/app.js?v=0.9.0"></script><script>
 /* Navigation bridges to existing, tested Nova actions. */
 document.addEventListener("click",function(event){
  var button=event.target.closest("[data-nova-action]"); if(!button)return;
