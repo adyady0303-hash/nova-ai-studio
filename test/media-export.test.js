@@ -109,3 +109,14 @@ test('image failure restores the prompt without overwriting a new draft', async 
     assert.equal(nodes.generateImageBtn.disabled, false);
   }
 });
+
+test('voice sends the full supported text and rejects oversized lyrics without calling the provider', async () => {
+  const calls = [];
+  const context = { api: async (route, body) => { calls.push(body); return {}; }, jsonBody: value => value };
+  vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('async function generateSpeech('), source.indexOf('function updateVoiceCost(')), context);
+  await context.generateSpeech('a'.repeat(4096));
+  assert.equal(calls[0].text.length, 4096);
+  await assert.rejects(context.generateSpeech('a'.repeat(4097)), /4096/);
+  assert.equal(calls.length, 1);
+});

@@ -41,17 +41,18 @@ function nextMonthTimestamp(timestamp) {
   return Math.floor(date.getTime() / 1000);
 }
 
-function consumeQuota(record, dailyLimit, now) {
+function consumeQuota(record, dailyLimit, now, units = 1) {
+  if (!Number.isSafeInteger(units) || units < 1) throw fail("Consum AI invalid.");
   const quota = quotaFor(record, dailyLimit, now);
-  if (!quota.remaining) return { ...quota, allowed: false };
+  if (quota.remaining < units) return { ...quota, allowed: false };
   if (quota.plan === "standard") {
     record.paidUsagePeriod = quota.period;
-    record.paidUsageCount = quota.used + 1;
+    record.paidUsageCount = quota.used + units;
   } else {
     record.usageDate = quota.period;
-    record.usageCount = quota.used + 1;
+    record.usageCount = quota.used + units;
   }
-  return { ...quota, remaining: quota.remaining - 1, allowed: true };
+  return { ...quota, remaining: quota.remaining - units, allowed: true };
 }
 
 function verifyWebhook(raw, signature, secret, now = Date.now()) {

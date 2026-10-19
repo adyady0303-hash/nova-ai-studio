@@ -31,7 +31,7 @@ function chatKey(project = state.project) { return storageKey(`nova-chat-${proje
 function updateAccountLabel() {
   const account = state.account;
   el("accountLabel").textContent = account.role === "subscriber"
-    ? `${account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} cereri AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
+    ? `${account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} unități AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
     : `${account.username} · Administrator`;
 }
 
@@ -441,14 +441,23 @@ async function exportVideo(spec) {
 }
 
 async function generateSpeech(text) {
-  return api("/api/media/speech", jsonBody({ text: text.trim().slice(0, 4000) }));
+  const input = text.trim();
+  if (input.length > 4096) throw new Error("Vocea acceptă cel mult 4096 de caractere. Împarte textul în fragmente pentru a-l asculta integral.");
+  return api("/api/media/speech", jsonBody({ text: input }));
+}
+
+function updateVoiceCost() {
+  const units = Math.ceil(el("voiceText").value.trim().length / 500);
+  el("voiceCost").textContent = state.account?.role === "subscriber"
+    ? `Voce rostită, nu cântată. Consum: ${units} ${units === 1 ? "unitate AI" : "unități AI"} din cota disponibilă. Maximum 4096 de caractere.`
+    : "Voce rostită, nu cântată. Maximum 4096 de caractere; generarea este tarifată de furnizorul AI.";
 }
 
 function openVoiceDialog() {
   const dialog = el("voiceDialog"), voiceText = el("voiceText"), status = el("voiceStatus");
   if (!voiceText.value.trim() && el("prompt").value.trim()) voiceText.value = el("prompt").value.trim();
   status.hidden = true; status.textContent = ""; status.classList.remove("error");
-  dialog.showModal(); voiceText.focus();
+  updateVoiceCost(); dialog.showModal(); voiceText.focus();
 }
 
 function addVoiceCard(text, result) {
@@ -479,6 +488,7 @@ async function generateVoiceFromDialog() {
 }
 
 function addSpeechButton(node, text, label = "Ascultă cu voce AI") {
+  if (state.account?.role === "subscriber") label += ` (${Math.ceil(text.trim().length / 500)} unități AI)`;
   const button = document.createElement("button"); button.className = "btn small"; button.textContent = label;
   const output = document.createElement("div"); output.className = "creative-output";
   button.addEventListener("click", async () => {
@@ -813,6 +823,7 @@ el("sendBtn").addEventListener("click", send);
 el("generateImageBtn").addEventListener("click", generateImageFromPrompt);
 el("voiceComposerBtn").addEventListener("click", openVoiceDialog);
 el("generateVoiceBtn").addEventListener("click", generateVoiceFromDialog);
+el("voiceText").addEventListener("input", updateVoiceCost);
 el("voiceSettingsBtn").addEventListener("click", () => { el("voiceDialog").close(); el("providerSettingsBtn").click(); });
 el("providerSettingsBtn").addEventListener("click", async () => {
   try { await loadProviderSettings(); el("providerDialog").showModal(); }

@@ -74,7 +74,7 @@ Pagina publică `/plans.html` prezintă planurile, iar meniul contului oferă ac
 
 - Gratuit: 5 cereri AI pe zi (UTC), chat, cod și texte, până la 10 proiecte private.
 - Standard: 9,99 EUR/lună, 300 de cereri AI pe perioada lunară plătită și până la 10 proiecte private. Cota nu se reportează.
-- Imaginile și vocea AI nu sunt incluse; endpointurile respective sunt blocate pentru vizitatori, fără consumarea cotei. Administratorul își păstrează accesul existent.
+- Vocea AI rostită este disponibilă vizitatorilor autentificați, cu redare și descărcare MP3. Consumă o unitate din aceeași cotă pentru fiecare segment de până la 500 de caractere; cota insuficientă respinge cererea fără consum parțial. Nu este voce cântată. Imaginile rămân blocate pentru vizitatori, fără consumarea cotei. Administratorul își păstrează accesul existent.
 - O cerere AI acceptată consumă o unitate, inclusiv în cazul unei erori a furnizorului. Testul care generează un răspuns consumă o cerere; verificarea conexiunii `/api/health` nu consumă mesaje.
 
 Contul bancar este destinația încasărilor. Pentru plata online cu Visa/Mastercard este necesar un procesator de plăți; datele cardului nu sunt colectate de Nova.

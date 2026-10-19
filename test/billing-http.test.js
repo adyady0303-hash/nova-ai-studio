@@ -21,6 +21,7 @@ test('visitor HTTP workflow: public plans, authenticated checkout, verified paym
       const state = JSON.parse(fs.readFileSync(${JSON.stringify(statePath)}, 'utf8'));
       const parsed = new URL(url);
       let result;
+      if (parsed.hostname === 'api.openai.com' && parsed.pathname === '/v1/audio/speech') return {ok:true,headers:{get:()=> 'audio/mpeg'},arrayBuffer:async()=>Buffer.from('mock-audio-only')};
       if (parsed.hostname === 'api.openai.com') result = { choices: [{ message: { content: 'Salut din modelul de test.' } }], model: 'gpt-4.1-mini' };
       else if (parsed.hostname !== 'api.stripe.com') throw Error('Unexpected destination');
       else if (parsed.pathname === '/v1/prices/price_standard') result = { active:true, currency:'eur', unit_amount:999, recurring:{interval:'month',interval_count:1} };
@@ -64,6 +65,7 @@ test('visitor HTTP workflow: public plans, authenticated checkout, verified paym
   assert(ready, logs);
   assert.match(await (await fetch(base + '/plans.html')).text(), /9,99 €/);
   assert.equal((await fetch(base + '/api/billing')).status, 401);
+  assert.equal((await fetch(base + '/api/media/speech', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Salut' }) })).status, 401);
   assert.equal((await fetch(base + '/api/billing/checkout', { method: 'POST' })).status, 401);
   assert.equal((await fetch(base + '/api/billing/webhook', { method: 'POST', body: '{}' })).status, 400);
   const registration = await fetch(base + '/api/auth/register', {
@@ -102,14 +104,23 @@ test('visitor HTTP workflow: public plans, authenticated checkout, verified paym
   assert.equal(chat.status, 200); assert.equal(chat.headers.get('x-nova-ai-remaining'), '299');
   assert.equal(chat.headers.get('x-nova-ai-interval'), 'month');
   assert.equal((await request('/api/media/image', { prompt: 'Un copac' })).status, 403);
-  assert.equal((await request('/api/media/speech', { text: 'Salut' })).status, 403);
+  const publicVoice = await request('/api/media/speech', { text: 'a'.repeat(501) });
+  assert.equal(publicVoice.status, 200);
+  assert.match((await publicVoice.json()).dataUrl, /^data:audio\/mpeg;base64,/);
+  assert.equal(publicVoice.headers.get('x-nova-ai-remaining'), '297');
+  assert.equal((await request('/api/media/speech', { text: 'a'.repeat(4097) })).status, 400);
   assert.equal((await webhook()).status, 200);
-  assert.equal((await (await request('/api/billing')).json()).remaining, 299);
+  assert.equal((await (await request('/api/billing')).json()).remaining, 297);
   assert.equal((await request('/api/billing/portal', {})).status, 200);
   state.subscription.status = 'canceled'; saveState();
   assert.equal((await webhook()).status, 200);
   assert.equal((await (await request('/api/billing')).json()).plan, 'free');
-  for (let i = 0; i < 5; i++) assert.equal((await request('/api/chat', { model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut' }] })).status, 200);
+  assert.equal((await request('/api/media/speech', { text: 'a'.repeat(2501) })).status, 429);
+  assert.equal((await (await request('/api/billing')).json()).remaining, 5);
+  const freeVoice = await request('/api/media/speech', { text: 'a'.repeat(501) });
+  assert.equal(freeVoice.status, 200);
+  assert.equal(freeVoice.headers.get('x-nova-ai-remaining'), '3');
+  for (let i = 0; i < 3; i++) assert.equal((await request('/api/chat', { model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut' }] })).status, 200);
   assert.equal((await request('/api/chat', { model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut' }] })).status, 429);
   const transfer = await request('/api/billing/bank-transfer', {});
   assert.equal(transfer.status, 200);

@@ -53,6 +53,15 @@ test('free requests are limited per UTC day and reset the next day', () => {
   assert.equal(consumeQuota(record, 5, now + 86400000).remaining, 4);
 });
 
+test('voice quota charges multiple units atomically and rejects invalid costs', () => {
+  const record = {};
+  assert.equal(consumeQuota(record, 5, now, 2).remaining, 3);
+  assert.equal(consumeQuota(record, 5, now, 4).allowed, false);
+  assert.equal(quotaFor(record, 5, now).remaining, 3);
+  assert.equal(consumeQuota(record, 5, now, 3).remaining, 0);
+  for (const invalid of [0, -1, 1.5, NaN]) assert.throws(() => consumeQuota(record, 5, now, invalid));
+});
+
 test('paid quota follows the billing period, survives midnight and resets only on a new period', () => {
   const record = { billing: { status: 'active', periodStart: now / 1000 - 100, periodEnd: now / 1000 + 86400 * 30 } };
   for (let i = 0; i < 300; i++) assert(consumeQuota(record, 5, now).allowed);

@@ -226,19 +226,19 @@ async function register(req, res) {
   return json(res, 201, { ok: true });
 }
 
-async function consumeAiQuota(req, res) {
+async function consumeAiQuota(req, res, units = 1) {
   const account = req.novaAccount || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   if (account.role === "owner") return true;
   try {
-    if (["/api/media/image", "/api/media/speech"].includes(new URL(req.url, "http://nova").pathname)) {
-      json(res, 403, { error: "Imaginile și vocea AI nu sunt incluse în planurile Gratuit și Standard. Nu au fost consumate mesaje." });
+    if (new URL(req.url, "http://nova").pathname === "/api/media/image") {
+      json(res, 403, { error: "Imaginile AI nu sunt incluse în planurile Gratuit și Standard. Nu au fost consumate mesaje." });
       return false;
     }
     const quota = await withAccountsLock(async () => {
       const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
       if (!record) throw Object.assign(new Error("Contul nu mai este disponibil. Autentifică-te din nou."), { status: 401 });
-      const quota = consumeQuota(record, SUBSCRIBER_DAILY_AI_LIMIT);
+      const quota = consumeQuota(record, SUBSCRIBER_DAILY_AI_LIMIT, undefined, units);
       if (quota.allowed) await writeAccounts(database);
       return quota;
     });
@@ -246,7 +246,7 @@ async function consumeAiQuota(req, res) {
     res.setHeader("x-nova-ai-limit", String(quota.limit));
     res.setHeader("x-nova-ai-interval", quota.interval);
     if (!quota.allowed) {
-      json(res, 429, { error: quota.plan === "standard"
+      json(res, 429, { error: units > 1 ? `Vocea necesită ${units} unități AI, dar mai ai ${quota.remaining}. Scurtează textul sau așteaptă reînnoirea cotei. Nu a fost consumată nicio unitate.` : quota.plan === "standard"
         ? "Ai folosit cele 300 de mesaje AI ale perioadei lunare. Limita se reînnoiește la următoarea perioadă plătită."
         : `Ai folosit limita de ${quota.limit} mesaje AI pentru astăzi. Revino mâine sau alege abonamentul Standard.` });
       return false;
@@ -640,7 +640,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "media-fixes-4343cf3",
+      release: "public-voice-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -750,9 +750,10 @@ async function handle(req, res) {
     try {
       if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru sinteza vocală.");
       const body = await readJson(req);
-      const input = typeof body.text === "string" ? body.text.trim().slice(0, 4096) : "";
+      const input = typeof body.text === "string" ? body.text.trim() : "";
       if (!input) return json(res, 400, { error: "Adaugă text pentru voice-over." });
-      if (!await consumeAiQuota(req, res)) return;
+      if (input.length > 4096) return json(res, 400, { error: "Vocea acceptă cel mult 4096 de caractere. Împarte textul în fragmente." });
+      if (!await consumeAiQuota(req, res, Math.ceil(input.length / 500))) return;
       const speech = await openAiBytes("/audio/speech", {
         model: aiProvider.speechModel,
         voice: aiProvider.voice,

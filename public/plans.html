@@ -16,11 +16,11 @@
   <p id="status" role="status" aria-live="polite">Verificăm abonamentul…</p>
   <section class="plans" aria-label="Planuri disponibile">
     <article class="plan"><h2>Gratuit</h2><div class="price">0 €</div>
-      <ul><li>5 cereri AI pe zi</li><li>Chat, cod și texte</li><li>Până la 10 proiecte private</li></ul>
+      <ul><li>5 unități AI pe zi</li><li>Chat, cod și texte</li><li>Până la 10 proiecte private</li></ul>
       <a class="button secondary" href="/">Începe gratuit</a>
     </article>
     <article class="plan standard"><h2>Standard</h2><div class="price">9,99 € <small>/ lună</small></div>
-      <ul><li>300 de cereri AI pe perioadă lunară plătită</li><li>Chat, cod și texte</li><li>Până la 10 proiecte private</li></ul>
+      <ul><li>300 de unități AI pe perioadă lunară plătită</li><li>Chat, cod și texte</li><li>Până la 10 proiecte private</li></ul>
       <button id="subscribe" disabled>Alege Standard</button>
       <button class="secondary" id="bank" disabled>Plătește prin transfer bancar</button>
       <p class="note">Cu cardul: reînnoire lunară prin Stripe, cu opțiune de anulare din „Gestionează abonamentul”. Prin transfer: o lună de acces după verificarea încasării de administrator, fără debitare automată.</p>
@@ -28,7 +28,7 @@
   </section>
   <section id="bankInstructions" class="plan" hidden><h2>Transfer bancar · 9,99 EUR</h2><p id="bankDetails" style="white-space:pre-line"></p><p>Include referința exactă în detaliile transferului. Accesul Standard se activează după ce administratorul verifică încasarea. Nu trimite datele cardului sau parole bancare. Revenirea pe această pagină nu confirmă plata.</p></section>
   <div class="actions"><button class="secondary" id="manage" hidden>Gestionează abonamentul</button><button class="secondary" id="refresh">Verifică abonamentul</button></div>
-  <p class="note">Imaginile și vocea AI nu sunt incluse în aceste planuri și nu pot fi generate de conturile vizitatorilor. Cererile AI acceptate consumă din cotă, inclusiv dacă furnizorul răspunde cu o eroare; verificarea conexiunii prin generarea unui răspuns consumă o cerere. Cota nu se reportează. Planul Standard este activat exclusiv după confirmarea plății pe server.</p>
+  <p class="note">Vocea AI este disponibilă pentru utilizatorii autentificați și consumă o unitate din cota existentă pentru fiecare segment de până la 500 de caractere. Este voce rostită, nu voce cântată. Imaginile AI nu sunt incluse în aceste planuri. Cererile AI acceptate consumă din cotă, inclusiv dacă furnizorul răspunde cu o eroare; verificarea conexiunii prin generarea unui răspuns consumă o cerere. Cota nu se reportează. Planul Standard este activat exclusiv după confirmarea plății pe server.</p>
 </main>
 <script>
 const statusText=document.getElementById('status'), subscribe=document.getElementById('subscribe'),manage=document.getElementById('manage'),bank=document.getElementById('bank');
@@ -42,7 +42,7 @@ async function refresh(){
     const data=await response.json();if(!response.ok)throw Error(data.error||'Abonamentul nu poate fi verificat.');
     document.getElementById('login').textContent='Înapoi în aplicație';
     const paid=data.plan==='standard';
-    statusText.textContent=(paid?'Standard activ':'Plan Gratuit')+' · '+data.remaining+'/'+data.limit+' cereri disponibile '+(paid?'în perioada lunară.':'astăzi.')+(paid&&data.cancelAtPeriodEnd?' Fără reînnoire automată. Acces până la '+new Date(data.periodEnd*1000).toLocaleDateString('ro-RO')+'.':'');
+    statusText.textContent=(paid?'Standard activ':'Plan Gratuit')+' · '+data.remaining+'/'+data.limit+' unități AI disponibile '+(paid?'în perioada lunară.':'astăzi.')+(paid&&data.cancelAtPeriodEnd?' Fără reînnoire automată. Acces până la '+new Date(data.periodEnd*1000).toLocaleDateString('ro-RO')+'.':'');
     if(!data.paymentsEnabled)statusText.textContent+=' Plata cu cardul nu este încă activată.';
     else if(!paid&&new URLSearchParams(location.search).get('checkout')==='success')statusText.textContent+=' Confirmarea plății este în curs. Apasă „Verifică abonamentul” pentru actualizare.';
     subscribe.disabled=!data.paymentsEnabled||paid;
