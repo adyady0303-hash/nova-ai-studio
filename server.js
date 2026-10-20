@@ -6,6 +6,7 @@ const dataStore = require("./data-store");
 const { creationPrompts } = require("./creation-prompts");
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
+const { createGoogleAuth } = require("./google-auth");
 let dataFs = fs;
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -47,14 +48,23 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 let accountQueue = Promise.resolve();
 let aiSettingsCacheExpiresAt = 0;
-const LOGIN_PAGE = `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Nova AI Studio</title><style>
-:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#080b12;color:#eef2ff}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 50% 15%,#1d2948 0,transparent 55%),#080b12}.card{width:min(100%,420px);padding:36px;border:1px solid #30394d;border-radius:24px;background:rgba(17,22,34,.96);box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#8b7cff,#4bd8c2);color:#080b12;font-weight:900;font-size:23px}h1{margin:22px 0 8px;font-size:26px;letter-spacing:-.04em}p{margin:0 0 24px;color:#a9b3c8;line-height:1.5}.benefit{margin:-10px 0 22px;padding:12px 14px;border:1px solid #25433f;border-radius:12px;background:#0b211f;color:#b6f2df;font-size:13px;line-height:1.5}label{display:block;margin:18px 0 8px;font-size:13px;color:#c7d0e2}input{width:100%;height:48px;padding:0 14px;border:1px solid #38445b;border-radius:12px;background:#0d121e;color:#fff;font:inherit;outline:none}input:focus{border-color:#8b7cff;box-shadow:0 0 0 3px #8b7cff33}.password-field{position:relative}.password-field input{padding-right:54px}.password-toggle{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:36px;height:34px;margin:0;padding:0;border:0;border-radius:8px;background:transparent;color:#a9b3c8;cursor:pointer}.password-toggle:hover{background:#ffffff0d;color:#eef2ff}.password-toggle:focus-visible{outline:2px solid #8b7cff;outline-offset:1px}.password-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.password-hint{display:block;margin-top:8px;color:#8490a7;font-size:12px}button{width:100%;height:48px;margin-top:22px;border:0;border-radius:12px;background:#8b7cff;color:#0b0c15;font:700 15px inherit;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.switch{display:block;width:auto;height:auto;margin:16px auto 0;padding:4px;background:transparent;color:#bdb4ff;font:inherit;text-decoration:underline}.status{min-height:22px;margin:14px 0 0;color:#ffaaa9;font-size:13px}.status.ok{color:#91ead1}footer{margin-top:24px;color:#8490a7;font-size:12px;text-align:center}[hidden]{display:none!important}
-</style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău de lucru.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. Conținutul trimis furnizorului configurat poate genera costuri.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><div id="confirm-wrap" hidden><label for="confirm-password">Confirmă parola</label><div class="password-field"><input id="confirm-password" type="password" autocomplete="new-password" maxlength="8"><button class="password-toggle" type="button" data-password-toggle="confirm-password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Parola abonatului poate avea cel mult 8 caractere.</small></div><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><footer><a href="/plans.html" style="color:#bdb4ff">Vezi abonamentele · Standard 9,99 €/lună</a><br>Sesiune protejată · Nova AI Studio</footer></main><script>
-const form=document.getElementById("auth-form"),button=document.getElementById("submit"),status=document.getElementById("status"),password=document.getElementById("password"),confirmPassword=document.getElementById("confirm-password"),confirmWrap=document.getElementById("confirm-wrap"),switchButton=document.getElementById("switch"),benefit=document.getElementById("benefit"),passwordHint=document.getElementById("password-hint"),passwordToggles=[...document.querySelectorAll("[data-password-toggle]")];let registering=false;
-function resetPasswordVisibility(){for(const toggle of passwordToggles){const input=document.getElementById(toggle.dataset.passwordToggle);input.type="password";toggle.setAttribute("aria-pressed","false");toggle.setAttribute("aria-label","Afișează parola");const slash=toggle.querySelector("[data-password-slash]");if(slash)slash.style.display="none";}}
-for(const toggle of passwordToggles){const input=document.getElementById(toggle.dataset.passwordToggle);toggle.addEventListener("click",()=>{const visible=input.type==="password";input.type=visible?"text":"password";toggle.setAttribute("aria-pressed",String(visible));toggle.setAttribute("aria-label",visible?"Ascunde parola":"Afișează parola");const slash=toggle.querySelector("[data-password-slash]");if(slash)slash.style.display=visible?"block":"none";});}
-if(new URLSearchParams(location.search).get("session")==="expired"){status.textContent="Sesiunea a expirat. Autentifică-te din nou.";}
-switchButton.addEventListener("click",()=>{registering=!registering;status.textContent="";status.classList.remove("ok");if(registering){password.value="";confirmPassword.value="";resetPasswordVisibility();}document.getElementById("subtitle").textContent=registering?"Creează un cont pentru spațiul tău privat Nova.":"Conectează-te pentru a deschide spațiul tău de lucru.";document.getElementById("submit").textContent=registering?"Creează cont":"Autentificare";switchButton.textContent=registering?"Am deja cont · Autentificare":"Creează un cont de abonat";confirmWrap.hidden=!registering;benefit.hidden=!registering;passwordHint.hidden=!registering;password.autocomplete=registering?"new-password":"current-password";confirmPassword.required=registering;if(registering){password.minLength=1;password.maxLength=8;confirmPassword.minLength=1;confirmPassword.maxLength=8;}else{password.removeAttribute("minlength");password.maxLength=128;confirmPassword.removeAttribute("minlength");confirmPassword.removeAttribute("required");}});form.addEventListener("submit",async event=>{event.preventDefault();if(registering&&password.value.length>8){status.textContent="Parola abonatului poate avea cel mult 8 caractere.";password.focus();return;}if(registering&&password.value!==confirmPassword.value){status.textContent="Parolele nu coincid.";confirmPassword.focus();return;}button.disabled=true;switchButton.disabled=true;status.textContent="";status.classList.remove("ok");try{const response=await fetch(registering?"/api/auth/register":"/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({username:document.getElementById("username").value,password:password.value})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||"Cererea nu a putut fi finalizată.");password.value="";confirmPassword.value="";if(registering){status.textContent="Cont creat. Se deschide spațiul tău Nova…";status.classList.add("ok");}window.location.replace("/");}catch(error){status.textContent=error.message||"Nu s-a putut realiza autentificarea.";button.disabled=false;switchButton.disabled=false;password.focus();}});
+const googleAuth = createGoogleAuth({
+  clientId: process.env.GOOGLE_CLIENT_ID || "",
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
+  redirectUri: process.env.GOOGLE_REDIRECT_URI || "",
+  cookieSecret: process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD,
+  secureCookies: Boolean(cookieSecurityAttribute())
+});
+const LOGIN_PAGE = `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Nova AI Studio · Acces</title><style>
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#050a0e;color:#edfaff}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 65% 15%,#123c4c55,transparent 60%),#050a0e}.card{width:min(100%,420px);padding:32px;border:1px solid #28495a;border-radius:22px;background:#0b171ff2;box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:46px;height:46px;border:1px solid #3f8aa1;border-radius:50%;background:#102a37;color:#8ce9ff;font-weight:700;font-size:23px}h1{margin:22px 0 8px;font-size:26px;letter-spacing:-.04em}p{margin:0 0 24px;color:#8faab7;line-height:1.6;font-size:14px}.benefit{margin:-8px 0 22px;padding:12px 14px;border:1px solid #285244;border-radius:12px;background:#0c211e;color:#b6f2df;font-size:13px;line-height:1.5}label{display:block;margin:18px 0 8px;font-size:13px;color:#c7dce6}input{width:100%;height:48px;padding:0 14px;border:1px solid #315064;border-radius:11px;background:#08121b;color:#fff;font:inherit;outline:none}input:focus{border-color:#60d9fa;box-shadow:0 0 0 3px #60d9fa18}.password-field{position:relative}.password-field input{padding-right:54px}.password-toggle{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:36px;height:34px;margin:0;padding:0;border:0;border-radius:8px;background:transparent;color:#8faab7;cursor:pointer}.password-toggle:hover{background:#ffffff0d;color:#edfaff}.password-toggle:focus-visible{outline:2px solid #60d9fa;outline-offset:1px}.password-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.password-hint{display:block;margin-top:8px;color:#8faab7;font-size:12px;line-height:1.6}button{width:100%;height:48px;margin-top:22px;border:0;border-radius:11px;background:linear-gradient(120deg,#79e7ff,#37b7dd);color:#03212c;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.switch{display:block;width:auto;height:auto;margin:16px auto 0;padding:4px;background:transparent;color:#9bdded;font:inherit;text-decoration:underline;font-size:13px}.status{min-height:22px;margin:14px 0 0;color:#ffaaa9;font-size:13px;line-height:1.6}.status.ok{color:#91ead1}footer{margin-top:24px;color:#7195a5;font-size:12px;text-align:center;line-height:1.8}footer a{color:#9bdded}.google-login{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:46px;padding:10px 14px;margin-top:20px;border:1px solid #36556a;border-radius:11px;background:#10232e;color:#e8f7ff;font-size:14px;text-decoration:none}.google-login:hover{border-color:#60d9fa}.google-symbol{font-size:18px;font-weight:700;color:#8edff6}[hidden]{display:none!important}@media(max-width:420px){body{padding:16px}.card{padding:26px 22px}}
+</style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău Nova.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. După înregistrare intri direct în aplicație.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Între 1 și 8 caractere, alese de tine. Fără cerințe de majuscule, cifre sau simboluri.</small><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><a id="google-login" class="google-login" href="/api/auth/google" __GOOGLE_LOGIN_HIDDEN__><span class="google-symbol" aria-hidden="true">G</span>Continuă cu Google</a><footer><a href="/plans.html">Vezi abonamentele · Standard 9,99 €/lună</a><br>Sesiune protejată · Nova AI Studio</footer></main><script>
+const form=document.getElementById("auth-form"),button=document.getElementById("submit"),status=document.getElementById("status"),password=document.getElementById("password"),switchButton=document.getElementById("switch"),benefit=document.getElementById("benefit"),passwordHint=document.getElementById("password-hint"),toggle=document.querySelector("[data-password-toggle]");let registering=false;
+function resetPasswordVisibility(){password.type="password";toggle.setAttribute("aria-pressed","false");toggle.setAttribute("aria-label","Afișează parola");toggle.querySelector("[data-password-slash]").style.display="none";}
+toggle.addEventListener("click",()=>{const visible=password.type==="password";password.type=visible?"text":"password";toggle.setAttribute("aria-pressed",String(visible));toggle.setAttribute("aria-label",visible?"Ascunde parola":"Afișează parola");toggle.querySelector("[data-password-slash]").style.display=visible?"block":"none";});
+if(new URLSearchParams(location.search).get("auth")==="google-failed")status.textContent="Conectarea cu Google nu a reușit. Poți reîncerca sau folosi utilizatorul și parola.";
+if(new URLSearchParams(location.search).get("session")==="expired")status.textContent="Sesiunea a expirat. Autentifică-te din nou.";
+switchButton.addEventListener("click",()=>{registering=!registering;status.textContent="";status.classList.remove("ok");password.value="";resetPasswordVisibility();document.getElementById("subtitle").textContent=registering?"Alege un utilizator și parola dorită. Intri direct în Nova.":"Conectează-te pentru a deschide spațiul tău Nova.";button.textContent=registering?"Creează cont și intră":"Autentificare";switchButton.textContent=registering?"Am deja cont · Autentificare":"Creează un cont de abonat";benefit.hidden=!registering;passwordHint.hidden=!registering;password.autocomplete=registering?"new-password":"current-password";if(registering){password.minLength=1;password.maxLength=8;}else{password.removeAttribute("minlength");password.maxLength=128;}});
+form.addEventListener("submit",async event=>{event.preventDefault();if(registering&&password.value.length>8){status.textContent="Alege o parolă de maximum 8 caractere.";password.focus();return;}button.disabled=true;switchButton.disabled=true;status.textContent="";status.classList.remove("ok");try{const response=await fetch(registering?"/api/auth/register":"/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({username:document.getElementById("username").value,password:password.value})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||"Cererea nu a putut fi finalizată.");password.value="";if(registering){status.textContent="Cont creat. Se deschide Nova…";status.classList.add("ok");}window.location.replace("/");}catch(error){status.textContent=error.message||"Nu s-a putut realiza autentificarea.";button.disabled=false;switchButton.disabled=false;password.focus();}});
 </script></body></html>`;
 
 function digestText(value) {
@@ -154,7 +164,7 @@ function sendLoginPage(res, headOnly = false) {
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
   });
-  res.end(headOnly ? "" : LOGIN_PAGE.replace("__AI_LIMIT__", String(SUBSCRIBER_DAILY_AI_LIMIT)));
+  res.end(headOnly ? "" : LOGIN_PAGE.replace("__AI_LIMIT__", String(SUBSCRIBER_DAILY_AI_LIMIT)).replace("__GOOGLE_LOGIN_HIDDEN__", ACCESS_PASSWORD && googleAuth.enabled ? "" : "hidden"));
 }
 
 function sameOrigin(req) {
@@ -206,7 +216,6 @@ async function register(req, res) {
   if (password.length < 1 || password.length > 8) {
     return json(res, 400, { error: "Parola abonatului trebuie să aibă între 1 și 8 caractere." });
   }
-  if (password.toLowerCase() === username.toLowerCase()) return json(res, 400, { error: "Parola trebuie să fie diferită de numele de utilizator." });
   if (usernameKey === normalizedUsername(ACCESS_USER)) return json(res, 409, { error: "Acest nume este rezervat administratorului." });
 
   let account;
@@ -226,6 +235,45 @@ async function register(req, res) {
   }
   if (!await createSession(res, account)) return json(res, 503, { error: "Contul a fost creat, dar sunt prea multe sesiuni active. Autentifică-te." });
   return json(res, 201, { ok: true });
+}
+
+async function accountForGoogle(identity) {
+  return withAccountsLock(async () => {
+    const database = await readAccounts();
+    let record = database.users.find(user => user.googleSub === identity.sub);
+    if (!record) {
+      if (database.users.length >= MAX_ACCOUNTS) throw Object.assign(new Error("Înregistrările sunt momentan închise."), { status: 503 });
+      let username;
+      do { username = "google_" + crypto.randomBytes(10).toString("hex"); }
+      while (database.users.some(user => user.usernameKey === username) || normalizedUsername(ACCESS_USER) === username);
+      record = { id: crypto.randomBytes(16).toString("hex"), username, usernameKey: username, googleSub: identity.sub, usageDate: "", usageCount: 0, createdAt: new Date().toISOString() };
+      database.users.push(record);
+    }
+    // A Google identity never acquires another account through a matching email/name.
+    record.googleEmail = identity.email;
+    record.displayName = identity.name || identity.email;
+    await writeAccounts(database);
+    return { userId: record.id, role: "subscriber", username: record.username };
+  });
+}
+
+async function googleCallback(req, res, url) {
+  try {
+    if (!googleAuth.enabled) return json(res, 503, { error: "Conectarea Google nu este configurată." });
+    const callback = new URL(process.env.GOOGLE_REDIRECT_URI);
+    callback.search = url.search;
+    const { identity } = await googleAuth.finish(callback.href, req.headers.cookie);
+    const account = await accountForGoogle(identity);
+    if (!await createSession(res, account)) throw new Error("Sesiunile disponibile sunt ocupate.");
+    const sessionCookie = res.getHeader("set-cookie");
+    res.setHeader("set-cookie", [googleAuth.clearCookie, ...(Array.isArray(sessionCookie) ? sessionCookie : [sessionCookie])]);
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" });
+    // A same-origin document starts the next navigation, preserving Strict session cookies.
+    return res.end('<!doctype html><html lang="ro"><meta charset="utf-8"><title>Conectat la Nova</title><p>Conectare reușită. <a href="/">Deschide Nova</a></p><script>location.replace("/")</script></html>');
+  } catch {
+    res.writeHead(303, { location: "/?auth=google-failed", "set-cookie": googleAuth.clearCookie, "cache-control": "no-store", "referrer-policy": "no-referrer" });
+    return res.end();
+  }
 }
 
 async function consumeAiQuota(req, res, units = 1) {
@@ -686,7 +734,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "orbit-interface-v1",
+      release: "simple-signup-google-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -710,6 +758,15 @@ async function handle(req, res) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
     return res.end(page);
   }
+  if (req.method === "GET" && url.pathname === "/api/auth/options") return json(res, 200, { google: Boolean(ACCESS_PASSWORD && googleAuth.enabled) });
+  if (ACCESS_PASSWORD && req.method === "GET" && url.pathname === "/api/auth/google") {
+    try {
+      const started = googleAuth.begin();
+      res.writeHead(302, { location: started.url, "set-cookie": started.cookie, "cache-control": "no-store", "referrer-policy": "no-referrer" });
+      return res.end();
+    } catch (error) { return json(res, error.status || 503, { error: error.message }); }
+  }
+  if (ACCESS_PASSWORD && req.method === "GET" && url.pathname === "/api/auth/google/callback") return googleCallback(req, res, url);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/login") return login(req, res);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/register") return register(req, res);
   if (ACCESS_PASSWORD && req.method === "POST" && url.pathname === "/api/auth/logout") {
@@ -748,7 +805,7 @@ async function handle(req, res) {
     const record = (await readAccounts()).users.find(user => user.id === account.userId);
     if (!record) return json(res, 401, { error: "Contul nu mai este disponibil. Autentifică-te din nou." });
     const quota = quotaFor(record, SUBSCRIBER_DAILY_AI_LIMIT);
-    return json(res, 200, { username: account.username, role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), plan: quota.plan, quotaLimit: quota.limit, quotaRemaining: quota.remaining, quotaInterval: quota.interval, dailyLimit: quota.interval === "day" ? quota.limit : null, remainingToday: quota.interval === "day" ? quota.remaining : null });
+    return json(res, 200, { username: account.username, ...(record.displayName ? { displayName: record.displayName } : {}), role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), plan: quota.plan, quotaLimit: quota.limit, quotaRemaining: quota.remaining, quotaInterval: quota.interval, dailyLimit: quota.interval === "day" ? quota.limit : null, remainingToday: quota.interval === "day" ? quota.remaining : null });
   }
   if (req.method === "GET" && url.pathname === "/api/settings") {
     return json(res, 200, { settings: publicProviderSettings() });

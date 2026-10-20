@@ -31,7 +31,7 @@ jobs:
       - name: Build release archive
         run: |
           mkdir -p dist
-          zip -r dist/Nova-AI-Studio.zip server.js data-store.js billing.js web-tools.js ai-quality.js creation-prompts.js package.json package-lock.json README.md Start_Nova_AI_Studio.bat public Dockerfile docker-compose.yml .env.example render.yaml
+          zip -r dist/Nova-AI-Studio.zip server.js data-store.js billing.js web-tools.js ai-quality.js creation-prompts.js google-auth.js package.json package-lock.json README.md Start_Nova_AI_Studio.bat public Dockerfile docker-compose.yml .env.example render.yaml
           sha256sum dist/Nova-AI-Studio.zip > dist/Nova-AI-Studio.zip.sha256
       - name: Publish GitHub release
         env:

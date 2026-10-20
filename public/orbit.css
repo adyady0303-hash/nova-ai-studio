@@ -118,3 +118,5 @@ body { color:var(--text); }
 @media(max-width:540px) { .app.workspace-open .workspace { top:112px; height:auto; max-height:calc(100dvh - 112px); } }
 
 .composer-image.active { border-color:#429db6; background:#50cbed13; color:#b2efff; }
+
+.account-label { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

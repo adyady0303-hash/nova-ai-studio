@@ -236,7 +236,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'orbit-interface-v1');
+  assert.equal(versionData.release, 'simple-signup-google-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -264,10 +264,25 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(loginHtml, /Creează un cont de abonat/);
   assert.match(loginHtml, /Cont fără taxă de înscriere/);
   assert.match(loginHtml, /data-password-toggle="password"/);
-  assert.match(loginHtml, /data-password-toggle="confirm-password"/);
+  assert.doesNotMatch(loginHtml, /id="confirm-password"/);
   assert.match(loginHtml, /password\.maxLength=8/);
-  assert.match(loginHtml, /confirmPassword\.maxLength=8/);
+  assert.match(loginHtml, /Fără cerințe de majuscule/);
   assert.match(loginHtml, /password\.maxLength=128/);
+
+  assert.deepEqual(await (await fetch(`${baseUrl}/api/auth/options`)).json(), { google: false });
+  assert.match(loginHtml, /id="google-login"[^>]*hidden/);
+  assert.doesNotMatch(loginHtml, /__GOOGLE_LOGIN_HIDDEN__/);
+  assert.equal((await fetch(`${baseUrl}/api/auth/google`, { redirect: 'manual' })).status, 503);
+  for (const [username, password] of [['samepass', 'samepass'], ['plain', 'x'], ['symbols', ' !@#$%^ ']]) {
+    const simple = await fetch(`${baseUrl}/api/auth/register`, { method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl }, body: JSON.stringify({ username, password }) });
+    assert.equal(simple.status, 201, await simple.text());
+    const simpleCookie = simple.headers.get('set-cookie').split(';', 1)[0];
+    const me = await (await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: simpleCookie } })).json();
+    assert.equal(me.role, 'subscriber');
+    assert.equal(me.username, username);
+    const simpleLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl }, body: JSON.stringify({ username, password }) });
+    assert.equal(simpleLogin.status, 200);
+  }
 
   const overlongRegistration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',

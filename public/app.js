@@ -31,7 +31,7 @@ function chatKey(project = state.project) { return storageKey(`nova-chat-${proje
 function updateAccountLabel() {
   const account = state.account;
   el("accountLabel").textContent = account.role === "subscriber"
-    ? `${account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} unități AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
+    ? `${account.displayName || account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} unități AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
     : `${account.username} · Administrator`;
 }
 

@@ -132,3 +132,9 @@ Chatul caută automat surse pentru întrebări actuale și încearcă o căutare
 ### Interfață Orbit (1.4.0)
 
 Pagina principală și chatul folosesc designul Orbit, cu instrumente dedicate, glob decorativ realizat în CSS și afișare adaptată telefonului. Chatul rămâne separat de editor; editorul are și un buton propriu de închidere. Modul Imagine trimite descrierea către generatorul de imagini, inclusiv la Enter. Fișierele interfeței sunt versionate automat pentru fiecare publicare. Previzualizarea demonstrativă rămâne disponibilă la `/preview-orbit`.
+
+### Înregistrare simplă și Google (1.4.1)
+
+Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.
+
+Conectarea Google este opțională. În Google Cloud Console configurează un client OAuth de tip Web application și adaugă exact redirectul `https://www.nova-ai-studio.eu/api/auth/google/callback`. Salvează în Environment la serviciul Render existent `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` și `GOOGLE_REDIRECT_URI`, apoi publică setările. Nu transmite secretul în chat. Butonul Google apare numai când toate trei și secretul sesiunilor sunt configurate. `/api/auth/options` indică disponibilitatea fără a expune credențiale. Google creează conturi de vizitator după identitatea Google verificată; nu unește automat conturi prin email. Starea OAuth este unică, legată de browser și expiră în zece minute; la repornire trebuie reluată conectarea în curs. Google poate solicita acordul pentru profil și email.
