@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="ro">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -368,6 +368,7 @@ body {background:#080b13;}
 
 </style>
   <link rel="stylesheet" href="/studio.css?v=__NOVA_VERSION__">
+  <link rel="stylesheet" href="/orbit.css?v=__NOVA_VERSION__">
 </head>
 <body>
   <div class="app" id="app">
@@ -376,23 +377,23 @@ body {background:#080b13;}
         <div class="brand-lockup"><span class="logo">N</span><span>Nova AI Studio</span><span class="badge" id="instanceBadge">ONLINE · CLOUD</span></div>
       </div>
       <nav class="global-nav" aria-label="Main navigation">
-        <button class="global-nav-link active" data-view="home" type="button">Home</button>
-        <button class="global-nav-link" data-view="create" type="button">Create</button>
-        <button class="global-nav-link" data-view="explore" type="button">Explore</button>
-        <button class="global-nav-link" id="projectsNavBtn" type="button" aria-expanded="false">Library</button>
+        <button class="global-nav-link active" data-view="home" type="button">Acasă</button>
+        <button class="global-nav-link" data-view="create" type="button">Creează</button>
+        <button class="global-nav-link" data-view="explore" type="button">Explorează</button>
+        <button class="global-nav-link" id="projectsNavBtn" type="button" aria-expanded="false">Proiecte</button>
       </nav>
       <div class="top-actions">
         <button class="top-icon-btn" id="topSearchBtn" type="button" title="Search and create" aria-label="Focus the creation prompt">⌕</button>
         <button class="top-icon-btn" id="refreshModelsTop" type="button" title="Refresh AI status" aria-label="Refresh AI status"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
-        <span class="top-status"><span class="dot" id="connectionDot"></span><span id="connectionText" role="status" aria-live="polite">Checking AI connection</span><span class="badge" id="statusBadge">Connecting…</span></span>
+        <span class="top-status"><span class="dot" id="connectionDot"></span><span id="connectionText" role="status" aria-live="polite">Verific conexiunea AI</span><span class="badge" id="statusBadge">Conectare…</span></span>
         <details class="account-menu">
           <summary class="account-avatar" aria-label="Account and settings"><span id="accountAvatarLabel">AI</span></summary>
           <div class="account-popover">
             <span class="account-label" id="accountLabel">Nova AI Studio</span>
-            <button class="account-action" id="newChatTop" type="button">＋ New chat</button>
-            <button class="account-action" id="homeVoiceBtn" type="button">Voice-over…</button>
-            <button class="account-action" id="providerSettingsBtn" type="button">AI settings</button>
-            <a class="account-action" href="/admin.html" id="adminDashboardLink">Admin dashboard</a>
+            <button class="account-action" id="newChatTop" type="button">＋ Conversație nouă</button>
+            <button class="account-action" id="homeVoiceBtn" type="button">Voce AI…</button>
+            <button class="account-action" id="providerSettingsBtn" type="button">Configurare AI</button>
+            <a class="account-action" href="/admin.html" id="adminDashboardLink">Administrare</a>
             <a class="account-action" href="/plans.html">Abonamente · 9,99 €/lună</a>
             <button class="account-action" id="logoutBtn" type="button" hidden>Deconectare</button>
           </div>
@@ -434,42 +435,46 @@ body {background:#080b13;}
 
     <main class="chat home-active" id="chat">
       <div class="chat-head">
-        <div class="chat-heading"><div><div class="chat-title">Chat Nova</div><div class="chat-sub">Idee → conversație → creație</div></div></div>
+        <div class="chat-heading"><div><div class="chat-title">Chat Nova</div><div class="chat-sub">Inteligență creativă · Căutare web automată</div></div></div>
         <button class="btn subtle workspace-toggle" id="openWorkspaceBtn" aria-pressed="false" title="Deschide editorul proiectului"><span>⌘</span><span>Spațiu de lucru</span></button>
       </div>
       <section class="creator-home" id="creatorHome" aria-labelledby="homeTitle">
         <div class="home-content">
-          <div class="creator-update" role="note"><strong>Noul studio de creație</strong><span>Căutare web automată · Muzică cu acompaniament · Video 9:16, 16:9 și 1:1 · Texte și afaceri online</span></div>
           <section class="home-hero">
-            <div class="home-kicker"><span class="home-kicker-dot" aria-hidden="true"></span><span>NOVA AI STUDIO</span><span aria-hidden="true">/</span><span>CREATOR HUB</span><span class="release-badge">v__NOVA_VERSION__</span></div>
-            <h1 id="homeTitle">What do you want to <span>create?</span></h1>
-            <p>Chat cu surse web, texte, versuri, muzică și video — într-un singur studio.</p>
-            <div class="home-prompt-wrap">
-              <label class="sr-only" for="homePrompt">Describe what you want to create</label>
-              <textarea id="homePrompt" rows="1" placeholder="Describe what you want to create…"></textarea>
-              <button class="btn primary home-send" id="homeSendBtn" type="button" aria-label="Create from your prompt"><span aria-hidden="true">➜</span></button>
+            <div class="orbit-visual" aria-hidden="true"><div class="orbit-stars"></div><div class="orbit-ring ring-a"></div><div class="orbit-ring ring-b"></div><div class="orbit-ring ring-c"></div><div class="orbit-core"><div class="orbit-meridian m-one"></div><div class="orbit-meridian m-two"></div><div class="orbit-latitude l-one"></div><div class="orbit-latitude l-two"></div><span class="orbit-light"></span></div><span class="orbit-satellite satellite-a"></span><span class="orbit-satellite satellite-b"></span><div class="orbit-coordinate">NOVA / CREATIVE INTELLIGENCE</div></div>
+            <div class="hero-copy">
+              <div class="home-kicker"><span class="home-kicker-dot" aria-hidden="true"></span><span>INTELIGENȚĂ CREATIVĂ</span><span class="release-badge">ORBIT · v__NOVA_VERSION__</span></div>
+              <h1 id="homeTitle">Ideile tale.<br><span>O nouă dimensiune.</span></h1>
+              <p>Un singur spațiu pentru tot ce vrei să creezi.<br>Vorbește cu Nova. Transformă ideea în ceva al tău.</p>
+              <div class="home-prompt-wrap"><span class="prompt-spark" aria-hidden="true">✦</span>
+                <label class="sr-only" for="homePrompt">Ce vrei să creezi?</label>
+                <textarea id="homePrompt" rows="1" placeholder="Spune-mi ce ai în minte…"></textarea>
+                <button class="btn primary home-send" id="homeSendBtn" type="button" aria-label="Trimite ideea către Nova"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button>
+              </div>
+              <div class="orbit-prompt-caption"><span>↵ Enter pentru a începe</span><span>Chat · Creație · Explorare</span></div>
             </div>
           </section>
-
-          <section class="home-section" id="homeTools" aria-label="Creation tools">
+          <section class="home-section" id="homeTools" aria-label="Instrumente de creație">
+            <div class="home-section-heading"><div><span class="section-index">01 / EXPLOREAZĂ</span><h2>Ce creăm astăzi?</h2></div><span class="section-description">Alege un instrument. Dă formă ideii.</span></div>
             <div class="creator-grid">
-              <button class="creator-card card-code" type="button" data-home-action="code"><span class="creator-art"><span>&lt;/&gt;</span></span><span class="creator-card-copy"><strong>Code</strong><small>Build apps<br>and tools</small></span></button>
-              <button class="creator-card card-image" type="button" data-home-action="image"><span class="creator-art"><span>▧</span></span><span class="creator-card-copy"><strong>Image</strong><small>Create amazing<br>visuals</small></span></button>
-              <button class="creator-card card-music" type="button" data-home-action="music"><span class="creator-art"><span>♫</span></span><span class="creator-card-copy"><strong>Music</strong><small>Compose original<br>tracks</small></span></button>
-              <button class="creator-card card-video" type="button" data-home-action="video"><span class="creator-art"><span>▶</span></span><span class="creator-card-copy"><strong>Video</strong><small>Bring ideas<br>to life</small></span></button>
-              <button class="creator-card card-text" type="button" data-home-action="text"><span class="creator-art"><span>▤</span></span><span class="creator-card-copy"><strong>Texte</strong><small>Write articles<br>and stories</small></span></button>
-              <button class="creator-card card-text" type="button" data-home-action="lyrics"><span class="creator-art"><span>♫</span></span><span class="creator-card-copy"><strong>Versuri</strong><small>Strofe, refren<br>și voce recitată</small></span></button>
-              <button class="creator-card card-business" type="button" data-home-action="business"><span class="creator-art"><span>↗</span></span><span class="creator-card-copy"><strong>Afaceri online</strong><small>Ofertă, buget<br>și plan de lansare</small></span></button>
+              <button class="creator-card card-chat" type="button" data-home-action="chat"><span class="tool-number">01</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0Z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg></span><span class="creator-card-copy"><strong>Chat AI</strong><small>Întrebări, idei și surse web</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-image" type="button" data-home-action="image"><span class="tool-number">02</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span><span class="creator-card-copy"><strong>Imagine</strong><small>Vizualuri pornind de la cuvinte</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-music" type="button" data-home-action="music"><span class="tool-number">03</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/></svg></span><span class="creator-card-copy"><strong>Muzică</strong><small>Melodie, ritm și acompaniament</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-video" type="button" data-home-action="video"><span class="tool-number">04</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="m17 10 5-3v10l-5-3M7 9l5 3-5 3Z"/></svg></span><span class="creator-card-copy"><strong>Video</strong><small>Scene, povești și voce</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-code" type="button" data-home-action="code"><span class="tool-number">05</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-16-2 20"/></svg></span><span class="creator-card-copy"><strong>Cod & aplicații</strong><small>Construiește următorul proiect</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-text" type="button" data-home-action="text"><span class="tool-number">06</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M12 4v16M8 20h8M3 8V4m18 4V4"/></svg></span><span class="creator-card-copy"><strong>Texte</strong><small>Cuvintele potrivite pentru ideea ta</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-lyrics" type="button" data-home-action="lyrics"><span class="tool-number">07</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6M4 20l4-1 12-12a3 3 0 0 0-4-4L4 15v5ZM14 20h7"/></svg></span><span class="creator-card-copy"><strong>Versuri</strong><small>Strofe, refren și emoție</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-business" type="button" data-home-action="business"><span class="tool-number">08</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12a23 23 0 0 0 18 0M12 11v4"/></svg></span><span class="creator-card-copy"><strong>Afaceri online</strong><small>De la idee la plan de lansare</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
             </div>
           </section>
 
           <section class="home-history" id="homeHistory" hidden>
-            <div class="home-section-heading"><div><h2>Your recent chat</h2></div></div>
-            <button class="resume-card" id="resumeChatBtn" type="button"><span class="resume-icon">↗</span><span><strong>Continue your last conversation</strong><small id="resumeChatPreview"></small></span><span class="creator-arrow">→</span></button>
+            <div class="home-section-heading"><div><h2>CONVERSAȚIA TA</h2></div></div>
+            <button class="resume-card" id="resumeChatBtn" type="button"><span class="resume-icon">↗</span><span><strong>Continuă de unde ai rămas</strong><small id="resumeChatPreview"></small></span><span class="creator-arrow">→</span></button>
           </section>
 
           <section class="home-projects" aria-labelledby="projectsTitle">
-            <div class="home-section-heading"><div><h2 id="projectsTitle">Recent projects</h2></div><button class="text-action" type="button" id="seeProjectsBtn">View all <span aria-hidden="true">→</span></button></div>
+            <div class="home-section-heading"><div><span class="section-index">02 / SPAȚIUL TĂU</span><h2 id="projectsTitle">Proiectele tale</h2></div><button class="text-action" type="button" id="seeProjectsBtn">Vezi toate <span aria-hidden="true">→</span></button></div>
             <div class="home-project-grid" id="homeProjects" aria-live="polite"></div>
           </section>
         </div>
@@ -491,7 +496,7 @@ body {background:#080b13;}
           </div>
           <label class="sr-only" for="taskSelect">Tipul cererii</label>
           <select id="taskSelect" class="sr-only" aria-label="Tipul cererii">
-            <option value="auto">Chat liber</option><option value="code">Cod și aplicații</option><option value="text">Texte și articole</option><option value="lyrics">Versuri</option><option value="business">Afaceri online</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
+            <option value="auto">Chat liber</option><option value="image">Imagine AI</option><option value="code">Cod și aplicații</option><option value="text">Texte și articole</option><option value="lyrics">Versuri</option><option value="business">Afaceri online</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
           </select>
           <textarea class="prompt" id="prompt" placeholder="Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)" aria-label="Mesaj pentru Nova"></textarea>
           <div class="composer-bottom">
@@ -501,7 +506,7 @@ body {background:#080b13;}
               <label class="allow-row" title="Chatul caută automat când are nevoie de informații. Bifează pentru a cere verificarea web explicit la acest mesaj; nu include date private."><input type="checkbox" id="verifyWeb"><span>Cere verificare web la acest mesaj</span></label>
               <label class="allow-row" title="Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"><input type="checkbox" id="allowChanges"><span>Editează proiectul</span></label>
             </div>
-            <div class="composer-actions"><button class="btn primary" id="sendBtn">Trimite <span aria-hidden="true">↗</span></button></div>
+            <div class="composer-actions"><button class="btn primary" id="sendBtn">Trimite <svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button></div>
           </div>
         </div>
         <div class="hint">Nova poate scrie fișiere în proiectul selectat. Imaginile și funcțiile cloud depind de furnizorul AI configurat.</div>
@@ -511,7 +516,7 @@ body {background:#080b13;}
     <section class="workspace" id="workspace" aria-label="Editorul proiectului">
       <div class="editorbar">
         <div class="tab"><span class="tab-dot"></span><span id="activeFileName">Deschide un fișier</span><span id="dirtyMark" hidden>●</span></div>
-        <div class="editor-meta"><button class="btn small" id="undoBtn" title="Anulează ultima modificare salvată">Undo</button><button class="btn small" id="copyBtn" title="Copiază codul">Copiază</button><button class="btn small" id="deleteFileBtn" title="Mută fișierul în coș">Șterge</button><button class="btn small" id="saveBtn">Salvează</button><button class="btn small" id="downloadBtn">Descarcă</button></div>
+        <div class="editor-meta"><button class="btn small" id="undoBtn" title="Anulează ultima modificare salvată">Undo</button><button class="btn small" id="copyBtn" title="Copiază codul">Copiază</button><button class="btn small" id="deleteFileBtn" title="Mută fișierul în coș">Șterge</button><button class="btn small" id="saveBtn">Salvează</button><button class="btn small" id="downloadBtn">Descarcă</button><button class="btn small close-workspace" type="button" id="closeWorkspaceBtn" aria-label="Închide editorul">Închide ×</button></div>
       </div>
       <div class="editor-wrap"><div class="gutter" id="gutter">1</div><textarea class="editor" id="editor" spellcheck="false" aria-label="Editor de cod"></textarea></div>
       <div class="editor-foot"><span id="languageLabel">JavaScript</span><span><span id="lineCount">1</span> linii · salvate pe server</span></div>
@@ -552,11 +557,11 @@ body {background:#080b13;}
   </dialog>
   <dialog class="provider-dialog" id="newProjectDialog" aria-labelledby="newProjectTitle">
     <form method="dialog" class="provider-panel" id="newProjectForm">
-      <div class="provider-head"><div><div class="eyebrow">Nova project</div><h2 id="newProjectTitle">Create a project</h2></div><button class="btn iconbtn" value="cancel" aria-label="Close">×</button></div>
-      <label for="newProjectName">Project name</label>
-      <input id="newProjectName" maxlength="80" required autocomplete="off" placeholder="e.g. Mountain Escape">
-      <div class="provider-note">Nova will create an editable project with starter files in your workspace.</div>
-      <div class="provider-actions"><button class="btn" value="cancel">Cancel</button><button class="btn primary" type="submit">Create project</button></div>
+      <div class="provider-head"><div><div class="eyebrow">Proiect Nova</div><h2 id="newProjectTitle">Creează un proiect</h2></div><button class="btn iconbtn" value="cancel" aria-label="Close">×</button></div>
+      <label for="newProjectName">Numele proiectului</label>
+      <input id="newProjectName" maxlength="80" required autocomplete="off" placeholder="ex. Primul meu proiect">
+      <div class="provider-note">Nova creează un proiect editabil cu fișiere de pornire.</div>
+      <div class="provider-actions"><button class="btn" value="cancel">Anulează</button><button class="btn primary" type="submit">Creează proiectul</button></div>
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

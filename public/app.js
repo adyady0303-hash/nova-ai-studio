@@ -143,7 +143,7 @@ function renderHomeProjects() {
   projects.forEach((project, index) => {
     const card = document.createElement("button"); card.className = `home-project-card project-tone-${index % 5}`; card.type = "button";
     card.dataset.projectId = project.id;
-    card.setAttribute("aria-label", `Open project ${project.name}`);
+    card.setAttribute("aria-label", `Deschide proiectul ${project.name}`);
     const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 5}`; cover.setAttribute("aria-hidden", "true");
     const scene = document.createElement("span"); scene.className = "cover-scene";
     const glow = document.createElement("span"); glow.className = "cover-glow";
@@ -151,14 +151,14 @@ function renderHomeProjects() {
     cover.append(glow, scene, detailLines);
     const name = document.createElement("strong"); name.className = "project-name"; name.textContent = project.name;
     const detail = document.createElement("small"); detail.className = "project-description";
-    detail.textContent = project.id === state.project ? `${state.files.length} file${state.files.length === 1 ? "" : "s"} · Open` : "Open project";
+    detail.textContent = project.id === state.project ? `${state.files.length} fișiere · Deschis` : "Deschide proiectul";
     card.append(cover, name, detail); list.append(card);
   });
   for (let index = projects.length; index < 5; index++) {
     const card = document.createElement("button"); card.type = "button";
     card.className = `home-project-card project-create-card project-tone-${index % 5}`;
     card.dataset.createProject = starterProjectNames[index];
-    card.setAttribute("aria-label", `Create project ${starterProjectNames[index]}`);
+    card.setAttribute("aria-label", `Creează proiectul ${starterProjectNames[index]}`);
     const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 5}`; cover.setAttribute("aria-hidden", "true");
     const scene = document.createElement("span"); scene.className = "cover-scene";
     const glow = document.createElement("span"); glow.className = "cover-glow";
@@ -166,7 +166,7 @@ function renderHomeProjects() {
     const plus = document.createElement("span"); plus.className = "project-create-plus"; plus.setAttribute("aria-hidden", "true"); plus.textContent = "+";
     cover.append(glow, scene, detailLines, plus);
     const name = document.createElement("strong"); name.className = "project-name"; name.textContent = starterProjectNames[index];
-    const detail = document.createElement("small"); detail.className = "project-description"; detail.textContent = "Create this project";
+    const detail = document.createElement("small"); detail.className = "project-description"; detail.textContent = "Creează acest proiect";
     card.append(cover, name, detail); list.append(card);
   }
 }
@@ -248,12 +248,13 @@ function messageContainer() {
 }
 
 function setTask(task) {
-  const supported = ["auto", "code", "text", "lyrics", "business", "music", "video"];
+  const supported = ["auto", "image", "code", "text", "lyrics", "business", "music", "video"];
   const selected = supported.includes(task) ? task : "auto";
   el("taskSelect").value = selected;
   document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
   const prompts = {
     auto: "Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)",
+    image: "Descrie imaginea pe care vrei s-o creezi…",
     code: "Descrie aplicația sau unealta pe care vrei să o construiești…",
     text: "Ce text dorești? Spune publicul, scopul, tonul și lungimea…",
     lyrics: "Descrie tema, genul și emoția versurilor: strofe, refren și punte…",
@@ -262,6 +263,7 @@ function setTask(task) {
     video: "Descrie ideea, publicul și stilul videoclipului…"
   };
   el("prompt").placeholder = prompts[selected];
+  el("generateImageBtn").classList.toggle("active", selected === "image");
 }
 
 function resizePrompt() {
@@ -591,6 +593,7 @@ function addImageCard(prompt, result) {
 }
 
 async function generateImageFromPrompt() {
+  if (el("generateImageBtn").disabled) return;
   const prompt = el("prompt").value.trim(); if (!prompt) { toast("Descrie imaginea în caseta de chat."); return; }
   setView("chat");
   const button = el("generateImageBtn"); button.disabled = true;
@@ -870,6 +873,12 @@ async function send() {
   if (state.busy) return;
   const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
   if (!promptText) return;
+  if (el("taskSelect").value === "image") {
+    state.busy = true; el("sendBtn").disabled = true;
+    try { await generateImageFromPrompt(); }
+    finally { state.busy = false; el("sendBtn").disabled = false; }
+    return;
+  }
   if (!model) { toast("Configurează furnizorul AI și alege un model."); return; }
   const workspaceWasOpen = el("app").classList.contains("workspace-open");
   setView("chat");
@@ -914,6 +923,16 @@ el("voiceComposerBtn").addEventListener("click", openVoiceDialog);
 el("generateVoiceBtn").addEventListener("click", generateVoiceFromDialog);
 el("voiceText").addEventListener("input", updateVoiceCost);
 el("voiceSettingsBtn").addEventListener("click", () => { el("voiceDialog").close(); el("providerSettingsBtn").click(); });
+const accountMenu = document.querySelector(".account-menu");
+accountMenu.addEventListener("click", event => {
+  if (event.target.closest(".account-action")) accountMenu.open = false;
+});
+document.addEventListener("click", event => {
+  if (!accountMenu.contains(event.target)) accountMenu.open = false;
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") accountMenu.open = false;
+});
 el("providerSettingsBtn").addEventListener("click", async () => {
   try { await loadProviderSettings(); el("providerDialog").showModal(); }
   catch (error) { toast(error.message); }
@@ -993,6 +1012,7 @@ el("creatorHome").addEventListener("click", async event => {
     setView("chat"); el("prompt").focus(); return;
   }
   if (action === "image") {
+    setTask("image");
     if (!draft) { setView("chat"); el("prompt").placeholder = "Descrie imaginea pe care vrei s-o creezi…"; el("prompt").focus(); return; }
     el("prompt").value = draft; el("homePrompt").value = ""; await generateImageFromPrompt(); return;
   }
@@ -1040,6 +1060,10 @@ function setWorkspaceOpen(open) {
   el("openWorkspaceBtn").lastElementChild.textContent = open ? "Închide editorul" : "Spațiu de lucru";
   if (open) renderFiles();
 }
+el("closeWorkspaceBtn").addEventListener("click", () => {
+  setWorkspaceOpen(false);
+  el("openWorkspaceBtn").focus();
+});
 el("openWorkspaceBtn").addEventListener("click", () => {
   setWorkspaceOpen(!el("app").classList.contains("workspace-open"));
 });

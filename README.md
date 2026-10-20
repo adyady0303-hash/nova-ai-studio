@@ -128,3 +128,7 @@ Pentru întrebări despre informații actuale, activează **Verifică surse web*
 Moduri dedicate pentru texte, versuri originale și planuri de afaceri online, cu descărcare TXT. Muzica poate include melodie, acorduri, bas și percuție sintetizate, în măsuri complete până la 120 secunde, export WAV. Videoclipurile WebM acceptă formate 9:16, 16:9 și 1:1. Proiectele media se descarcă și în JSON. Vocea recită textele; exportul video compune scene, nu filmări fotorealiste. Generarea AI necesită serviciul cloud configurat și disponibil.
 
 Chatul caută automat surse pentru întrebări actuale și încearcă o căutare când modelul declară că nu are informații. Erorile de autentificare ale furnizorului rămân distincte; căutarea web nu înlocuiește cheia AI.
+
+### Interfață Orbit (1.4.0)
+
+Pagina principală și chatul folosesc designul Orbit, cu instrumente dedicate, glob decorativ realizat în CSS și afișare adaptată telefonului. Chatul rămâne separat de editor; editorul are și un buton propriu de închidere. Modul Imagine trimite descrierea către generatorul de imagini, inclusiv la Enter. Fișierele interfeței sunt versionate automat pentru fiecare publicare. Previzualizarea demonstrativă rămâne disponibilă la `/preview-orbit`.

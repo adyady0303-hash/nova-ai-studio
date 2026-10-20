@@ -13,7 +13,7 @@ test('app entry points and responsive page metadata exist', () => {
     assert.ok(fs.statSync(path.join(root, file)).isFile(), file);
   }
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
-  assert.match(html, /<html[^>]+lang="en"/);
+  assert.match(html, /<html[^>]+lang="ro"/);
   assert.match(html, /<meta[^>]+name="viewport"/);
   assert.match(html, /@media\s*\(max-width:\s*(?:620|1000)px\)/);
   assert.match(html, /id="sendBtn"/);
@@ -26,13 +26,13 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="projectDrawer"/);
 });
 
-test('reference creator dashboard is the launch screen and routes creation tools to implemented actions', () => {
+test('Orbit dashboard routes creation tools to implemented actions', () => {
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
   const css = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8');
   assert.match(html, /<main class="chat home-active" id="chat">/);
-  assert.match(html, /What do you want to <span>create\?<\/span>/);
-  for (const navItem of ['Home', 'Create', 'Explore', 'Library']) assert.match(html, new RegExp(`>${navItem}<`));
+  assert.match(html, /Ideile tale\.<br><span>O nouă dimensiune\.<\/span>/);
+  for (const navItem of ['Acasă', 'Creează', 'Explorează', 'Proiecte']) assert.match(html, new RegExp(`>${navItem}<`));
   assert.match(html, /id="homePrompt"/);
   assert.match(html, /id="homeSendBtn"/);
   assert.match(html, /id="resumeChatBtn"/);
@@ -236,7 +236,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'orbit-design-preview-v1');
+  assert.equal(versionData.release, 'orbit-interface-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -312,6 +312,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const version = require('../package.json').version;
   assert.ok(appHtml.includes(`/app.js?v=${version}`));
   assert.ok(appHtml.includes(`/studio.css?v=${version}`));
+  assert.ok(appHtml.includes(`/orbit.css?v=${version}`));
   assert.ok(appHtml.includes(`v${version}</span>`));
   assert.doesNotMatch(appHtml, /__NOVA_VERSION__/);
   assert.equal(appPage.headers.get('cache-control'), 'no-cache');
