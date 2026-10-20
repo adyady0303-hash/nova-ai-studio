@@ -367,7 +367,7 @@ body {background:#080b13;}
 }
 
 </style>
-  <link rel="stylesheet" href="/studio.css?v=1.2.3">
+  <link rel="stylesheet" href="/studio.css?v=__NOVA_VERSION__">
 </head>
 <body>
   <div class="app" id="app">
@@ -439,10 +439,11 @@ body {background:#080b13;}
       </div>
       <section class="creator-home" id="creatorHome" aria-labelledby="homeTitle">
         <div class="home-content">
+          <div class="creator-update" role="note"><strong>Noul studio de creație</strong><span>Căutare web automată · Muzică cu acompaniament · Video 9:16, 16:9 și 1:1 · Texte și afaceri online</span></div>
           <section class="home-hero">
-            <div class="home-kicker"><span class="home-kicker-dot" aria-hidden="true"></span><span>NOVA AI STUDIO</span><span aria-hidden="true">/</span><span>CREATOR HUB</span></div>
+            <div class="home-kicker"><span class="home-kicker-dot" aria-hidden="true"></span><span>NOVA AI STUDIO</span><span aria-hidden="true">/</span><span>CREATOR HUB</span><span class="release-badge">v__NOVA_VERSION__</span></div>
             <h1 id="homeTitle">What do you want to <span>create?</span></h1>
-            <p>Turn your idea into something incredible with AI.</p>
+            <p>Chat cu surse web, texte, versuri, muzică și video — într-un singur studio.</p>
             <div class="home-prompt-wrap">
               <label class="sr-only" for="homePrompt">Describe what you want to create</label>
               <textarea id="homePrompt" rows="1" placeholder="Describe what you want to create…"></textarea>
@@ -497,7 +498,7 @@ body {background:#080b13;}
             <div class="composer-settings">
               <div class="model-row"><label class="sr-only" for="modelSelect">Model AI</label><select id="modelSelect" aria-label="Model AI"><option value="">Se caută modele…</option></select><button class="btn subtle iconbtn" id="refreshModels" title="Reîncarcă modelele">↻</button></div>
               <div class="mode-row"><label class="sr-only" for="modeSelect">Mod agent</label><select id="modeSelect" aria-label="Mod agent"><option value="build">Construiește</option><option value="plan">Planifică</option><option value="review">Revizuiește</option></select></div>
-              <label class="allow-row" title="Caută surse publice înainte de răspuns. Folosește pentru informații actuale; nu include date private în căutări."><input type="checkbox" id="verifyWeb"><span>Verifică surse web</span></label>
+              <label class="allow-row" title="Chatul caută automat când are nevoie de informații. Bifează pentru a cere verificarea web explicit la acest mesaj; nu include date private."><input type="checkbox" id="verifyWeb"><span>Cere verificare web la acest mesaj</span></label>
               <label class="allow-row" title="Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"><input type="checkbox" id="allowChanges"><span>Editează proiectul</span></label>
             </div>
             <div class="composer-actions"><button class="btn primary" id="sendBtn">Trimite <span aria-hidden="true">↗</span></button></div>
@@ -559,7 +560,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=1.2.3"></script>
+  <script src="/app.js?v=__NOVA_VERSION__"></script>
 </body>
 </html>
 

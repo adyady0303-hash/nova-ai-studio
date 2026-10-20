@@ -686,7 +686,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "automatic-web-chat-v1",
+      release: "visible-creator-update-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -1202,7 +1202,7 @@ async function handle(req, res) {
       "cache-control": "no-cache"
     });
     if (req.method === "HEAD") return res.end();
-    res.end(data);
+    res.end(path.extname(filePath).toLowerCase() === ".html" ? data.toString("utf8").replaceAll("__NOVA_VERSION__", require("./package.json").version) : data);
   });
 }
 

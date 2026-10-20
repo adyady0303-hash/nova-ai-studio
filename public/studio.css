@@ -934,3 +934,7 @@ body { overflow: hidden; color: #eff5ff; background: radial-gradient(ellipse at 
 .creator-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .card-business { background: linear-gradient(135deg, #09576a, #1c9b88); }
 @media (max-width: 720px) { .creator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.creator-update { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; padding:14px 18px; margin-bottom:20px; border:1px solid #22545f; border-radius:14px; background:linear-gradient(110deg,#102c39,#191c3d); color:#b8d7e6; font-size:13px; line-height:1.6; }
+.creator-update strong { color:#74f0dc; }
+.release-badge { padding:3px 8px; border:1px solid #3a6678; border-radius:20px; color:#bdeeea; white-space:nowrap; }
