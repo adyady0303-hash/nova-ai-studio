@@ -491,6 +491,7 @@ body {background:#080b13;}
             <div class="composer-settings">
               <div class="model-row"><label class="sr-only" for="modelSelect">Model AI</label><select id="modelSelect" aria-label="Model AI"><option value="">Se caută modele…</option></select><button class="btn subtle iconbtn" id="refreshModels" title="Reîncarcă modelele">↻</button></div>
               <div class="mode-row"><label class="sr-only" for="modeSelect">Mod agent</label><select id="modeSelect" aria-label="Mod agent"><option value="build">Construiește</option><option value="plan">Planifică</option><option value="review">Revizuiește</option></select></div>
+              <label class="allow-row" title="Caută surse publice înainte de răspuns. Folosește pentru informații actuale; nu include date private în căutări."><input type="checkbox" id="verifyWeb"><span>Verifică surse web</span></label>
               <label class="allow-row" title="Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"><input type="checkbox" id="allowChanges"><span>Editează proiectul</span></label>
             </div>
             <div class="composer-actions"><button class="btn primary" id="sendBtn">Trimite <span aria-hidden="true">↗</span></button></div>
@@ -533,6 +534,7 @@ body {background:#080b13;}
   <dialog class="provider-dialog" id="voiceDialog" aria-labelledby="voiceDialogTitle">
     <form method="dialog" class="provider-panel">
       <div class="provider-head"><div><div class="eyebrow">Instrument audio · MP3</div><h2 id="voiceDialogTitle">Creează un voice-over</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <div class="provider-row"><div><label for="speechVoice">Voce</label><select id="speechVoice"><option value="">Vocea configurată</option><option value="nova">Nova</option><option value="coral">Coral</option><option value="alloy">Alloy</option><option value="shimmer">Shimmer</option><option value="onyx">Onyx</option></select></div><div><label for="speechSpeed">Ritm de citire</label><select id="speechSpeed"><option value="0.85">Mai lent</option><option value="1" selected>Normal</option><option value="1.15">Mai rapid</option></select></div></div>
       <label for="voiceText">Textul rostit</label>
       <textarea id="voiceText" maxlength="4096" placeholder="Scrie sau lipește textul pe care vrei să-l rostească Nova…"></textarea>
       <p class="provider-note" id="voiceCost" aria-live="polite">Voce rostită, nu cântată. Pentru vizitatori: 1 unitate AI pentru fiecare 500 de caractere.</p>

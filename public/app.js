@@ -453,10 +453,15 @@ async function exportVideo(spec) {
   }
 }
 
-async function generateSpeech(text) {
+function selectedSpeechOptions() {
+  const voice = el("speechVoice").value;
+  return { ...(voice ? { voice } : {}), speed: Number(el("speechSpeed").value) };
+}
+
+async function generateSpeech(text, options = {}) {
   const input = text.trim();
   if (input.length > 4096) throw new Error("Vocea acceptă cel mult 4096 de caractere. Împarte textul în fragmente pentru a-l asculta integral.");
-  return api("/api/media/speech", jsonBody({ text: input }));
+  return api("/api/media/speech", jsonBody({ ...options, text: input }));
 }
 
 function updateVoiceCost() {
@@ -490,7 +495,7 @@ async function generateVoiceFromDialog() {
   if (!text) { status.textContent = "Scrie textul pentru voice-over."; el("voiceText").focus(); return; }
   button.disabled = true; button.textContent = "Se generează MP3…"; status.textContent = "Trimit textul către furnizorul vocal configurat…";
   try {
-    const result = await generateSpeech(text);
+    const result = await generateSpeech(text, selectedSpeechOptions());
     setView("chat");
     addBubble("user", `Creează un voice-over MP3: ${text}`);
     addVoiceCard(text, result);
@@ -507,7 +512,7 @@ function addSpeechButton(node, text, label = "Ascultă cu voce AI") {
   button.addEventListener("click", async () => {
     button.disabled = true; button.textContent = "Se generează vocea…";
     try {
-      const speech = await generateSpeech(text), player = document.createElement("audio"); player.controls = true; player.src = speech.dataUrl;
+      const speech = await generateSpeech(text, selectedSpeechOptions()), player = document.createElement("audio"); player.controls = true; player.src = speech.dataUrl;
       const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = speech.dataUrl; link.download = "nova-voice-over.mp3";
       output.replaceChildren(player, link); button.textContent = "Generează din nou";
     } catch (error) { toast(error.message); button.textContent = label; }
@@ -572,7 +577,7 @@ function addCreativeCard(node, spec) {
     voice.addEventListener("click", async () => {
       voice.disabled = true; detail.textContent = "Se generează voice-over…";
       try {
-        const result = await generateSpeech(spec.scenes.map(scene => scene.text).join(". "));
+        const result = await generateSpeech(spec.scenes.map(scene => scene.text).join(". "), selectedSpeechOptions());
         spec.voiceDataUrl = result.dataUrl;
         const player = document.createElement("audio"); player.controls = true; player.src = result.dataUrl;
         const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = result.dataUrl; link.download = safeMediaName(spec.title, "mp3");
@@ -813,7 +818,7 @@ async function send() {
   state.busy = true; el("sendBtn").disabled = true;
   try {
     if (state.dirty) await saveFile(false);
-    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, messages: state.chat.map(({ role, content }) => ({ role, content })) }));
+    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages: state.chat.map(({ role, content }) => ({ role, content })) }));
     state.chat.push({ role: "assistant", content: result.content });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
     addBubble("assistant", result.content, result.events);

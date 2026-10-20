@@ -115,3 +115,10 @@ Serverul necesită acces DNS și HTTPS direct către `www.bing.com` și site-uri
 Citirea nu execută JavaScript, nu se autentifică în site-uri și nu citește PDF-uri. Accesul este limitat la HTTPS pe portul 443 și la adrese IPv4 publice; rețelele private, adresele rezervate și redirecționările către ele sunt blocate. Fiecare descărcare are o limită de 1 MiB, 15 secunde și trei redirecționări. Conținutul web este tratat ca informație externă, nu ca instrucțiuni pentru agent. Nu include date private în căutări. Publicarea versiunii actualizate a serverului este necesară pentru activarea funcției pe site-ul online.
 
 Pentru verificare din aplicația publicată, administratorul deschide **Configurare AI → Verifică accesul la internet**. Butonul execută o căutare reală fără apel la model și fără consumarea cotei AI, afișează versiunea serverului și separă accesul web de conexiunea OpenAI/Ollama. Rezultatele sunt păstrate maximum un minut; o căutare fără surse nu este declarată reușită. Răspunsurile XML/HTML/text pot fi comprimate gzip, Brotli sau deflate, cu aceeași limită de 1 MiB după decomprimare.
+
+
+## Chat cu verificarea surselor și voce personalizată
+
+Pentru întrebări despre informații actuale, activează **Verifică surse web** lângă caseta de chat. Prima cerere către model solicită explicit căutarea web. Răspunsul include lista surselor returnate efectiv de unelte; dacă nu există surse disponibile, aplicația afișează că verificarea nu a reușit. Nu prezintă răspunsul nesusținut al modelului drept rezultat verificat. Această opțiune nu garantează că sursele sau concluziile sunt perfecte; verifică documentele originale pentru decizii importante. Întrebările private și conținutul proiectelor nu trebuie trimise către motoarele de căutare.
+
+În fereastra de voce poți alege vocea și ritmul (0,85×, 1× sau 1,15×). Se păstrează modelul și cheia configurate de administrator. Alegerea se aplică redării din chat, generării MP3 și vocii pentru videoclip. Textul este rostit în limba sa; instrucțiunile de pronunție sunt trimise modelelor TTS compatibile. Vocea rămâne recitată, nu cântată.

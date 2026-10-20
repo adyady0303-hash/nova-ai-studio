@@ -130,6 +130,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let mockChatModel = '';
   let mockChatPrompt = '';
   let mockChatLimit = null;
+  let mockToolChoice = null;
+  let mockSystemPrompt = '';
   let mockSpeechBody = null;
   let mockSpeechMode = 'audio';
   let mockImageBody = null;
@@ -163,6 +165,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
         mockChatModel = body.model;
         mockChatPrompt = body.messages?.at(-1)?.content || '';
         mockChatLimit = body.max_completion_tokens || null;
+        mockToolChoice = body.tool_choice || null;
+        mockSystemPrompt = body.messages.find(message => message.role === 'system')?.content || '';
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Răspuns verificat de test.' } }], model: body.model }));
       });
@@ -232,7 +236,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'cloud-interface-v1');
+  assert.equal(versionData.release, 'accurate-chat-voice-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -317,6 +321,12 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   });
   assert.equal(mockChatModel, 'gpt-4.1-mini');
   assert.equal(mockChatPrompt, 'Salut Nova');
+  assert.match(mockSystemPrompt, /Data curentă UTC este/);
+  const verifiedChat = await post('/api/chat', { model: 'gpt-4.1-mini', verifyWeb: true, messages: [{ role: 'user', content: 'Care este prețul actual?' }] });
+  assert.equal(verifiedChat.status, 200);
+  assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });
+  assert.match((await verifiedChat.json()).content, /nu pot fi confirmate/);
+
 
   const webChat = await post('/api/chat', {
     model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Test web tools' }]
@@ -339,8 +349,14 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(voiceResult.dataUrl, `data:audio/mpeg;base64,${Buffer.from('fake-mp3-audio').toString('base64')}`);
   assert.deepEqual(mockSpeechBody, {
     model: 'gpt-4o-mini-tts', voice: 'nova', input: 'Bun venit la Nova AI Studio.', response_format: 'mp3',
-    instructions: 'Vorbește clar, natural și expresiv în limba textului.'
+    instructions: 'Vorbește clar, natural și expresiv în limba textului. Păstrează sensul și cuvintele textului. Când textul este în română, pronunță corect diacriticele și folosește pauze firești la punctuație. Recită textul; nu adăuga explicații și nu cânta.'
   });
+  const chosenVoice = await post('/api/media/speech', { text: 'Citește natural acest text.', voice: 'coral', speed: 0.85 });
+  assert.equal(chosenVoice.status, 200);
+  assert.equal(mockSpeechBody.voice, 'coral');
+  assert.equal(mockSpeechBody.speed, 0.85);
+  assert.equal((await post('/api/media/speech', { text: 'Text', voice: 'unknown' })).status, 400);
+  assert.equal((await post('/api/media/speech', { text: 'Text', speed: 10 })).status, 400);
   const image = await post('/api/media/image', { prompt: 'Imagine de probă Nova' });
   assert.equal(image.status, 200);
   assert.match((await image.json()).dataUrl, /^data:image\/png;base64,iVBOR/);
@@ -392,6 +408,12 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(created.status, 201);
   const { project } = await created.json();
   assert.equal(project.id, 'proiect-test-nova');
+  assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key' })).status, 200);
+  const verifiedAgent = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', verifyWeb: true, messages: [{ role: 'user', content: 'Verifică o informație publică actuală' }] });
+  assert.equal(verifiedAgent.status, 200);
+  assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });
+  assert.match((await verifiedAgent.json()).content, /nu pot fi confirmate/);
+  assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'invalid-test-key' })).status, 200);
   const projects = await request('/api/projects');
   assert.ok((await projects.json()).projects.some(item => item.id === project.id));
 

@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const dataStore = require("./data-store");
+const { accuracyPrompt, collectSources, answerWithSources, speechOptions } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 let dataFs = fs;
 
@@ -467,7 +468,7 @@ async function openAiBytes(route, body, timeout = 180000) {
   return { mime: mime === "application/octet-stream" ? "audio/mpeg" : mime, base64: bytes.toString("base64") };
 }
 
-async function providerChat(model, messages, tools, maxOutputTokens = null) {
+async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false) {
   if (aiProvider.provider === "ollama") {
     const result = await ollamaJson("/api/chat", {
       method: "POST",
@@ -477,7 +478,7 @@ async function providerChat(model, messages, tools, maxOutputTokens = null) {
   }
   const result = await openAiJson("/chat/completions", {
     method: "POST",
-    body: JSON.stringify({ model, messages, tools, ...(maxOutputTokens ? { max_completion_tokens: maxOutputTokens } : {}) })
+    body: JSON.stringify({ model, messages, tools, ...(verifyWeb ? { tool_choice: { type: "function", function: { name: "web_search" } } } : {}), ...(maxOutputTokens ? { max_completion_tokens: maxOutputTokens } : {}) })
   });
   return { message: result.choices?.[0]?.message || {}, model: result.model || model };
 }
@@ -620,7 +621,7 @@ async function callAgentTool(name, args, project, allowChanges, principal = "own
   throw new Error(`Unealtă necunoscută: ${name}`);
 }
 
-async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner") {
+async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false) {
   const taskPrompts = {
     auto: "Detectează intenția utilizatorului. Pentru cod, construiește sau explică proiecte pentru Windows și PC. Pentru versuri, scrie versuri originale complete. Pentru o cerere de muzică, livrează planul și încheie cu un bloc de cod Markdown etichetat nova-music, care conține JSON valid {\"title\":\"Titlu\",\"bpm\":96,\"notes\":[{\"note\":\"A3\",\"beats\":1}]}; pentru video, livrează scenariul și încheie cu un bloc nova-video care conține JSON valid {\"title\":\"Titlu\",\"scenes\":[{\"text\":\"Cadru\",\"seconds\":4,\"background\":\"#18221a\"}]}. Respectă limitele din instrucțiunile modului media. Aplicația sintetizează WAV simplu și exportă scene tipografice WebM.",
     code: "Construiește aplicații și unelte pentru PC, cu prioritate pentru Windows 10/11. Oferă fișiere complete, instrucțiuni de instalare și dependențe; explorează proiectul înainte să scrii.",
@@ -634,18 +635,19 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       ? "Ești Nova, agent de planificare software. Explorează proiectul cu list_files și read_file, apoi prezintă un plan ordonat și clar. Nu modifica fișierele."
       : `Ești Nova, asistent de creație și programare. ${taskPrompts[task] || taskPrompts.auto} Explorează proiectul și fișierele relevante când cererea depinde de ele. Implementează cererile de cod folosind write_file numai când este permis. Păstrează schimbările la obiect și raportează fiecare fișier schimbat. Nu rula comenzi și nu pretinde că ai testat codul.`;
   const messages = [
-    { role: "system", content: `${prompt}\n\nAi acces la fișierele proiectului deschis prin list_files, read_file și write_file. Nu ai terminal sau acces la alte dosare. ${webPrompt} ${allowChanges ? "Modificările sunt permise pentru această cerere." : "Modificările sunt dezactivate pentru această cerere."} Păstrează căile relative în proiect și nu șterge fișiere.` },
+    { role: "system", content: `${prompt}\n\nAi acces la fișierele proiectului deschis prin list_files, read_file și write_file. Nu ai terminal sau acces la alte dosare. ${webPrompt} ${accuracyPrompt()} ${verifyWeb ? "Verificarea pe internet este cerută explicit. Caută numai informațiile publice necesare întrebării; nu trimite conversația sau fișierele private în căutare." : ""} ${allowChanges ? "Modificările sunt permise pentru această cerere." : "Modificările sunt dezactivate pentru această cerere."} Păstrează căile relative în proiect și nu șterge fișiere.` },
     ...inputMessages.slice(-12)
   ];
   const tools = allowChanges ? agentTools : agentTools.filter(tool => tool.function.name !== "write_file");
   const events = [];
+  const sources = [];
   const maxRounds = principal === "owner" ? 8 : 4;
   for (let round = 0; round < maxRounds; round++) {
-    const response = await providerChat(model, messages, tools, principal === "owner" ? null : 1500);
+    const response = await providerChat(model, messages, tools, principal === "owner" ? null : 1500, verifyWeb && round === 0);
     const message = response.message || {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     messages.push(message);
-    if (!calls.length) return { content: message.content || "Agentul a terminat fără un răspuns text.", events, model: response.model || model };
+    if (!calls.length) return { content: answerWithSources(message.content || "Agentul a terminat fără un răspuns text.", sources, verifyWeb), events, model: response.model || model };
     let toolCount = 0;
     for (const call of calls) {
       const name = call.function?.name;
@@ -654,6 +656,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       let args = call.function?.arguments;
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges, principal);
+      if (webTools.some(tool => tool.function.name === name)) collectSources(result, sources);
         events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : name === "web_search" ? `Căutare web: ${args.query}` : name === "read_web_page" ? `Pagină web citită: ${args.url}` : `Fișier citit: ${args.path}` });
         const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : principal === "owner" ? 30000 : 10000;
         messages.push(aiProvider.provider === "openai"
@@ -677,7 +680,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "cloud-interface-v1",
+      release: "accurate-chat-voice-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -797,13 +800,15 @@ async function handle(req, res) {
       const input = typeof body.text === "string" ? body.text.trim() : "";
       if (!input) return json(res, 400, { error: "Adaugă text pentru voice-over." });
       if (input.length > 4096) return json(res, 400, { error: "Vocea acceptă cel mult 4096 de caractere. Împarte textul în fragmente." });
+      const voiceOptions = speechOptions(body);
       if (!await consumeAiQuota(req, res, Math.ceil(input.length / 500))) return;
       const speech = await openAiBytes("/audio/speech", {
         model: aiProvider.speechModel,
         voice: aiProvider.voice,
+        ...voiceOptions,
         input,
         response_format: "mp3",
-        ...(aiProvider.speechModel.startsWith("gpt-4o-mini-tts") ? { instructions: "Vorbește clar, natural și expresiv în limba textului." } : {})
+        ...(aiProvider.speechModel.startsWith("gpt-4o-mini-tts") ? { instructions: "Vorbește clar, natural și expresiv în limba textului." + " Păstrează sensul și cuvintele textului. Când textul este în română, pronunță corect diacriticele și folosește pauze firești la punctuație. Recită textul; nu adăuga explicații și nu cânta." } : {})
       }, 300000);
       return json(res, 200, { dataUrl: `data:${speech.mime};base64,${speech.base64}`, model: aiProvider.speechModel });
     } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea vocii a eșuat.", providerError: true }); }
@@ -1026,7 +1031,7 @@ async function handle(req, res) {
     const task = ["auto", "code", "lyrics", "music", "video"].includes(body.task) ? body.task : "auto";
     if (!await consumeAiQuota(req, res)) return;
     try {
-      const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task, principal);
+      const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task, principal, body.verifyWeb === true);
       return json(res, 200, result);
     } catch (error) {
       console.error("Nova AI agent provider failed:", error);
@@ -1111,13 +1116,14 @@ async function handle(req, res) {
       const chatMessages = [
             {
               role: "system",
-              content: "Ești Nova, un asistent AI online pentru programare și creație. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante. Răspunde în limba utilizatorului. " + webPrompt
+              content: "Ești Nova, un asistent AI online pentru programare și creație. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante. Răspunde în limba utilizatorului. " + webPrompt + " " + accuracyPrompt()
             },
             ...messages
           ];
       let result;
+      const sources = [];
       for (let round = 0; round < 4; round++) {
-        result = await providerChat(body.model.trim(), chatMessages, webTools, account.role === "subscriber" ? 1500 : null);
+        result = await providerChat(body.model.trim(), chatMessages, webTools, account.role === "subscriber" ? 1500 : null, body.verifyWeb === true && round === 0);
         const message = result.message || {};
         if (!message.tool_calls?.length) break;
         chatMessages.push(message);
@@ -1129,6 +1135,7 @@ async function handle(req, res) {
             const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments;
             if (!args || typeof args !== "object") throw new Error("Argumente invalide.");
             content = await callWebTool(call.function.name, args);
+            collectSources(content, sources);
           } catch (error) { content = `Eroare: ${error.message}`; }
           chatMessages.push(aiProvider.provider === "openai"
             ? { role: "tool", tool_call_id: call.id, content }
@@ -1137,7 +1144,7 @@ async function handle(req, res) {
         result = { message: { content: "Am atins limita de căutări web. Trimite o cerere de continuare." } };
       }
       return json(res, 200, {
-        content: result.message?.content || "Modelul nu a returnat text.",
+        content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, body.verifyWeb === true),
         model: result.model || body.model,
         done: true
       });
