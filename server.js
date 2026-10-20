@@ -686,7 +686,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "visible-creator-update-v1",
+      release: "orbit-design-preview-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -699,6 +699,11 @@ async function handle(req, res) {
   if (req.method === "POST" && url.pathname === "/api/billing/webhook") {
     const result = await billing.webhook(await readBody(req), req.headers["stripe-signature"]);
     return json(res, 200, result);
+  }
+  if (["GET", "HEAD"].includes(req.method) && ["/preview-orbit", "/preview-orbit.html"].includes(url.pathname)) {
+    const page = await fs.promises.readFile(path.join(PUBLIC_DIR, "preview-orbit.html"));
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-robots-tag": "noindex, nofollow", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'" });
+    return res.end(req.method === "HEAD" ? undefined : page);
   }
   if (req.method === "GET" && url.pathname === "/plans.html") {
     const page = await fs.promises.readFile(path.join(PUBLIC_DIR, "plans.html"));

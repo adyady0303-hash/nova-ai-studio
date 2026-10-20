@@ -236,13 +236,26 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'visible-creator-update-v1');
+  assert.equal(versionData.release, 'orbit-design-preview-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
   const health = await fetch(`${baseUrl}/healthz`);
   assert.equal(health.status, 200);
   assert.deepEqual(await health.json(), { ok: true });
+
+  const preview = await fetch(`${baseUrl}/preview-orbit`);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get('cache-control'), 'no-store');
+  assert.equal(preview.headers.get('x-robots-tag'), 'noindex, nofollow');
+  assert.match(preview.headers.get('content-security-policy'), /connect-src 'none'/);
+  const previewHtml = await preview.text();
+  assert.match(previewHtml, /ORBIT \/ PREVIZUALIZARE/);
+  assert.match(previewHtml, /Fără apeluri AI/);
+  assert.doesNotMatch(previewHtml, /fetch\(|src="\/app\.js/);
+  const previewHead = await fetch(`${baseUrl}/preview-orbit`, { method: 'HEAD' });
+  assert.equal(previewHead.status, 200);
+  assert.equal(await previewHead.text(), '');
 
   const loginPage = await fetch(`${baseUrl}/`);
   assert.equal(loginPage.status, 200);
