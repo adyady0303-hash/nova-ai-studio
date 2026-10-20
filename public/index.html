@@ -406,7 +406,9 @@ body {background:#080b13;}
       <nav class="create-menu" aria-label="Moduri de creație">
         <button class="create-item active" data-task="auto" aria-label="Chat liber" title="Chat liber"><span class="create-icon">✦</span><span>Chat liber</span></button>
         <button class="create-item" data-task="code" aria-label="Cod și aplicații" title="Cod și aplicații"><span class="create-icon">{ }</span><span>Cod & aplicații</span></button>
-        <button class="create-item" data-task="lyrics" aria-label="Texte și versuri" title="Texte și versuri"><span class="create-icon">✎</span><span>Texte & versuri</span></button>
+        <button class="create-item" data-task="text" type="button"><span class="create-icon">✎</span><span>Texte & articole</span></button>
+        <button class="create-item" data-task="business" type="button"><span class="create-icon">↗</span><span>Afaceri online</span></button>
+        <button class="create-item" data-task="lyrics" aria-label="Versuri originale" title="Versuri originale"><span class="create-icon">♫</span><span>Versuri</span></button>
         <button class="create-item" data-task="music" aria-label="Muzică" title="Muzică"><span class="create-icon">♫</span><span>Muzică</span></button>
         <button class="create-item" data-task="video" aria-label="Video și scenarii" title="Video și scenarii"><span class="create-icon">▶</span><span>Video & scenarii</span></button>
       </nav>
@@ -454,7 +456,9 @@ body {background:#080b13;}
               <button class="creator-card card-image" type="button" data-home-action="image"><span class="creator-art"><span>▧</span></span><span class="creator-card-copy"><strong>Image</strong><small>Create amazing<br>visuals</small></span></button>
               <button class="creator-card card-music" type="button" data-home-action="music"><span class="creator-art"><span>♫</span></span><span class="creator-card-copy"><strong>Music</strong><small>Compose original<br>tracks</small></span></button>
               <button class="creator-card card-video" type="button" data-home-action="video"><span class="creator-art"><span>▶</span></span><span class="creator-card-copy"><strong>Video</strong><small>Bring ideas<br>to life</small></span></button>
-              <button class="creator-card card-text" type="button" data-home-action="lyrics"><span class="creator-art"><span>▤</span></span><span class="creator-card-copy"><strong>Text</strong><small>Write articles<br>and stories</small></span></button>
+              <button class="creator-card card-text" type="button" data-home-action="text"><span class="creator-art"><span>▤</span></span><span class="creator-card-copy"><strong>Texte</strong><small>Write articles<br>and stories</small></span></button>
+              <button class="creator-card card-text" type="button" data-home-action="lyrics"><span class="creator-art"><span>♫</span></span><span class="creator-card-copy"><strong>Versuri</strong><small>Strofe, refren<br>și voce recitată</small></span></button>
+              <button class="creator-card card-business" type="button" data-home-action="business"><span class="creator-art"><span>↗</span></span><span class="creator-card-copy"><strong>Afaceri online</strong><small>Ofertă, buget<br>și plan de lansare</small></span></button>
             </div>
           </section>
 
@@ -475,7 +479,9 @@ body {background:#080b13;}
           <div class="composer-top" aria-label="Alege tipul creației">
             <button class="mode-chip active" data-task="auto">Chat liber</button>
             <button class="mode-chip" data-task="code">Cod</button>
-            <button class="mode-chip" data-task="lyrics">Text</button>
+            <button class="mode-chip" data-task="text">Texte</button>
+            <button class="mode-chip" data-task="lyrics">Versuri</button>
+            <button class="mode-chip" data-task="business">Afaceri</button>
             <button class="mode-chip" data-task="music">Muzică</button>
             <button class="mode-chip" data-task="video">Video</button>
             <span class="tool-divider"></span>
@@ -484,7 +490,7 @@ body {background:#080b13;}
           </div>
           <label class="sr-only" for="taskSelect">Tipul cererii</label>
           <select id="taskSelect" class="sr-only" aria-label="Tipul cererii">
-            <option value="auto">Chat liber</option><option value="code">Cod și aplicații</option><option value="lyrics">Versuri</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
+            <option value="auto">Chat liber</option><option value="code">Cod și aplicații</option><option value="text">Texte și articole</option><option value="lyrics">Versuri</option><option value="business">Afaceri online</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
           </select>
           <textarea class="prompt" id="prompt" placeholder="Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)" aria-label="Mesaj pentru Nova"></textarea>
           <div class="composer-bottom">

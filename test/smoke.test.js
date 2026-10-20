@@ -236,7 +236,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'accurate-chat-voice-v1');
+  assert.equal(versionData.release, 'complete-creators-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -409,6 +409,12 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const { project } = await created.json();
   assert.equal(project.id, 'proiect-test-nova');
   assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key' })).status, 200);
+  for (const [task, expected] of [['text', /Scrie textul final/], ['lyrics', /strofe/], ['business', /calendar de lansare/], ['music', /nova-music/], ['video', /nova-video/]]) {
+    const response = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', task, mode: 'plan', messages: [{ role: 'user', content: 'Creează un exemplu complet' }] });
+    assert.equal(response.status, 200);
+    await response.json();
+    assert.match(mockSystemPrompt, expected);
+  }
   const verifiedAgent = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', verifyWeb: true, messages: [{ role: 'user', content: 'Verifică o informație publică actuală' }] });
   assert.equal(verifiedAgent.status, 200);
   assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });

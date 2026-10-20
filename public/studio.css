@@ -929,3 +929,8 @@ body { overflow: hidden; color: #eff5ff; background: radial-gradient(ellipse at 
   .project-name { font-size: 9px; }
   .project-description { font-size: 7px; }
 }
+
+/* Creation tools remain visible as the available modes grow. */
+.creator-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.card-business { background: linear-gradient(135deg, #09576a, #1c9b88); }
+@media (max-width: 720px) { .creator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const dataStore = require("./data-store");
+const { creationPrompts } = require("./creation-prompts");
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 let dataFs = fs;
@@ -622,16 +623,10 @@ async function callAgentTool(name, args, project, allowChanges, principal = "own
 }
 
 async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false) {
-  const taskPrompts = {
-    auto: "Detectează intenția utilizatorului. Pentru cod, construiește sau explică proiecte pentru Windows și PC. Pentru versuri, scrie versuri originale complete. Pentru o cerere de muzică, livrează planul și încheie cu un bloc de cod Markdown etichetat nova-music, care conține JSON valid {\"title\":\"Titlu\",\"bpm\":96,\"notes\":[{\"note\":\"A3\",\"beats\":1}]}; pentru video, livrează scenariul și încheie cu un bloc nova-video care conține JSON valid {\"title\":\"Titlu\",\"scenes\":[{\"text\":\"Cadru\",\"seconds\":4,\"background\":\"#18221a\"}]}. Respectă limitele din instrucțiunile modului media. Aplicația sintetizează WAV simplu și exportă scene tipografice WebM.",
-    code: "Construiește aplicații și unelte pentru PC, cu prioritate pentru Windows 10/11. Oferă fișiere complete, instrucțiuni de instalare și dependențe; explorează proiectul înainte să scrii.",
-    lyrics: "Scrie versuri originale în limba utilizatorului, cu titlu și secțiuni clare (strofe, refren, punte). Respectă tema, genul, tonul și lungimea cerute. Nu imita versurile sau stilul exact al unui artist în viață; descrie trăsături muzicale generale. Dacă utilizatorul cere, salvează versurile într-un fișier text.",
-    music: "Creează o compoziție originală. Scrie mai întâi titlul, genul, versurile dacă sunt cerute, tempo-ul, tonalitatea, acordurile și structura. Încheie cu un bloc de cod Markdown etichetat nova-music; în interior pune doar JSON valid: {\"title\":\"Titlu\",\"bpm\":96,\"notes\":[{\"note\":\"A3\",\"beats\":1},{\"note\":\"C4\",\"beats\":1}]}. Notele trebuie să aibă nume A-G cu diez opțional și octavă 2-6; beats între 0.25 și 4. Limitează compoziția la 128 note. Nova sintetizează notele într-un WAV simplu fără voce cântată; nu pretinde că produce o înregistrare vocală sau instrumente realiste.",
-    video: "Creează un concept video original, scenariu, voice-over/subtitrări și cadre. Încheie cu un bloc de cod Markdown etichetat nova-video; în interior pune doar JSON valid: {\"title\":\"Titlu\",\"scenes\":[{\"text\":\"Textul cadrului\",\"seconds\":4,\"background\":\"#18221a\"}]}. Include 2-12 scene; fiecare are text, seconds între 2 și 8 și background hex de forma #RRGGBB. Nova exportă scenele ca videoclip tipografic WebM cu fundaluri colorate; nu pretinde că generează imagini, filmări sau voci."
-  };
-  const prompt = mode === "review"
+  const taskPrompts = creationPrompts;
+  const prompt = mode === "review" && ["auto", "code"].includes(task)
     ? "Ești Nova, agent de revizie de cod. Inspectează proiectul cu uneltele list_files și read_file. Nu modifica fișierele. Identifică probleme reale, ordonează-le după severitate și indică fișierele relevante."
-    : mode === "plan"
+    : mode === "plan" && ["auto", "code"].includes(task)
       ? "Ești Nova, agent de planificare software. Explorează proiectul cu list_files și read_file, apoi prezintă un plan ordonat și clar. Nu modifica fișierele."
       : `Ești Nova, asistent de creație și programare. ${taskPrompts[task] || taskPrompts.auto} Explorează proiectul și fișierele relevante când cererea depinde de ele. Implementează cererile de cod folosind write_file numai când este permis. Păstrează schimbările la obiect și raportează fiecare fișier schimbat. Nu rula comenzi și nu pretinde că ai testat codul.`;
   const messages = [
@@ -680,7 +675,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "accurate-chat-voice-v1",
+      release: "complete-creators-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -1028,7 +1023,7 @@ async function handle(req, res) {
       inputBudget -= content.length;
       return { role: message.role, content };
     });
-    const task = ["auto", "code", "lyrics", "music", "video"].includes(body.task) ? body.task : "auto";
+    const task = Object.hasOwn(creationPrompts, body.task) ? body.task : "auto";
     if (!await consumeAiQuota(req, res)) return;
     try {
       const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task, principal, body.verifyWeb === true);

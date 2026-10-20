@@ -248,14 +248,16 @@ function messageContainer() {
 }
 
 function setTask(task) {
-  const supported = ["auto", "code", "lyrics", "music", "video"];
+  const supported = ["auto", "code", "text", "lyrics", "business", "music", "video"];
   const selected = supported.includes(task) ? task : "auto";
   el("taskSelect").value = selected;
   document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
   const prompts = {
     auto: "Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)",
     code: "Descrie aplicația sau unealta pe care vrei să o construiești…",
-    lyrics: "Descrie tema, stilul și atmosfera textului sau a versurilor…",
+    text: "Ce text dorești? Spune publicul, scopul, tonul și lungimea…",
+    lyrics: "Descrie tema, genul și emoția versurilor: strofe, refren și punte…",
+    business: "Descrie ideea de afacere online, publicul și bugetul de pornire…",
     music: "Descrie genul, tempo-ul și starea compoziției…",
     video: "Descrie ideea, publicul și stilul videoclipului…"
   };
@@ -279,7 +281,8 @@ function parseCreativeSpec(content) {
         note: String(item.note || ""), beats: Math.min(4, Math.max(0.25, Number(item.beats) || 1))
       })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
       if (!notes.length) throw new Error("Nu există note valide.");
-      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes } };
+      const chords = (Array.isArray(raw.chords) ? raw.chords : []).slice(0, 8).filter(chord => Array.isArray(chord) && chord.length >= 3 && chord.length <= 4 && chord.every(note => typeof note === "string" && /^[A-G]#?[2-6]$/.test(note)));
+      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: raw.arrangement === true, bars: Math.min(64, Math.max(8, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
     }
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).filter(scene => scene && typeof scene === "object").slice(0, 12).map(scene => ({
       text: String(scene.text || "").slice(0, 280),
@@ -287,7 +290,7 @@ function parseCreativeSpec(content) {
       background: /^#[0-9a-f]{6}$/i.test(String(scene.background || "")) ? scene.background : "#18221a"
     })).filter(scene => scene.text.trim());
     if (scenes.length < 2) throw new Error("Videoclipul are nevoie de cel puțin două scene.");
-    return { text: content.replace(match[0], "").trim(), spec: { type: "video", title, scenes } };
+    return { text: content.replace(match[0], "").trim(), spec: { type: "video", title, scenes, aspect: ["portrait", "landscape", "square"].includes(raw.aspect) ? raw.aspect : "landscape" } };
   } catch {
     return { text: content, spec: null };
   }
@@ -312,7 +315,62 @@ function noteFrequency(note) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
+function arrangementBars(spec) {
+  return Math.max(4, Math.min(64, spec.bars || 32, Math.floor(119.8 / (4 * 60 / spec.bpm))));
+}
+
+async function createArrangedWav(spec) {
+  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!Offline) throw new Error("Browserul nu acceptă export audio WAV.");
+  const rate = 22050, beat = 60 / spec.bpm, bars = arrangementBars(spec), totalBeats = bars * 4;
+  const duration = totalBeats * beat + 0.2, audio = new Offline(1, Math.ceil(duration * rate), rate);
+  const master = audio.createGain(); master.gain.value = 0.8;
+  master.gain.setValueAtTime(0.8, Math.max(0, duration - 2));
+  master.gain.linearRampToValueAtTime(0.0001, duration); master.connect(audio.destination);
+  function tone(frequency, start, seconds, volume, type = "triangle") {
+    const end = Math.min(duration - 0.02, start + seconds);
+    if (end <= start) return;
+    const oscillator = audio.createOscillator(), gain = audio.createGain();
+    oscillator.type = type; oscillator.frequency.value = frequency;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(volume, Math.min(end, start + 0.015));
+    gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    oscillator.connect(gain).connect(master); oscillator.start(start); oscillator.stop(end);
+  }
+  const chords = spec.chords?.length ? spec.chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]];
+  for (let bar = 0; bar < bars; bar++) {
+    const chord = chords[bar % chords.length], start = bar * 4 * beat;
+    for (const note of chord) tone(noteFrequency(note), start, beat * 3.9, 0.025, "sine");
+    if (bar > 0) for (let pulse = 0; pulse < 4; pulse += 2) tone(noteFrequency(chord[0]) / 2, start + pulse * beat, beat * 1.6, 0.09, "sine");
+  }
+  let cursor = 8, index = 0;
+  while (cursor < totalBeats - 4) {
+    const item = spec.notes[index++ % spec.notes.length];
+    tone(noteFrequency(item.note), cursor * beat, Math.min(item.beats, totalBeats - 4 - cursor) * beat * 0.92, 0.1);
+    cursor += item.beats;
+  }
+  if (spec.drums !== false) {
+    const noise = audio.createBuffer(1, Math.ceil(rate * 0.08), rate), data = noise.getChannelData(0);
+    let seed = 12345;
+    for (let i = 0; i < data.length; i++) { seed = (seed * 16807) % 2147483647; data[i] = (seed / 2147483647 * 2 - 1) * (1 - i / data.length); }
+    for (let step = 8; step < totalBeats - 4; step++) {
+      const start = step * beat;
+      if (step % 2 === 0) {
+        const kick = audio.createOscillator(), gain = audio.createGain();
+        kick.frequency.setValueAtTime(130, start); kick.frequency.exponentialRampToValueAtTime(42, start + 0.12);
+        gain.gain.setValueAtTime(0.12, start); gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+        kick.connect(gain).connect(master); kick.start(start); kick.stop(start + 0.2);
+      }
+      const hat = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter();
+      hat.buffer = noise; gain.gain.value = step % 2 ? 0.035 : 0.02; filter.type = "highpass"; filter.frequency.value = 6000;
+      hat.connect(filter).connect(gain).connect(master); hat.start(start);
+    }
+  }
+  return audio.startRendering();
+}
+
 async function createWav(spec) {
+  if (spec.arrangement) return createArrangedWav(spec);
   const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
   if (!Offline) throw new Error("Browserul nu acceptă export audio WAV.");
   const rate = 22050, beatSeconds = 60 / spec.bpm;
@@ -409,7 +467,9 @@ async function exportVideo(spec) {
       await waitForMedia(voice, "loadedmetadata", () => voice.readyState >= 1, "Voice-over-ul");
       if (!Number.isFinite(voice.duration) || voice.duration <= 0) throw new Error("Voice-over-ul nu are o durată validă. Regenerează fișierul audio.");
     }
-    const canvas = document.createElement("canvas"); canvas.width = 1280; canvas.height = 720;
+    const canvas = document.createElement("canvas");
+    const dimensions = spec.aspect === "portrait" ? [720, 1280] : spec.aspect === "square" ? [1080, 1080] : [1280, 720];
+    [canvas.width, canvas.height] = dimensions;
     const ctx = canvas.getContext("2d");
     stream = canvas.captureStream(24);
     if (voice) {
@@ -548,12 +608,18 @@ function addCreativeCard(node, spec) {
   const detail = document.createElement("div"); detail.className = "creative-detail";
   const action = document.createElement("button"); action.className = "btn small";
   const output = document.createElement("div"); output.className = "creative-output";
+  const exportProject = document.createElement("button"); exportProject.className = "btn small"; exportProject.textContent = "Descarcă proiect JSON";
+  exportProject.addEventListener("click", () => { const { sceneImages, ...project } = spec; downloadBlob(new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }), safeMediaName(spec.title, "json")); });
   if (spec.type === "music") {
-    detail.textContent = `${spec.bpm} BPM · ${spec.notes.length} note · sintetizator simplu`;
+    detail.textContent = spec.arrangement ? `${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · melodie, armonie, bas${spec.drums !== false ? " și percuție" : ""} · instrumental` : `${spec.bpm} BPM · ${spec.notes.length} note · schiță instrumentală`;
     action.textContent = "Generează WAV";
-    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se generează fișierul audio…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = "Audio WAV creat · melodie instrumentală"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se generează fișierul audio…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = spec.arrangement ? "Piesă instrumentală WAV creată · intro, temă, acompaniament și final" : "Audio WAV creat · melodie instrumentală"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
   } else {
     detail.textContent = `${spec.scenes.length} scene · videoclip WebM${spec.scenes.some(scene => scene.image) ? " cu imagini AI" : " cu fundaluri animate"}`;
+    const aspect = document.createElement("select"); aspect.className = "btn small"; aspect.setAttribute("aria-label", "Formatul videoclipului");
+    for (const [value, label] of [["portrait", "Vertical 9:16"], ["landscape", "Orizontal 16:9"], ["square", "Pătrat 1:1"]]) aspect.add(new Option(label, value));
+    aspect.value = spec.aspect || "landscape";
+    aspect.addEventListener("change", () => { spec.aspect = aspect.value; });
     const images = document.createElement("button"); images.className = "btn small"; images.textContent = "Generează imagini pentru scene";
     images.addEventListener("click", async () => {
       if (!confirm(`Se va genera câte o imagine AI pentru ${spec.scenes.length} scene. Furnizorul API poate taxa fiecare imagine. Continui?`)) return;
@@ -587,9 +653,9 @@ function addCreativeCard(node, spec) {
     });
     action.textContent = "Exportă WebM";
     action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se pregătește videoclipul…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat${spec.voiceDataUrl ? " cu voice-over" : ""} · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
-    card.append(heading, detail, images, voice, action, output); node.append(card); return;
+    card.append(heading, detail, exportProject, aspect, images, voice, action, output); node.append(card); return;
   }
-  card.append(heading, detail, action, output); node.append(card);
+  card.append(heading, detail, exportProject, action, output); node.append(card);
 }
 
 function addBubble(role, content, events = []) {
@@ -598,6 +664,11 @@ function addBubble(role, content, events = []) {
   const creative = role === "assistant" ? parseCreativeSpec(content) : { text: content, spec: null };
   const body = document.createElement("div"); body.textContent = creative.text;
   node.append(meta, body);
+  if (role === "assistant" && content.trim()) {
+    const download = document.createElement("button"); download.className = "btn small"; download.textContent = "Descarcă TXT";
+    download.addEventListener("click", () => downloadBlob(new Blob([content], { type: "text/plain;charset=utf-8" }), safeMediaName(creative.text.split("\n")[0].slice(0, 70) || "Nova", "txt")));
+    node.append(download);
+  }
   if (creative.spec) addCreativeCard(node, creative.spec);
   if (events?.length) {
     const activity = document.createElement("div"); activity.className = "agent-events";
@@ -916,7 +987,7 @@ el("creatorHome").addEventListener("click", async event => {
   if (!card) return;
   const action = card.dataset.homeAction;
   const draft = el("homePrompt").value.trim();
-  if (["chat", "code", "lyrics", "music", "video"].includes(action)) {
+  if (["chat", "code", "text", "lyrics", "business", "music", "video"].includes(action)) {
     const task = action === "chat" ? "auto" : action;
     setTask(task); if (draft) { el("prompt").value = draft; el("homePrompt").value = ""; resizePrompt(); }
     setView("chat"); el("prompt").focus(); return;

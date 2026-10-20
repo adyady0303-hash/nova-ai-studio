@@ -122,3 +122,7 @@ Pentru verificare din aplicația publicată, administratorul deschide **Configur
 Pentru întrebări despre informații actuale, activează **Verifică surse web** lângă caseta de chat. Prima cerere către model solicită explicit căutarea web. Răspunsul include lista surselor returnate efectiv de unelte; dacă nu există surse disponibile, aplicația afișează că verificarea nu a reușit. Nu prezintă răspunsul nesusținut al modelului drept rezultat verificat. Această opțiune nu garantează că sursele sau concluziile sunt perfecte; verifică documentele originale pentru decizii importante. Întrebările private și conținutul proiectelor nu trebuie trimise către motoarele de căutare.
 
 În fereastra de voce poți alege vocea și ritmul (0,85×, 1× sau 1,15×). Se păstrează modelul și cheia configurate de administrator. Alegerea se aplică redării din chat, generării MP3 și vocii pentru videoclip. Textul este rostit în limba sa; instrucțiunile de pronunție sunt trimise modelelor TTS compatibile. Vocea rămâne recitată, nu cântată.
+
+### Generatoare 1.3.0
+
+Moduri dedicate pentru texte, versuri originale și planuri de afaceri online, cu descărcare TXT. Muzica poate include melodie, acorduri, bas și percuție sintetizate, în măsuri complete până la 120 secunde, export WAV. Videoclipurile WebM acceptă formate 9:16, 16:9 și 1:1. Proiectele media se descarcă și în JSON. Vocea recită textele; exportul video compune scene, nu filmări fotorealiste. Generarea AI necesită serviciul cloud configurat și disponibil.
