@@ -4,7 +4,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const dataStore = require("./data-store");
 const { creationPrompts } = require("./creation-prompts");
-const { accuracyPrompt, collectSources, answerWithSources, speechOptions } = require("./ai-quality");
+const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 let dataFs = fs;
 
@@ -623,6 +623,8 @@ async function callAgentTool(name, args, project, allowChanges, principal = "own
 }
 
 async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false) {
+  verifyWeb = verifyWeb || automaticWebSearch(inputMessages);
+  let webAttempted = false, retryWeb = false;
   const taskPrompts = creationPrompts;
   const prompt = mode === "review" && ["auto", "code"].includes(task)
     ? "Ești Nova, agent de revizie de cod. Inspectează proiectul cu uneltele list_files și read_file. Nu modifica fișierele. Identifică probleme reale, ordonează-le după severitate și indică fișierele relevante."
@@ -638,14 +640,23 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
   const sources = [];
   const maxRounds = principal === "owner" ? 8 : 4;
   for (let round = 0; round < maxRounds; round++) {
-    const response = await providerChat(model, messages, tools, principal === "owner" ? null : 1500, verifyWeb && round === 0);
+    const response = await providerChat(model, messages, tools, principal === "owner" ? null : 1500, (verifyWeb && round === 0) || retryWeb);
+    retryWeb = false;
     const message = response.message || {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     messages.push(message);
+    if (!calls.length && !webAttempted && !verifyWeb && round < maxRounds - 1 && needsWebRetry(message.content)) {
+      retryWeb = true;
+      webAttempted = true;
+      verifyWeb = true;
+      messages.push({ role: "system", content: "Înainte de răspuns, caută informațiile publice lipsă cu web_search. Nu include date private în căutare. Răspunde folosind rezultatele relevante și explică limitele dacă nu găsești dovezi." });
+      continue;
+    }
     if (!calls.length) return { content: answerWithSources(message.content || "Agentul a terminat fără un răspuns text.", sources, verifyWeb), events, model: response.model || model };
     let toolCount = 0;
     for (const call of calls) {
       const name = call.function?.name;
+      if (["web_search", "read_web_page"].includes(name)) webAttempted = true;
       try {
       if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
       let args = call.function?.arguments;
@@ -675,7 +686,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "complete-creators-v1",
+      release: "automatic-web-chat-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -1116,10 +1127,20 @@ async function handle(req, res) {
             ...messages
           ];
       let result;
+      let verifyWeb = body.verifyWeb === true || automaticWebSearch(messages);
+      let webAttempted = false, retryWeb = false;
       const sources = [];
       for (let round = 0; round < 4; round++) {
-        result = await providerChat(body.model.trim(), chatMessages, webTools, account.role === "subscriber" ? 1500 : null, body.verifyWeb === true && round === 0);
+        result = await providerChat(body.model.trim(), chatMessages, webTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
+        retryWeb = false;
         const message = result.message || {};
+        if (!message.tool_calls?.length && !webAttempted && !verifyWeb && round < 3 && needsWebRetry(message.content)) {
+          chatMessages.push(message, { role: "system", content: "Caută automat informațiile publice lipsă cu web_search, fără date private. Răspunde în limba utilizatorului folosind sursele relevante." });
+          retryWeb = true;
+          webAttempted = true;
+          verifyWeb = true;
+          continue;
+        }
         if (!message.tool_calls?.length) break;
         chatMessages.push(message);
         let toolCount = 0;
@@ -1129,6 +1150,7 @@ async function handle(req, res) {
             if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
             const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments;
             if (!args || typeof args !== "object") throw new Error("Argumente invalide.");
+            webAttempted = true;
             content = await callWebTool(call.function.name, args);
             collectSources(content, sources);
           } catch (error) { content = `Eroare: ${error.message}`; }
@@ -1139,7 +1161,7 @@ async function handle(req, res) {
         result = { message: { content: "Am atins limita de căutări web. Trimite o cerere de continuare." } };
       }
       return json(res, 200, {
-        content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, body.verifyWeb === true),
+        content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, verifyWeb),
         model: result.model || body.model,
         done: true
       });

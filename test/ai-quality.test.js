@@ -29,3 +29,15 @@ test('per-request voice and pace are validated without modifying server defaults
   assert.deepEqual(speechOptions({}), {});
   for (const body of [{ voice: 'not-a-voice' }, { speed: '1' }, { speed: 8 }, { speed: null }]) assert.throws(() => speechOptions(body), { status: 400 });
 });
+
+const { automaticWebSearch, needsWebRetry } = require('../ai-quality');
+test('automatic search uses the latest public freshness question without forcing creative writing', () => {
+  assert.equal(automaticWebSearch([{role:'user',content:'Care sunt ultimele versiuni Node?'}]), true);
+  assert.equal(automaticWebSearch([{role:'user',content:'Știri azi din România'}]), true);
+  assert.equal(automaticWebSearch([{role:'user',content:'Scrie versuri despre azi'}]), false);
+  assert.equal(automaticWebSearch([{role:'user',content:'Știri azi'}, {role:'assistant',content:'OK'}, {role:'user',content:'Salut'}]), false);
+});
+test('missing knowledge triggers a search retry but ordinary answers and technical errors do not', () => {
+  for (const answer of ['Nu am informații despre acest subiect.', 'Nu pot confirma această informație.', 'I cannot verify that information.']) assert.equal(needsWebRetry(answer), true);
+  for (const answer of ['Salut! Cu ce te ajut?', 'Eroare API: cheia este invalidă.', 'Nu pot modifica fișierele.']) assert.equal(needsWebRetry(answer), false);
+});

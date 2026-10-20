@@ -168,7 +168,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
         mockToolChoice = body.tool_choice || null;
         mockSystemPrompt = body.messages.find(message => message.role === 'system')?.content || '';
         res.writeHead(200, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Răspuns verificat de test.' } }], model: body.model }));
+        res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: body.messages.some(message => message.role === 'user' && message.content === 'Test missing knowledge') && !body.tool_choice ? 'Nu am informații despre acest subiect.' : 'Răspuns verificat de test.' } }], model: body.model }));
       });
       return;
     }
@@ -236,7 +236,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'complete-creators-v1');
+  assert.equal(versionData.release, 'automatic-web-chat-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -414,6 +414,18 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     assert.equal(response.status, 200);
     await response.json();
     assert.match(mockSystemPrompt, expected);
+  }
+  for (const endpoint of ['/api/chat', '/api/agent']) {
+    const automatic = await post(endpoint, { project: project.id, model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Care sunt ultimele noutăți online?' }] });
+    assert.equal(automatic.status, 200);
+    await automatic.json();
+    assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });
+  }
+  for (const endpoint of ['/api/chat', '/api/agent']) {
+    const retried = await post(endpoint, { project: project.id, model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Test missing knowledge' }] });
+    assert.equal(retried.status, 200);
+    assert.match((await retried.json()).content, /nu pot fi confirmate/);
+    assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });
   }
   const verifiedAgent = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', verifyWeb: true, messages: [{ role: 'user', content: 'Verifică o informație publică actuală' }] });
   assert.equal(verifiedAgent.status, 200);
