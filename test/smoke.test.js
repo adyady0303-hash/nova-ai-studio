@@ -149,6 +149,24 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const scriptRequest = [...body.messages].reverse().find(message =>
+          message.role === 'user' && ['OWNER_SCRIPT_WRITE', 'SUBSCRIBER_SCRIPT_WRITE'].includes(message.content)
+        );
+        if (scriptRequest) {
+          const ownerScript = scriptRequest.content === 'OWNER_SCRIPT_WRITE';
+          const scriptPath = ownerScript ? 'scripts/owner-deploy.sh' : 'scripts/subscriber-deploy.sh';
+          const scriptContent = ownerScript ? '#!/bin/sh\nprintf "owner\\n"\n' : '#!/usr/bin/env node\nconsole.log("subscriber");\n';
+          const toolReply = body.messages.find(message => message.role === 'tool' && message.tool_call_id === 'script-write-1');
+          const canWrite = body.tools?.some(tool => tool.function.name === 'write_file');
+          const message = toolReply
+            ? { role: 'assistant', content: 'Scriptul a fost salvat.' }
+            : canWrite
+              ? { role: 'assistant', content: null, tool_calls: [{ id: 'script-write-1', type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: scriptPath, content: scriptContent }) } }] }
+              : { role: 'assistant', content: 'Scrierea nu este disponibilă pentru această cerere.' };
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ choices: [{ message }], model: body.model }));
+          return;
+        }
         if (body.messages.some(message => message.role === 'user' && message.content === 'Test web tools')) {
           assert.ok(body.tools.some(tool => tool.function.name === 'web_search'));
           assert.ok(body.tools.some(tool => tool.function.name === 'read_web_page'));
@@ -467,12 +485,22 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(verifiedAgent.status, 200);
   assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });
   assert.match((await verifiedAgent.json()).content, /nu pot fi confirmate/);
-  assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'invalid-test-key' })).status, 200);
   const projects = await request('/api/projects');
   assert.ok((await projects.json()).projects.some(item => item.id === project.id));
 
   const initialFiles = await request(`/api/files?project=${project.id}`);
   assert.deepEqual((await initialFiles.json()).files.map(file => file.path).sort(), ['README.md', 'package.json', 'src/index.js'].sort());
+
+  const ownerWrite = await post('/api/agent', {
+    project: project.id, model: 'gpt-4.1-mini', mode: 'build', allowChanges: false,
+    messages: [{ role: 'user', content: 'OWNER_SCRIPT_WRITE' }]
+  });
+  assert.equal(ownerWrite.status, 200);
+  assert.ok((await ownerWrite.json()).events.some(event => event.tool === 'write_file' && event.ok));
+  const ownerScript = await request(`/api/file?project=${project.id}&path=scripts%2Fowner-deploy.sh`);
+  assert.equal(ownerScript.status, 200);
+  assert.equal((await ownerScript.json()).content, '#!/bin/sh\nprintf "owner\\n"\n');
+  assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'invalid-test-key' })).status, 200);
 
   const write = await request('/api/file', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
@@ -614,6 +642,45 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const ownerProjects = await (await fetch(`${baseUrl}/api/projects`, { headers: { cookie: ownerCookie } })).json();
   assert.ok(ownerProjects.projects.some(item => item.id === project.id));
   assert.ok(!ownerProjects.projects.some(item => item.id === privateProject.id));
+
+  const ownerPost = (route, value) => fetch(`${baseUrl}${route}`, {
+    method: 'POST', headers: { cookie: ownerCookie, 'content-type': 'application/json' }, body: JSON.stringify(value)
+  });
+  assert.equal((await ownerPost('/api/settings', {
+    provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key'
+  })).status, 200);
+  const writerRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'writer-subscriber', password: 'write123' })
+  });
+  assert.equal(writerRegistration.status, 201);
+  const writerCookie = writerRegistration.headers.get('set-cookie').split(';', 1)[0];
+  const writerRequest = (route, options = {}) => fetch(`${baseUrl}${route}`, {
+    ...options, headers: { cookie: writerCookie, ...(options.headers || {}) }
+  });
+  const writerPost = (route, value) => writerRequest(route, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value)
+  });
+  const writerProjectResponse = await writerPost('/api/projects', { name: 'Reguli Abonat' });
+  assert.equal(writerProjectResponse.status, 201);
+  const writerProject = (await writerProjectResponse.json()).project;
+  const blockedSubscriberWrite = await writerPost('/api/agent', {
+    project: writerProject.id, model: 'gpt-4.1-mini', mode: 'build', allowChanges: false,
+    messages: [{ role: 'user', content: 'SUBSCRIBER_SCRIPT_WRITE' }]
+  });
+  assert.equal(blockedSubscriberWrite.status, 200);
+  assert.ok(!(await blockedSubscriberWrite.json()).events.some(event => event.tool === 'write_file'));
+  const filesAfterBlockedWrite = await (await writerRequest(`/api/files?project=${writerProject.id}`)).json();
+  assert.ok(!filesAfterBlockedWrite.files.some(file => file.path === 'scripts/subscriber-deploy.sh'));
+  const allowedSubscriberWrite = await writerPost('/api/agent', {
+    project: writerProject.id, model: 'gpt-4.1-mini', mode: 'build', allowChanges: true,
+    messages: [{ role: 'user', content: 'SUBSCRIBER_SCRIPT_WRITE' }]
+  });
+  assert.equal(allowedSubscriberWrite.status, 200);
+  assert.ok((await allowedSubscriberWrite.json()).events.some(event => event.tool === 'write_file' && event.ok));
+  const subscriberScript = await writerRequest(`/api/file?project=${writerProject.id}&path=scripts%2Fsubscriber-deploy.sh`);
+  assert.equal(subscriberScript.status, 200);
+  assert.equal((await subscriberScript.json()).content, '#!/usr/bin/env node\nconsole.log("subscriber");\n');
 });
 
 async function getFreePort() {

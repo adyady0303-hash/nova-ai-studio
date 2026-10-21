@@ -504,7 +504,7 @@ body {background:#080b13;}
               <div class="model-row"><label class="sr-only" for="modelSelect">Model AI</label><select id="modelSelect" aria-label="Model AI"><option value="">Se caută modele…</option></select><button class="btn subtle iconbtn" id="refreshModels" title="Reîncarcă modelele">↻</button></div>
               <div class="mode-row"><label class="sr-only" for="modeSelect">Mod agent</label><select id="modeSelect" aria-label="Mod agent"><option value="build">Construiește</option><option value="plan">Planifică</option><option value="review">Revizuiește</option></select></div>
               <label class="allow-row" title="Chatul caută automat când are nevoie de informații. Bifează pentru a cere verificarea web explicit la acest mesaj; nu include date private."><input type="checkbox" id="verifyWeb"><span>Cere verificare web la acest mesaj</span></label>
-              <label class="allow-row" title="Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"><input type="checkbox" id="allowChanges"><span>Editează proiectul</span></label>
+              <label class="allow-row" id="allowChangesRow" title="Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"><input type="checkbox" id="allowChanges"><span id="allowChangesLabel">Editează proiectul</span></label>
             </div>
             <div class="composer-actions"><button class="btn primary" id="sendBtn">Trimite <svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button></div>
           </div>

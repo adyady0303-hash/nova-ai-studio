@@ -1097,9 +1097,10 @@ async function handle(req, res) {
       return { role: message.role, content };
     });
     const task = Object.hasOwn(creationPrompts, body.task) ? body.task : "auto";
+    const allowAgentChanges = mode === "build" && (account.role === "owner" || body.allowChanges === true);
     if (!await consumeAiQuota(req, res)) return;
     try {
-      const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, body.allowChanges === true && mode === "build", task, principal, body.verifyWeb === true);
+      const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, allowAgentChanges, task, principal, body.verifyWeb === true);
       return json(res, 200, result);
     } catch (error) {
       console.error("Nova AI agent provider failed:", error);

@@ -38,6 +38,13 @@ function updateAccountLabel() {
 async function loadAccount() {
   const account = await api("/api/auth/me"); state.account = account;
   const subscriber = account.role === "subscriber";
+  const allowChanges = el("allowChanges");
+  allowChanges.checked = !subscriber;
+  allowChanges.disabled = !subscriber;
+  el("allowChangesLabel").textContent = subscriber ? "Editează proiectul" : "Editare owner activă";
+  el("allowChangesRow").title = subscriber
+    ? "Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"
+    : "Contul owner poate crea și modifica automat cod și scripturi în modul Construiește";
   el("providerSettingsBtn").hidden = subscriber;
   el("voiceSettingsBtn").hidden = subscriber;
   el("adminDashboardLink").hidden = subscriber;
@@ -884,7 +891,7 @@ async function send() {
   setView("chat");
   const mode = el("modeSelect").value;
   const task = el("taskSelect").value;
-  const allowChanges = mode === "build" && el("allowChanges").checked;
+  const allowChanges = mode === "build" && (state.account?.role === "owner" || el("allowChanges").checked);
   const currentProject = state.projects.find(project => project.id === state.project);
   const activeContent = state.activePath ? el("editor").value : "";
   const contextualPrompt = task === "code" || workspaceWasOpen
