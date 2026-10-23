@@ -910,7 +910,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "business-site-publisher-v1",
+      release: "automatic-full-song-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }

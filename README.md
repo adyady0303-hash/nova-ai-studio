@@ -5,7 +5,7 @@ Nova AI Studio pune chatul, programarea pentru PC, versurile, schițele muzicale
 ## Ce poate genera
 
 - **Chat și cod:** folosește Ollama local sau un model OpenAI / compatibil. Agentul are unelte limitate la fișierele proiectului.
-- **Versuri și compoziție:** scrie versuri și schițe muzicale originale. Exportul WAV folosește un sintetizator simplu de note; nu cântă versurile.
+- **Versuri și compoziție:** scrie versuri și generează automat piese instrumentale WAV complete, cu melodie, armonie, bas, percuție, intro, secțiuni și final. Motorul audio rulează direct în browser; nu cântă versurile.
 - **Imagini:** modelul de imagini configurat poate genera ilustrații PNG și poate modifica fotografii PNG/JPG/WebP încărcate de administrator, fără a suprascrie originalul.
 - **Voice-over:** modelul de vorbire poate genera un MP3 din text.
 - **Video:** Nova compune scene în WebM din text și, opțional, imagini AI; poate adăuga voice-over ca pistă audio. Nu generează încă filmări AI fotorealiste.
@@ -125,7 +125,7 @@ Pentru întrebări despre informații actuale, activează **Verifică surse web*
 
 ### Generatoare 1.3.0
 
-Moduri dedicate pentru texte, versuri originale și planuri de afaceri online, cu descărcare TXT. Muzica poate include melodie, acorduri, bas și percuție sintetizate, în măsuri complete până la 120 secunde, export WAV. Videoclipurile WebM acceptă formate 9:16, 16:9 și 1:1. Proiectele media se descarcă și în JSON. Vocea recită textele; exportul video compune scene, nu filmări fotorealiste. Generarea AI necesită serviciul cloud configurat și disponibil.
+Moduri dedicate pentru texte, versuri originale și planuri de afaceri online, cu descărcare TXT. La o comandă în modul Muzică, Nova generează automat playerul și piesa instrumentală WAV completă, nu doar acordurile: melodie, armonie, bas și percuție sintetizate, în măsuri complete până la 120 secunde. Videoclipurile WebM acceptă formate 9:16, 16:9 și 1:1. Proiectele media se descarcă și în JSON. Vocea recită textele; exportul video compune scene, nu filmări fotorealiste. Generarea AI necesită serviciul cloud configurat și disponibil.
 
 Chatul caută automat surse pentru întrebări actuale și încearcă o căutare când modelul declară că nu are informații. Erorile de autentificare ale furnizorului rămân distincte; căutarea web nu înlocuiește cheia AI.
 

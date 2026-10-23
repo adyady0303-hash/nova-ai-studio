@@ -268,7 +268,7 @@ function setTask(task) {
     text: "Ce text dorești? Spune publicul, scopul, tonul și lungimea…",
     lyrics: "Descrie tema, genul și emoția versurilor: strofe, refren și punte…",
     business: "Descrie ideea de afacere; Nova va crea site-ul funcțional și îl va publica online…",
-    music: "Descrie genul, tempo-ul și starea compoziției…",
+    music: "Descrie piesa completă: gen, atmosferă, tempo și durată…",
     video: "Descrie ideea, publicul și stilul videoclipului…"
   };
   el("prompt").placeholder = prompts[selected];
@@ -297,7 +297,7 @@ function parseCreativeSpec(content) {
       })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
       if (!notes.length) throw new Error("Nu există note valide.");
       const chords = (Array.isArray(raw.chords) ? raw.chords : []).slice(0, 8).filter(chord => Array.isArray(chord) && chord.length >= 3 && chord.length <= 4 && chord.every(note => typeof note === "string" && /^[A-G]#?[2-6]$/.test(note)));
-      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: raw.arrangement === true, bars: Math.min(64, Math.max(8, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
+      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: true, bars: Math.min(64, Math.max(16, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
     }
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).filter(scene => scene && typeof scene === "object").slice(0, 12).map(scene => ({
       text: String(scene.text || "").slice(0, 280),
@@ -682,9 +682,24 @@ function addCreativeCard(node, spec) {
   const exportProject = document.createElement("button"); exportProject.className = "btn small"; exportProject.textContent = "Descarcă proiect JSON";
   exportProject.addEventListener("click", () => { const { sceneImages, ...project } = spec; downloadBlob(new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }), safeMediaName(spec.title, "json")); });
   if (spec.type === "music") {
-    detail.textContent = spec.arrangement ? `${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · melodie, armonie, bas${spec.drums !== false ? " și percuție" : ""} · instrumental` : `${spec.bpm} BPM · ${spec.notes.length} note · schiță instrumentală`;
-    action.textContent = "Generează WAV";
-    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se generează fișierul audio…"; try { const blob = audioBufferToWav(await createWav(spec)); const player = document.createElement("audio"); player.controls = true; player.src = URL.createObjectURL(blob); const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WAV"; link.href = player.src; link.download = safeMediaName(spec.title, "wav"); output.replaceChildren(player, link); detail.textContent = spec.arrangement ? "Piesă instrumentală WAV creată · intro, temă, acompaniament și final" : "Audio WAV creat · melodie instrumentală"; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
+    detail.textContent = `Se compune piesa completă · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri…`;
+    action.textContent = "Regenerează piesa";
+    let audioUrl = "";
+    const renderMusic = async () => {
+      action.disabled = true; detail.textContent = "Se generează melodia, armonia, basul și percuția…";
+      try {
+        const blob = audioBufferToWav(await createWav(spec));
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        audioUrl = URL.createObjectURL(blob);
+        const player = document.createElement("audio"); player.controls = true; player.preload = "metadata"; player.src = audioUrl;
+        const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă piesa WAV"; link.href = audioUrl; link.download = safeMediaName(spec.title, "wav");
+        output.replaceChildren(player, link);
+        detail.textContent = `Piesă gata · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · melodie, armonie, bas${spec.drums !== false ? " și tobe" : ""} · intro, refren, variație și final`;
+      } catch (error) { detail.textContent = `Generarea audio a eșuat: ${error.message}`; }
+      finally { action.disabled = false; }
+    };
+    action.addEventListener("click", renderMusic);
+    Promise.resolve().then(renderMusic);
   } else {
     detail.textContent = `${spec.scenes.length} scene · videoclip WebM${spec.scenes.some(scene => scene.image) ? " cu imagini AI" : " cu fundaluri animate"}`;
     const aspect = document.createElement("select"); aspect.className = "btn small"; aspect.setAttribute("aria-label", "Formatul videoclipului");

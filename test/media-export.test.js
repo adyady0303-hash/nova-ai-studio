@@ -75,10 +75,18 @@ test('failed voice playback releases recorder, tracks and audio context', async 
 test('mixed creative specs keep valid notes and scenes when a model includes null entries', () => {
   const context = {}; vm.createContext(context);
   vm.runInContext(source.slice(source.indexOf('function parseCreativeSpec('), source.indexOf('function downloadBlob(')), context);
-  const music = context.parseCreativeSpec('```nova-music\n{"notes":[null,{"note":"C4","beats":1}]}\n```');
+  const music = context.parseCreativeSpec('```nova-music\n{"arrangement":false,"bars":4,"notes":[null,{"note":"C4","beats":1}]}\n```');
   assert.equal(music.spec.notes.length, 1);
+  assert.equal(music.spec.arrangement, true);
+  assert.equal(music.spec.bars, 16);
   const video = context.parseCreativeSpec('```nova-video\n{"scenes":[null,{"text":"First"},{"text":"Second"}]}\n```');
   assert.equal(video.spec.scenes.length, 2);
+});
+
+test('music cards render the full song automatically and keep manual regeneration available', () => {
+  assert.match(source, /action\.textContent = "Regenerează piesa"/);
+  assert.match(source, /Promise\.resolve\(\)\.then\(renderMusic\)/);
+  assert.match(source, /Descarcă piesa WAV/);
 });
 
 test('an upstream AI authentication failure does not log the visitor out of Nova', async () => {
