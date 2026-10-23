@@ -137,6 +137,8 @@ Pagina principală și chatul folosesc designul Orbit, cu instrumente dedicate, 
 
 Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul aleg automat cel mai nou model GPT compatibil disponibil contului owner, căutarea web are limite clare și finalizează întotdeauna cu un răspuns, iar generarea și editarea imaginilor folosesc implicit modelul complet `gpt-image-1` la calitate ridicată. Vocea, muzica și compoziția video păstrează formatele stabile și regulile existente pentru abonați.
 
+Începând cu 1.5.1, abonații au acces și la generarea și editarea imaginilor, în limita cotei planului. Configurarea furnizorului AI, cheile API, verificările administrative și tabloul de administrare rămân disponibile exclusiv ownerului.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

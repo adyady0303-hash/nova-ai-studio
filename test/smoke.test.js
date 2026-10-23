@@ -13,6 +13,7 @@ test('app entry points and responsive page metadata exist', () => {
     assert.ok(fs.statSync(path.join(root, file)).isFile(), file);
   }
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+  const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
   assert.match(html, /<html[^>]+lang="ro"/);
   assert.match(html, /<meta[^>]+name="viewport"/);
   assert.match(html, /@media\s*\(max-width:\s*(?:620|1000)px\)/);
@@ -28,6 +29,8 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="imageEditFile"/);
   assert.match(html, /id="adminDashboardLink"/);
   assert.match(html, /id="projectDrawer"/);
+  assert.match(app, /editImageBtn"\)\.hidden = false/);
+  assert.match(app, /imageEditSettingsBtn"\)\.hidden = subscriber/);
 });
 
 test('Orbit dashboard routes creation tools to implemented actions', () => {
@@ -284,7 +287,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'nova-suite-refresh-v1');
+  assert.equal(versionData.release, 'subscriber-creative-access-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -664,8 +667,6 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(adminPage.status, 302);
   const deniedSettings = await subscriberPost('/api/settings', { provider: 'openai' });
   assert.equal(deniedSettings.status, 403);
-  assert.equal((await subscriberPost('/api/media/image/edit', { prompt: 'Schimbă fundalul', image: `data:image/png;base64,${sourcePng}` })).status, 403);
-
   const privateProjectResponse = await subscriberPost('/api/projects', { name: 'Spațiu Privat' });
   assert.equal(privateProjectResponse.status, 201);
   const privateProject = (await privateProjectResponse.json()).project;
@@ -701,6 +702,21 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal((await ownerPost('/api/settings', {
     provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key'
   })).status, 200);
+  const mediaRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'media-subscriber', password: 'media123' })
+  });
+  assert.equal(mediaRegistration.status, 201);
+  const mediaCookie = mediaRegistration.headers.get('set-cookie').split(';', 1)[0];
+  const mediaPost = (route, value) => fetch(`${baseUrl}${route}`, {
+    method: 'POST', headers: { cookie: mediaCookie, 'content-type': 'application/json' }, body: JSON.stringify(value)
+  });
+  const subscriberImage = await mediaPost('/api/media/image', { prompt: 'Imagine disponibilă abonatului' });
+  assert.equal(subscriberImage.status, 200);
+  assert.equal(subscriberImage.headers.get('x-nova-ai-remaining'), '1');
+  const subscriberImageEdit = await mediaPost('/api/media/image/edit', { prompt: 'Schimbă fundalul', image: `data:image/png;base64,${sourcePng}` });
+  assert.equal(subscriberImageEdit.status, 200);
+  assert.equal(subscriberImageEdit.headers.get('x-nova-ai-remaining'), '0');
   const writerRegistration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl },
     body: JSON.stringify({ username: 'writer-subscriber', password: 'write123' })

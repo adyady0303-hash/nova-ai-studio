@@ -285,10 +285,6 @@ async function consumeAiQuota(req, res, units = 1) {
   const account = req.novaAccount || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   if (account.role === "owner") return true;
   try {
-    if (["/api/media/image", "/api/media/image/edit"].includes(new URL(req.url, "http://nova").pathname)) {
-      json(res, 403, { error: "Imaginile AI nu sunt incluse în planurile Gratuit și Standard. Nu au fost consumate mesaje." });
-      return false;
-    }
     const quota = await withAccountsLock(async () => {
       const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
@@ -813,7 +809,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "nova-suite-refresh-v1",
+      release: "subscriber-creative-access-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }

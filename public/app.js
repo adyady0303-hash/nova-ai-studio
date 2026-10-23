@@ -47,7 +47,8 @@ async function loadAccount() {
     : "Contul owner poate crea și modifica automat cod și scripturi în modul Construiește";
   el("providerSettingsBtn").hidden = subscriber;
   el("voiceSettingsBtn").hidden = subscriber;
-  el("editImageBtn").hidden = subscriber;
+  el("imageEditSettingsBtn").hidden = subscriber;
+  el("editImageBtn").hidden = false;
   el("adminDashboardLink").hidden = subscriber;
   el("logoutBtn").hidden = !account.authEnabled;
   updateAccountLabel();
