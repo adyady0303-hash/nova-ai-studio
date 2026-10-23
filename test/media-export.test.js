@@ -89,6 +89,19 @@ test('music cards render the full song automatically and keep manual regeneratio
   assert.match(source, /Descarcă piesa WAV/);
 });
 
+test('a plain-text music answer is repaired into a playable complete arrangement', () => {
+  const context = {}; vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('function parseCreativeSpec('), source.indexOf('function downloadBlob(')), context);
+  const answer = '**Titlu:** „Neon Circuit”\n**Tempo:** 128 BPM\nIntro: 8 măsuri\nTemă: 8 măsuri\nRefren: 16 măsuri\nFinal: 8 măsuri';
+  const repaired = context.ensureMusicSpec(answer, 'Electro house în A minor');
+  const parsed = context.parseCreativeSpec(repaired);
+  assert.equal(parsed.spec.title, 'Neon Circuit');
+  assert.equal(parsed.spec.bpm, 128);
+  assert.equal(parsed.spec.bars, 40);
+  assert.equal(parsed.spec.arrangement, true);
+  assert.equal(parsed.spec.notes.length, 48);
+});
+
 test('an upstream AI authentication failure does not log the visitor out of Nova', async () => {
   let redirects = 0, providerError = true;
   const context = { state: { account: null }, window: { location: { replace() { redirects++; } } },

@@ -311,6 +311,32 @@ function parseCreativeSpec(content) {
   }
 }
 
+function ensureMusicSpec(content, request = "") {
+  if (parseCreativeSpec(content).spec) return content;
+  const source = `${request}\n${content}`;
+  const titleMatch = content.match(/(?:\*\*)?Titlu(?:\*\*)?\s*:\s*[„“"']?([^\n”"']+)/i);
+  const title = (titleMatch?.[1] || "Piesă Nova").replace(/[*_]/g, "").trim().replace(/^[„“”"']+|[„“”"']+$/g, "").slice(0, 100);
+  const bpmMatch = source.match(/\b(5\d|6\d|7\d|8\d|9\d|1[0-7]\d|180)\s*BPM\b/i);
+  const bpm = bpmMatch ? Number(bpmMatch[1]) : /house|techno|dance|club/i.test(source) ? 128 : /trap|hip.?hop/i.test(source) ? 92 : 110;
+  const progressions = [
+    [["A2", "C3", "E3"], ["F2", "A2", "C3"], ["C3", "E3", "G3"], ["G2", "B2", "D3"]],
+    [["C3", "E3", "G3"], ["G2", "B2", "D3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"]],
+    [["D3", "F3", "A3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["C3", "E3", "G3"]]
+  ];
+  let seed = 2166136261;
+  for (const char of source) { seed ^= char.charCodeAt(0); seed = Math.imul(seed, 16777619) >>> 0; }
+  const scale = ["A3", "C4", "D4", "E4", "G4", "A4", "C5", "D5", "E5"];
+  const pattern = [0, 2, 4, 2, 5, 4, 2, 1, 0, 2, 3, 4, 7, 5, 4, 2];
+  const notes = Array.from({ length: 48 }, (_, index) => ({
+    note: scale[(pattern[index % pattern.length] + (seed % 3) + Math.floor(index / 16)) % scale.length],
+    beats: index % 8 === 7 ? 1 : index % 4 === 2 ? 0.5 : 0.75
+  }));
+  const sectionBars = [...source.matchAll(/\b([1-9]|[1-5]\d|6[0-4])\s*(?:măsuri|masuri|bars)\b/gi)].map(match => Number(match[1]));
+  const requestedBars = sectionBars.length > 1 ? sectionBars.reduce((sum, value) => sum + value, 0) : sectionBars[0] || 32;
+  const spec = { title, bpm, arrangement: true, bars: Math.min(64, Math.max(16, requestedBars)), drums: true, chords: progressions[seed % progressions.length], notes };
+  return `${content.trim()}\n\n\`\`\`nova-music\n${JSON.stringify(spec)}\n\`\`\``;
+}
+
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob), link = document.createElement("a");
   link.href = url; link.download = filename; link.click();
@@ -342,11 +368,11 @@ async function createArrangedWav(spec) {
   const master = audio.createGain(); master.gain.value = 0.8;
   master.gain.setValueAtTime(0.8, Math.max(0, duration - 2));
   master.gain.linearRampToValueAtTime(0.0001, duration); master.connect(audio.destination);
-  function tone(frequency, start, seconds, volume, type = "triangle") {
+  function tone(frequency, start, seconds, volume, type = "triangle", detune = 0) {
     const end = Math.min(duration - 0.02, start + seconds);
     if (end <= start) return;
     const oscillator = audio.createOscillator(), gain = audio.createGain();
-    oscillator.type = type; oscillator.frequency.value = frequency;
+    oscillator.type = type; oscillator.frequency.value = frequency; oscillator.detune.value = detune;
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.linearRampToValueAtTime(volume, Math.min(end, start + 0.015));
     gain.gain.exponentialRampToValueAtTime(0.0001, end);
@@ -355,13 +381,24 @@ async function createArrangedWav(spec) {
   const chords = spec.chords?.length ? spec.chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]];
   for (let bar = 0; bar < bars; bar++) {
     const chord = chords[bar % chords.length], start = bar * 4 * beat;
-    for (const note of chord) tone(noteFrequency(note), start, beat * 3.9, 0.025, "sine");
-    if (bar > 0) for (let pulse = 0; pulse < 4; pulse += 2) tone(noteFrequency(chord[0]) / 2, start + pulse * beat, beat * 1.6, 0.09, "sine");
+    const section = Math.floor(bar / Math.max(4, Math.floor(bars / 4)));
+    for (const note of chord) {
+      tone(noteFrequency(note), start, beat * 3.9, section === 2 ? 0.032 : 0.022, "sine");
+      if (bar >= 4 && bar < bars - 2) for (let pulse = 0; pulse < 4; pulse++) tone(noteFrequency(note) * 2, start + (pulse + 0.5) * beat, beat * 0.34, section === 1 ? 0.018 : 0.012, "sawtooth");
+    }
+    if (bar > 1 && bar < bars - 1) for (let pulse = 0; pulse < 4; pulse++) {
+      const bassStart = start + pulse * beat;
+      tone(noteFrequency(chord[0]), bassStart, beat * 0.72, section === 1 ? 0.12 : 0.09, "sawtooth");
+      tone(noteFrequency(chord[0]), bassStart, beat * 0.76, 0.055, "sine", -7);
+    }
   }
   let cursor = 8, index = 0;
   while (cursor < totalBeats - 4) {
     const item = spec.notes[index++ % spec.notes.length];
-    tone(noteFrequency(item.note), cursor * beat, Math.min(item.beats, totalBeats - 4 - cursor) * beat * 0.92, 0.1);
+    const melodyStart = cursor * beat, melodyLength = Math.min(item.beats, totalBeats - 4 - cursor) * beat * 0.92;
+    const chorus = cursor >= totalBeats * 0.25 && cursor < totalBeats * 0.55;
+    tone(noteFrequency(item.note), melodyStart, melodyLength, chorus ? 0.115 : 0.085, "triangle");
+    if (chorus) tone(noteFrequency(item.note), melodyStart, melodyLength, 0.035, "sawtooth", 7);
     cursor += item.beats;
   }
   if (spec.drums !== false) {
@@ -375,6 +412,12 @@ async function createArrangedWav(spec) {
         kick.frequency.setValueAtTime(130, start); kick.frequency.exponentialRampToValueAtTime(42, start + 0.12);
         gain.gain.setValueAtTime(0.12, start); gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
         kick.connect(gain).connect(master); kick.start(start); kick.stop(start + 0.2);
+      }
+      if (step % 4 === 1 || step % 4 === 3) {
+        const snare = audio.createBufferSource(), snareGain = audio.createGain(), snareFilter = audio.createBiquadFilter();
+        snare.buffer = noise; snareGain.gain.setValueAtTime(0.075, start); snareGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.1);
+        snareFilter.type = "bandpass"; snareFilter.frequency.value = 1800;
+        snare.connect(snareFilter).connect(snareGain).connect(master); snare.start(start);
       }
       const hat = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter();
       hat.buffer = noise; gain.gain.value = step % 2 ? 0.035 : 0.02; filter.type = "highpass"; filter.frequency.value = 6000;
@@ -1024,9 +1067,10 @@ async function send() {
   try {
     if (state.dirty) await saveFile(false);
     const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages: state.chat.map(({ role, content }) => ({ role, content })) }));
-    state.chat.push({ role: "assistant", content: result.content });
+    const assistantContent = task === "music" ? ensureMusicSpec(result.content, promptText) : result.content;
+    state.chat.push({ role: "assistant", content: assistantContent });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
-    addBubble("assistant", result.content, result.events);
+    addBubble("assistant", assistantContent, result.events);
     const wroteFiles = result.events.some(event => event.ok && event.tool === "write_file");
     if (wroteFiles) {
       await refreshFiles(false);
