@@ -37,6 +37,8 @@ const ACCOUNTS_FILE = path.join(DATA_DIR, "data", "subscriber-accounts.json");
 const MAX_ACCOUNTS = Math.max(1, Math.min(10000, Number.parseInt(process.env.NOVA_MAX_ACCOUNTS || "100", 10) || 100));
 const SUBSCRIBER_DAILY_AI_LIMIT = Math.max(1, Math.min(5, Number.parseInt(process.env.NOVA_SUBSCRIBER_DAILY_AI_LIMIT || "5", 10) || 5));
 const MAX_BODY = 1024 * 1024;
+const MAX_IMAGE_EDIT_BODY = 12 * 1024 * 1024;
+const MAX_IMAGE_UPLOAD = 8 * 1024 * 1024;
 const MAX_FILE = 512 * 1024;
 
 if (!new Set(["127.0.0.1", "localhost", "::1"]).has(HOST) && (!ACCESS_USER || ACCESS_PASSWORD.length < 20 || /^(replace-|change-me|changeme)/i.test(ACCESS_PASSWORD))) {
@@ -280,7 +282,7 @@ async function consumeAiQuota(req, res, units = 1) {
   const account = req.novaAccount || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   if (account.role === "owner") return true;
   try {
-    if (new URL(req.url, "http://nova").pathname === "/api/media/image") {
+    if (["/api/media/image", "/api/media/image/edit"].includes(new URL(req.url, "http://nova").pathname)) {
       json(res, 403, { error: "Imaginile AI nu sunt incluse în planurile Gratuit și Standard. Nu au fost consumate mesaje." });
       return false;
     }
@@ -331,14 +333,14 @@ function json(res, status, value) {
   res.end(JSON.stringify(value));
 }
 
-function readBody(req) {
+function readBody(req, maximum = MAX_BODY) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     let settled = false;
     req.on("data", chunk => {
       size += chunk.length;
-      if (size > MAX_BODY) {
+      if (size > maximum) {
         settled = true;
         reject(Object.assign(new Error("Cererea este prea mare."), { status: 413 }));
         req.destroy();
@@ -354,8 +356,8 @@ function readBody(req) {
   });
 }
 
-async function readJson(req) {
-  const raw = await readBody(req);
+async function readJson(req, maximum = MAX_BODY) {
+  const raw = await readBody(req, maximum);
   try { return JSON.parse(raw.toString("utf8") || "{}"); }
   catch { throw Object.assign(new Error("Corpul cererii nu este JSON valid."), { status: 400 }); }
 }
@@ -515,6 +517,41 @@ async function openAiBytes(route, body, timeout = 180000) {
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length) throw new Error("Furnizorul vocal a returnat un fișier gol.");
   return { mime: mime === "application/octet-stream" ? "audio/mpeg" : mime, base64: bytes.toString("base64") };
+}
+
+function uploadedImage(value) {
+  if (typeof value !== "string" || value.length > MAX_IMAGE_EDIT_BODY) throw Object.assign(new Error("Imaginea încărcată este prea mare."), { status: 413 });
+  const match = value.match(/^data:(image\/(?:png|jpeg|webp));base64,([a-zA-Z0-9+/]+={0,2})$/);
+  if (!match) throw Object.assign(new Error("Încarcă o imagine PNG, JPG sau WebP validă."), { status: 400 });
+  const bytes = Buffer.from(match[2], "base64");
+  if (!bytes.length || bytes.length > MAX_IMAGE_UPLOAD) throw Object.assign(new Error("Imaginea poate avea cel mult 8 MiB."), { status: 413 });
+  const mime = match[1];
+  const validSignature = mime === "image/png"
+    ? bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    : mime === "image/jpeg"
+      ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : bytes.length >= 12 && bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
+  if (!validSignature) throw Object.assign(new Error("Conținutul fișierului nu corespunde formatului imaginii."), { status: 400 });
+  return { bytes, mime, extension: mime === "image/jpeg" ? "jpg" : mime.slice(6) };
+}
+
+async function openAiImageEdit(image, prompt) {
+  if (!aiProvider.apiKey) throw new Error("Adaugă cheia API în Configurare AI înainte să modifici imagini.");
+  const body = new FormData();
+  body.set("model", aiProvider.imageModel);
+  body.set("prompt", prompt);
+  body.set("image", new Blob([image.bytes], { type: image.mime }), `nova-input.${image.extension}`);
+  body.set("size", "1024x1024");
+  body.set("n", "1");
+  const response = await fetch(configuredAiUrl("/images/edits"), {
+    method: "POST",
+    headers: { authorization: `Bearer ${aiProvider.apiKey}` },
+    body,
+    signal: AbortSignal.timeout(300000)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`), { status: response.status });
+  return data;
 }
 
 async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false) {
@@ -859,6 +896,22 @@ async function handle(req, res) {
       const format = image.output_format || "png";
       return json(res, 200, { dataUrl: image.b64_json ? `data:image/${format};base64,${image.b64_json}` : image.url, format, model: aiProvider.imageModel });
     } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea imaginii a eșuat.", providerError: true }); }
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/media/image/edit") {
+    try {
+      if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru modificarea imaginilor.");
+      const body = await readJson(req, MAX_IMAGE_EDIT_BODY);
+      const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
+      if (!prompt) return json(res, 400, { error: "Descrie schimbarea pe care o dorești în fotografie." });
+      const source = uploadedImage(body.image);
+      if (!await consumeAiQuota(req, res)) return;
+      const result = await openAiImageEdit(source, prompt);
+      const image = result.data?.[0];
+      if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat imaginea modificată.");
+      const format = image.output_format || "png";
+      return json(res, 200, { dataUrl: image.b64_json ? `data:image/${format};base64,${image.b64_json}` : image.url, format, model: aiProvider.imageModel, edited: true });
+    } catch (error) { return json(res, error.status || 502, { error: error.message || "Modificarea imaginii a eșuat.", providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/speech") {

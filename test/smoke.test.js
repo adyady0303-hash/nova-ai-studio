@@ -22,6 +22,9 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="voiceDialog"/);
   assert.match(html, /id="generateVoiceBtn"/);
   assert.match(html, /id="voiceComposerBtn"/);
+  assert.match(html, /id="editImageBtn"/);
+  assert.match(html, /id="imageEditDialog"/);
+  assert.match(html, /id="imageEditFile"/);
   assert.match(html, /id="adminDashboardLink"/);
   assert.match(html, /id="projectDrawer"/);
 });
@@ -51,6 +54,8 @@ test('Orbit dashboard routes creation tools to implemented actions', () => {
   assert.match(app, /function submitHomePrompt\(\)/);
   assert.match(app, /api\("\/api\/agent"/);
   assert.match(app, /generateImageFromPrompt\(\)/);
+  assert.match(app, /generateImageEdit\(\)/);
+  assert.match(app, /\/api\/media\/image\/edit/);
   assert.match(app, /function openVoiceDialog\(\)/);
   assert.match(css, /\.chat\.home-active/);
   assert.match(css, /\.card-code\s*\{/);
@@ -135,6 +140,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let mockSpeechBody = null;
   let mockSpeechMode = 'audio';
   let mockImageBody = null;
+  let mockImageEditBody = Buffer.alloc(0);
   const providerServer = http.createServer((req, res) => {
     if (req.headers.authorization !== expectedAuthorization) {
       res.writeHead(401, { 'content-type': 'application/json' });
@@ -209,6 +215,17 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         mockImageBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' }] }));
+      });
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/v1/images/edits') {
+      const chunks = [];
+      req.on('data', chunk => chunks.push(chunk));
+      req.on('end', () => {
+        mockImageEditBody = Buffer.concat(chunks);
+        assert.match(req.headers['content-type'], /^multipart\/form-data; boundary=/);
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' }] }));
       });
@@ -417,6 +434,18 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(mockImageBody.prompt, 'Imagine de probă Nova');
   assert.equal(mockImageBody.model, 'gpt-image-1-mini');
   assert.equal(mockImageBody.size, '1024x1024');
+  const sourcePng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
+  const editedImage = await post('/api/media/image/edit', { prompt: 'Schimbă fundalul în albastru', image: `data:image/png;base64,${sourcePng}` });
+  assert.equal(editedImage.status, 200);
+  const editedImageResult = await editedImage.json();
+  assert.match(editedImageResult.dataUrl, /^data:image\/png;base64,iVBOR/);
+  assert.equal(editedImageResult.edited, true);
+  const imageEditForm = mockImageEditBody.toString('latin1');
+  for (const value of ['name="model"', 'gpt-image-1-mini', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024']) assert.match(imageEditForm, new RegExp(value));
+  assert.ok(mockImageEditBody.includes(Buffer.from('Schimbă fundalul în albastru')));
+  assert.equal((await post('/api/media/image/edit', { prompt: '', image: `data:image/png;base64,${sourcePng}` })).status, 400);
+  assert.equal((await post('/api/media/image/edit', { prompt: 'Test', image: 'data:text/plain;base64,dGVzdA==' })).status, 400);
+  assert.equal((await post('/api/media/image/edit', { prompt: 'Test', image: 'data:image/png;base64,dGVzdA==' })).status, 400);
   const legacyVoiceSettings = await post('/api/settings', {
     provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, speechModel: 'tts-1'
   });
@@ -613,6 +642,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(adminPage.status, 302);
   const deniedSettings = await subscriberPost('/api/settings', { provider: 'openai' });
   assert.equal(deniedSettings.status, 403);
+  assert.equal((await subscriberPost('/api/media/image/edit', { prompt: 'Schimbă fundalul', image: `data:image/png;base64,${sourcePng}` })).status, 403);
 
   const privateProjectResponse = await subscriberPost('/api/projects', { name: 'Spațiu Privat' });
   assert.equal(privateProjectResponse.status, 201);

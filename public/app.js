@@ -47,6 +47,7 @@ async function loadAccount() {
     : "Contul owner poate crea și modifica automat cod și scripturi în modul Construiește";
   el("providerSettingsBtn").hidden = subscriber;
   el("voiceSettingsBtn").hidden = subscriber;
+  el("editImageBtn").hidden = subscriber;
   el("adminDashboardLink").hidden = subscriber;
   el("logoutBtn").hidden = !account.authEnabled;
   updateAccountLabel();
@@ -592,7 +593,7 @@ function addSpeechButton(node, text, label = "Ascultă cu voce AI") {
 
 function addImageCard(prompt, result) {
   const node = document.createElement("div"); node.className = "message assistant";
-  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = `Imagine AI · ${result.model}`;
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = `${result.edited ? "Imagine modificată" : "Imagine AI"} · ${result.model}`;
   const caption = document.createElement("div"); caption.textContent = prompt;
   const img = document.createElement("img"); img.className = "creative-image"; img.alt = prompt; img.src = result.dataUrl;
   const link = document.createElement("a"); link.className = "btn small"; link.textContent = `Descarcă ${(result.format || "png").toUpperCase()}`; link.href = result.dataUrl; link.download = safeMediaName(prompt.slice(0, 48), result.format || "png");
@@ -610,6 +611,61 @@ async function generateImageFromPrompt() {
   try { const result = await api("/api/media/image", jsonBody({ prompt })); addImageCard(prompt, result); }
   catch (error) { if (!el("prompt").value.trim()) { el("prompt").value = prompt; resizePrompt(); } addBubble("assistant", error.message); }
   finally { pending.remove(); button.disabled = false; }
+}
+
+let imageEditPreviewUrl = "";
+
+function selectedImageEditFile() {
+  const file = el("imageEditFile").files?.[0];
+  if (!file) throw new Error("Alege fotografia pe care vrei să o modifici.");
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) throw new Error("Fotografia trebuie să fie PNG, JPG sau WebP.");
+  if (!file.size || file.size > 8 * 1024 * 1024) throw new Error("Fotografia poate avea cel mult 8 MiB.");
+  return file;
+}
+
+function showImageEditPreview() {
+  const preview = el("imageEditPreview"), status = el("imageEditStatus");
+  try {
+    const file = selectedImageEditFile();
+    if (imageEditPreviewUrl) URL.revokeObjectURL(imageEditPreviewUrl);
+    imageEditPreviewUrl = URL.createObjectURL(file); preview.src = imageEditPreviewUrl; preview.hidden = false;
+    status.hidden = true; status.textContent = "";
+  } catch (error) {
+    preview.hidden = true; preview.removeAttribute("src");
+    status.hidden = false; status.classList.add("error"); status.textContent = error.message;
+  }
+}
+
+function fileDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Fotografia nu a putut fi citită."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function openImageEditDialog() {
+  const draft = el("prompt").value.trim();
+  if (draft && !el("imageEditPrompt").value.trim()) el("imageEditPrompt").value = draft;
+  el("imageEditStatus").hidden = true;
+  el("imageEditDialog").showModal();
+}
+
+async function generateImageEdit() {
+  const status = el("imageEditStatus"), button = el("generateImageEditBtn");
+  try {
+    const file = selectedImageEditFile(), prompt = el("imageEditPrompt").value.trim();
+    if (!prompt) { el("imageEditPrompt").focus(); throw new Error("Descrie schimbarea pe care o dorești în fotografie."); }
+    button.disabled = true; status.hidden = false; status.classList.remove("error"); status.textContent = "Se încarcă fotografia și se generează modificarea…";
+    const result = await api("/api/media/image/edit", jsonBody({ prompt, image: await fileDataUrl(file) }));
+    setView("chat"); addBubble("user", `Modifică fotografia: ${prompt}`); addImageCard(prompt, result);
+    el("imageEditDialog").close(); el("imageEditFile").value = ""; el("imageEditPrompt").value = "";
+    el("imageEditPreview").hidden = true; el("imageEditPreview").removeAttribute("src");
+    if (imageEditPreviewUrl) URL.revokeObjectURL(imageEditPreviewUrl); imageEditPreviewUrl = "";
+  } catch (error) {
+    status.hidden = false; status.classList.add("error"); status.textContent = error.message || "Modificarea imaginii a eșuat.";
+  } finally { button.disabled = false; }
 }
 
 function addCreativeCard(node, spec) {
@@ -926,6 +982,14 @@ el("editor").addEventListener("scroll", () => { el("gutter").scrollTop = el("edi
 el("saveBtn").addEventListener("click", () => saveFile(true).catch(error => toast(error.message)));
 el("sendBtn").addEventListener("click", send);
 el("generateImageBtn").addEventListener("click", generateImageFromPrompt);
+el("editImageBtn").addEventListener("click", openImageEditDialog);
+el("imageEditFile").addEventListener("change", showImageEditPreview);
+el("generateImageEditBtn").addEventListener("click", generateImageEdit);
+el("imageEditSettingsBtn").addEventListener("click", () => { el("imageEditDialog").close(); el("providerSettingsBtn").click(); });
+el("imageEditDialog").addEventListener("close", () => {
+  if (imageEditPreviewUrl) URL.revokeObjectURL(imageEditPreviewUrl);
+  imageEditPreviewUrl = ""; el("imageEditPreview").hidden = true; el("imageEditPreview").removeAttribute("src"); el("imageEditFile").value = "";
+});
 el("voiceComposerBtn").addEventListener("click", openVoiceDialog);
 el("generateVoiceBtn").addEventListener("click", generateVoiceFromDialog);
 el("voiceText").addEventListener("input", updateVoiceCost);

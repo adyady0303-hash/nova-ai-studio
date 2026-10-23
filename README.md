@@ -6,7 +6,7 @@ Nova AI Studio pune chatul, programarea pentru PC, versurile, schițele muzicale
 
 - **Chat și cod:** folosește Ollama local sau un model OpenAI / compatibil. Agentul are unelte limitate la fișierele proiectului.
 - **Versuri și compoziție:** scrie versuri și schițe muzicale originale. Exportul WAV folosește un sintetizator simplu de note; nu cântă versurile.
-- **Imagini:** modelul de imagini configurat poate genera ilustrații PNG.
+- **Imagini:** modelul de imagini configurat poate genera ilustrații PNG și poate modifica fotografii PNG/JPG/WebP încărcate de administrator, fără a suprascrie originalul.
 - **Voice-over:** modelul de vorbire poate genera un MP3 din text.
 - **Video:** Nova compune scene în WebM din text și, opțional, imagini AI; poate adăuga voice-over ca pistă audio. Nu generează încă filmări AI fotorealiste.
 
