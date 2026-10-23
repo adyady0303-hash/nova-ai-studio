@@ -492,7 +492,7 @@ body {background:#080b13;}
             <button class="mode-chip" data-task="video">Video</button>
             <span class="tool-divider"></span>
             <button class="btn small subtle composer-image" id="generateImageBtn" title="Creează o imagine AI pe baza descrierii">Imagine</button>
-            <button class="btn small subtle" id="editImageBtn" type="button" title="Încarcă o fotografie și modific-o folosind AI">Modifică poză</button>
+            <button class="btn small subtle" id="editImageBtn" type="button" title="Adaugă o fotografie și modific-o folosind AI" aria-label="Adaugă o fotografie pentru modificare">＋ Adaugă foto</button>
             <button class="btn small subtle" id="voiceComposerBtn" type="button" title="Creează și descarcă un voice-over MP3">Voice-over</button>
           </div>
           <label class="sr-only" for="taskSelect">Tipul cererii</label>
@@ -546,7 +546,7 @@ body {background:#080b13;}
   </dialog>
   <dialog class="provider-dialog" id="imageEditDialog" aria-labelledby="imageEditDialogTitle">
     <form method="dialog" class="provider-panel">
-      <div class="provider-head"><div><div class="eyebrow">Editor imagine AI</div><h2 id="imageEditDialogTitle">Încarcă și modifică o poză</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <div class="provider-head"><div><div class="eyebrow">Editor imagine AI</div><h2 id="imageEditDialogTitle">Adaugă și modifică o fotografie</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
       <label for="imageEditFile">Fotografie PNG, JPG sau WebP</label>
       <input id="imageEditFile" type="file" accept="image/png,image/jpeg,image/webp">
       <img class="creative-image" id="imageEditPreview" alt="Previzualizarea fotografiei încărcate" hidden>
