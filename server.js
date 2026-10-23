@@ -16,7 +16,8 @@ const DATA_DIR = process.env.NOVA_DATA_DIR || __dirname;
 const ACCESS_USER = process.env.NOVA_ACCESS_USER || "";
 const ACCESS_PASSWORD = process.env.NOVA_ACCESS_PASSWORD || "";
 const DEFAULT_TEXT_MODEL = "gpt-5.4";
-const AI_SETTINGS_SCHEMA_VERSION = 2;
+const DEFAULT_IMAGE_MODEL = "gpt-image-1";
+const AI_SETTINGS_SCHEMA_VERSION = 3;
 const configuredAiProvider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
 const aiProvider = {
   provider: configuredAiProvider === "ollama"
@@ -27,7 +28,7 @@ const aiProvider = {
   baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
   apiKey: process.env.OPENAI_API_KEY || "",
   textModel: process.env.OPENAI_MODEL || DEFAULT_TEXT_MODEL,
-  imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
+  imageModel: process.env.OPENAI_IMAGE_MODEL || DEFAULT_IMAGE_MODEL,
   speechModel: process.env.OPENAI_SPEECH_MODEL || "gpt-4o-mini-tts",
   voice: "nova"
 };
@@ -444,14 +445,18 @@ function applyStoredAiSettings(value) {
       decipher.final()
     ]).toString("utf8");
     const storedTextModel = String(value.textModel || aiProvider.textModel);
-    const textModel = Number(value.schemaVersion || 1) < AI_SETTINGS_SCHEMA_VERSION && storedTextModel === "gpt-4.1-mini"
+    const textModel = Number(value.schemaVersion || 1) < 2 && storedTextModel === "gpt-4.1-mini"
       ? DEFAULT_TEXT_MODEL
       : storedTextModel;
+    const storedImageModel = String(value.imageModel || aiProvider.imageModel);
+    const imageModel = Number(value.schemaVersion || 1) < AI_SETTINGS_SCHEMA_VERSION && storedImageModel === "gpt-image-1-mini"
+      ? DEFAULT_IMAGE_MODEL
+      : storedImageModel;
     Object.assign(aiProvider, {
       provider: value.provider,
       baseUrl: String(value.baseUrl || aiProvider.baseUrl),
       textModel,
-      imageModel: String(value.imageModel || aiProvider.imageModel),
+      imageModel,
       speechModel: String(value.speechModel || aiProvider.speechModel),
       voice: String(value.voice || aiProvider.voice),
       apiKey: apiKey || aiProvider.apiKey
@@ -568,6 +573,7 @@ async function openAiImageEdit(image, prompt) {
   body.set("prompt", prompt);
   body.set("image", new Blob([image.bytes], { type: image.mime }), `nova-input.${image.extension}`);
   body.set("size", "1024x1024");
+  body.set("quality", "high");
   body.set("n", "1");
   const response = await fetch(configuredAiUrl("/images/edits"), {
     method: "POST",
@@ -807,7 +813,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "simple-signup-google-v1",
+      release: "nova-suite-refresh-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -822,7 +828,8 @@ async function handle(req, res) {
     return json(res, 200, result);
   }
   if (["GET", "HEAD"].includes(req.method) && ["/preview-orbit", "/preview-orbit.html"].includes(url.pathname)) {
-    const page = await fs.promises.readFile(path.join(PUBLIC_DIR, "preview-orbit.html"));
+    const page = (await fs.promises.readFile(path.join(PUBLIC_DIR, "preview-orbit.html"), "utf8"))
+      .replaceAll("__NOVA_VERSION__", require("./package.json").version);
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-robots-tag": "noindex, nofollow", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'" });
     return res.end(req.method === "HEAD" ? undefined : page);
   }
@@ -905,7 +912,7 @@ async function handle(req, res) {
       }
       nextProvider.baseUrl = endpoint.toString().replace(/\/+$/, "");
       nextProvider.textModel = String(body.textModel || DEFAULT_TEXT_MODEL).trim().slice(0, 120);
-      nextProvider.imageModel = String(body.imageModel || "gpt-image-1-mini").trim().slice(0, 120);
+      nextProvider.imageModel = String(body.imageModel || DEFAULT_IMAGE_MODEL).trim().slice(0, 120);
       nextProvider.speechModel = String(body.speechModel || "gpt-4o-mini-tts").trim().slice(0, 120);
       nextProvider.voice = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"].includes(body.voice) ? body.voice : "nova";
       if (!nextProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
@@ -925,7 +932,7 @@ async function handle(req, res) {
       if (!await consumeAiQuota(req, res)) return;
       const result = await openAiJson("/images/generations", {
         method: "POST",
-        body: JSON.stringify({ model: aiProvider.imageModel, prompt, size: "1024x1024", n: 1 })
+        body: JSON.stringify({ model: aiProvider.imageModel, prompt, size: "1024x1024", quality: "high", n: 1 })
       }, 300000);
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");

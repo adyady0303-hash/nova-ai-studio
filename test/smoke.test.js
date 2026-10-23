@@ -284,7 +284,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'simple-signup-google-v1');
+  assert.equal(versionData.release, 'nova-suite-refresh-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -300,6 +300,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const previewHtml = await preview.text();
   assert.match(previewHtml, /ORBIT \/ PREVIZUALIZARE/);
   assert.match(previewHtml, /Fără apeluri AI/);
+  assert.match(previewHtml, new RegExp(`name="nova-version" content="${require('../package.json').version}"`));
+  assert.doesNotMatch(previewHtml, /__NOVA_VERSION__/);
   assert.doesNotMatch(previewHtml, /fetch\(|src="\/app\.js/);
   const previewHead = await fetch(`${baseUrl}/preview-orbit`, { method: 'HEAD' });
   assert.equal(previewHead.status, 200);
@@ -445,8 +447,9 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(image.status, 200);
   assert.match((await image.json()).dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(mockImageBody.prompt, 'Imagine de probă Nova');
-  assert.equal(mockImageBody.model, 'gpt-image-1-mini');
+  assert.equal(mockImageBody.model, 'gpt-image-1');
   assert.equal(mockImageBody.size, '1024x1024');
+  assert.equal(mockImageBody.quality, 'high');
   const sourcePng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
   const editedImage = await post('/api/media/image/edit', { prompt: 'Schimbă fundalul în albastru', image: `data:image/png;base64,${sourcePng}` });
   assert.equal(editedImage.status, 200);
@@ -454,7 +457,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(editedImageResult.dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(editedImageResult.edited, true);
   const imageEditForm = mockImageEditBody.toString('latin1');
-  for (const value of ['name="model"', 'gpt-image-1-mini', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024']) assert.match(imageEditForm, new RegExp(value));
+  for (const value of ['name="model"', 'gpt-image-1', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024', 'name="quality"', 'high']) assert.match(imageEditForm, new RegExp(value));
   assert.ok(mockImageEditBody.includes(Buffer.from('Schimbă fundalul în albastru')));
   assert.equal((await post('/api/media/image/edit', { prompt: '', image: `data:image/png;base64,${sourcePng}` })).status, 400);
   assert.equal((await post('/api/media/image/edit', { prompt: 'Test', image: 'data:text/plain;base64,dGVzdA==' })).status, 400);

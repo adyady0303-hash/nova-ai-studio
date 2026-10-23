@@ -31,7 +31,7 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5.4
       - key: OPENAI_IMAGE_MODEL
-        value: gpt-image-1-mini
+        value: gpt-image-1
       - key: OPENAI_SPEECH_MODEL
         value: gpt-4o-mini-tts
       - key: NOVA_MAX_ACCOUNTS
