@@ -29,6 +29,8 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="imageEditFile"/);
   assert.match(html, /id="adminDashboardLink"/);
   assert.match(html, /id="projectDrawer"/);
+  assert.match(html, /id="publishProjectBtn"/);
+  assert.match(html, /id="publishedSiteLink"/);
   assert.match(app, /editImageBtn"\)\.hidden = false/);
   assert.match(app, /imageEditSettingsBtn"\)\.hidden = subscriber/);
 });
@@ -287,7 +289,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'subscriber-creative-access-v1');
+  assert.equal(versionData.release, 'business-site-publisher-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -559,6 +561,35 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const read = await request(`/api/file?project=${project.id}&path=src%2Fgenerated.js`);
   assert.equal((await read.json()).content, 'export const answer = 42;\n');
 
+  assert.deepEqual(await (await request(`/api/project/publication?project=${project.id}`)).json(), { published: false });
+  const missingHomePage = await post('/api/project/publish', { project: project.id });
+  assert.equal(missingHomePage.status, 400);
+  assert.match((await missingHomePage.json()).error, /index\.html/);
+  for (const [filePath, content] of [
+    ['index.html', '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Afacere publicată</h1></body></html>'],
+    ['styles.css', 'body { color: navy; }']
+  ]) {
+    assert.equal((await request('/api/file', {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: project.id, path: filePath, content })
+    })).status, 200);
+  }
+  const published = await post('/api/project/publish', { project: project.id });
+  assert.equal(published.status, 200);
+  const publication = await published.json();
+  assert.match(publication.url, /^\/p\/[a-f0-9]{24}\/$/);
+  const publicPage = await fetch(`${baseUrl}${publication.url}`);
+  assert.equal(publicPage.status, 200);
+  assert.match(await publicPage.text(), /Afacere publicată/);
+  assert.match(publicPage.headers.get('content-security-policy'), /sandbox allow-scripts allow-forms/);
+  assert.doesNotMatch(publicPage.headers.get('content-security-policy'), /allow-same-origin/);
+  assert.equal((await fetch(`${baseUrl}${publication.url}styles.css`)).status, 200);
+  assert.equal((await fetch(`${baseUrl}${publication.url}%2e%2e%2fserver.js`)).status, 403);
+  assert.equal((await post('/api/project/unpublish', { project: project.id })).status, 200);
+  assert.equal((await fetch(`${baseUrl}${publication.url}`)).status, 404);
+  const republished = await (await post('/api/project/publish', { project: project.id })).json();
+  assert.match(republished.url, /^\/p\/[a-f0-9]{24}\/$/);
+
   const traversal = await request('/api/file', {
     method: 'PUT', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ project: project.id, path: '../outside.txt', content: 'blocked' })
@@ -583,6 +614,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal((await renamed.json()).name, 'Proiect Redenumit');
   const trashed = await post('/api/project/delete', { project: project.id });
   assert.equal(trashed.status, 200);
+  assert.equal((await fetch(`${baseUrl}${republished.url}`)).status, 404);
   assert.ok((await (await request('/api/projects/trash')).json()).projects.some(item => item.id === project.id));
   const restored = await post('/api/project/restore', { project: project.id });
   assert.equal(restored.status, 200);
@@ -732,6 +764,14 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const writerProjectResponse = await writerPost('/api/projects', { name: 'Reguli Abonat' });
   assert.equal(writerProjectResponse.status, 201);
   const writerProject = (await writerProjectResponse.json()).project;
+  assert.equal((await writerRequest('/api/file', {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ project: writerProject.id, path: 'index.html', content: '<!doctype html><title>Site abonat</title><h1>Online</h1>' })
+  })).status, 200);
+  const subscriberPublication = await writerPost('/api/project/publish', { project: writerProject.id });
+  assert.equal(subscriberPublication.status, 200);
+  const subscriberPublicUrl = (await subscriberPublication.json()).url;
+  assert.match(await (await fetch(`${baseUrl}${subscriberPublicUrl}`)).text(), /Site abonat/);
   const blockedSubscriberWrite = await writerPost('/api/agent', {
     project: writerProject.id, model: 'gpt-4.1-mini', mode: 'build', allowChanges: false,
     messages: [{ role: 'user', content: 'SUBSCRIBER_SCRIPT_WRITE' }]

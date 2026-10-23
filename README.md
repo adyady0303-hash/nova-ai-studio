@@ -139,6 +139,8 @@ Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul a
 
 Începând cu 1.5.1, abonații au acces și la generarea și editarea imaginilor, în limita cotei planului. Configurarea furnizorului AI, cheile API, verificările administrative și tabloul de administrare rămân disponibile exclusiv ownerului.
 
+În modul Afaceri online, Nova poate crea un MVP static complet (`index.html`, `styles.css`, `app.js`) și îl poate publica pe un URL public izolat sub `/p/.../`. Publicarea statică nu activează automat plăți, email tranzacțional, baze de date, conturi comerciale sau un domeniu propriu; acestea necesită servicii și credențiale externe.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

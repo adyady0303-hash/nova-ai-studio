@@ -37,6 +37,7 @@ const PROJECTS_DIR = path.join(DATA_DIR, "projects");
 const BACKUPS_DIR = path.join(DATA_DIR, "data", "backups");
 const PROJECT_TRASH_DIR = path.join(DATA_DIR, "data", "project-trash");
 const ACCOUNTS_FILE = path.join(DATA_DIR, "data", "subscriber-accounts.json");
+const PUBLICATIONS_FILE = path.join(DATA_DIR, "data", "published-sites.json");
 const MAX_ACCOUNTS = Math.max(1, Math.min(10000, Number.parseInt(process.env.NOVA_MAX_ACCOUNTS || "100", 10) || 100));
 const SUBSCRIBER_DAILY_AI_LIMIT = Math.max(1, Math.min(5, Number.parseInt(process.env.NOVA_SUBSCRIBER_DAILY_AI_LIMIT || "5", 10) || 5));
 const MAX_BODY = 1024 * 1024;
@@ -52,6 +53,7 @@ const AUTH_COOKIE = "nova_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const sessions = new Map();
 let accountQueue = Promise.resolve();
+let publicationQueue = Promise.resolve();
 let aiSettingsCacheExpiresAt = 0;
 const googleAuth = createGoogleAuth({
   clientId: process.env.GOOGLE_CLIENT_ID || "",
@@ -320,6 +322,11 @@ const MIME = {
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".txt": "text/plain; charset=utf-8",
   ".ico": "image/x-icon"
 };
 
@@ -654,6 +661,100 @@ async function pathExists(filePath) {
   catch (error) { if (error.code === "ENOENT") return false; throw error; }
 }
 
+async function readPublications() {
+  try {
+    const value = JSON.parse(await dataFs.promises.readFile(PUBLICATIONS_FILE, "utf8"));
+    return value?.version === 1 && value.sites && typeof value.sites === "object" ? value : { version: 1, sites: {} };
+  } catch (error) {
+    if (error.code === "ENOENT") return { version: 1, sites: {} };
+    throw error;
+  }
+}
+
+async function withPublicationLock(operation) {
+  const previous = publicationQueue;
+  let release;
+  publicationQueue = new Promise(resolve => { release = resolve; });
+  await previous;
+  try { return await dataStore.withLock(operation); }
+  finally { release(); }
+}
+
+async function writePublications(value) {
+  await dataFs.promises.mkdir(path.dirname(PUBLICATIONS_FILE), { recursive: true });
+  await dataFs.promises.writeFile(PUBLICATIONS_FILE, JSON.stringify(value), { encoding: "utf8", mode: 0o600 });
+}
+
+async function publicationFor(principal, project) {
+  const publications = await readPublications();
+  const pair = Object.entries(publications.sites).find(([, site]) => site.principal === principal && site.project === project);
+  return pair ? { id: pair[0], ...pair[1] } : null;
+}
+
+async function publishProject(principal, project) {
+  try { await readProjectFile(project, "index.html", principal); }
+  catch (error) {
+    if (error.code === "ENOENT" || error.status === 404) throw Object.assign(new Error("Proiectul trebuie să conțină index.html înainte de publicare."), { status: 400 });
+    throw error;
+  }
+  return withPublicationLock(async () => {
+    const publications = await readPublications();
+    const existing = Object.entries(publications.sites).find(([, site]) => site.principal === principal && site.project === project);
+    const id = existing?.[0] || crypto.randomBytes(12).toString("hex");
+    const now = new Date().toISOString();
+    publications.sites[id] = { principal, project, createdAt: existing?.[1].createdAt || now, updatedAt: now };
+    await writePublications(publications);
+    return { id, url: `/p/${id}/`, published: true, updatedAt: now };
+  });
+}
+
+async function unpublishProject(principal, project) {
+  return withPublicationLock(async () => {
+    const publications = await readPublications();
+    const existing = Object.entries(publications.sites).find(([, site]) => site.principal === principal && site.project === project);
+    if (existing) {
+      delete publications.sites[existing[0]];
+      await writePublications(publications);
+    }
+    return { published: false };
+  });
+}
+
+async function servePublishedSite(req, res, id, requestedPath) {
+  const publications = await readPublications();
+  const site = publications.sites[id];
+  if (!site || !(site.principal === "owner" || /^[a-f0-9]{32}$/.test(site.principal)) || !validProjectId(site.project)) {
+    return json(res, 404, { error: "Site-ul publicat nu există." });
+  }
+  let relative;
+  try { relative = decodeURIComponent(requestedPath || "index.html").replace(/\\/g, "/"); }
+  catch { return json(res, 400, { error: "Calea publică nu este validă." }); }
+  if (!relative || relative.endsWith("/")) relative += "index.html";
+  const parts = relative.split("/");
+  if (parts.some(part => !part || part === "." || part === ".." || part.startsWith(".") || part === "node_modules")) {
+    return json(res, 403, { error: "Fișierul public solicitat nu este permis." });
+  }
+  const root = projectRoot(site.project, site.principal);
+  const filePath = path.resolve(root, ...parts);
+  if (!filePath.startsWith(`${root}${path.sep}`)) return json(res, 403, { error: "Calea publică nu este permisă." });
+  let stat;
+  try { stat = await dataFs.promises.lstat(filePath); }
+  catch (error) { if (error.code === "ENOENT") return json(res, 404, { error: "Pagina publicată nu a fost găsită." }); throw error; }
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024) return json(res, 404, { error: "Fișierul publicat nu este disponibil." });
+  const extension = path.extname(filePath).toLowerCase();
+  if (!MIME[extension]) return json(res, 415, { error: "Formatul fișierului publicat nu este acceptat." });
+  const headers = {
+    "content-type": MIME[extension],
+    "cache-control": "no-cache",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "content-security-policy": "sandbox allow-scripts allow-forms allow-popups; default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src https:; form-action https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+  };
+  res.writeHead(200, headers);
+  if (req.method === "HEAD") return res.end();
+  return res.end(await dataFs.promises.readFile(filePath));
+}
+
 async function listProjectFiles(root) {
   let rootStat;
   try { rootStat = await dataFs.promises.lstat(root); }
@@ -809,7 +910,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "subscriber-creative-access-v1",
+      release: "business-site-publisher-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -818,6 +919,9 @@ async function handle(req, res) {
     try { await dataStore.healthCheck(); return json(res, 200, { ok: true }); }
     catch { return json(res, 503, { ok: false, error: "Storage unavailable" }); }
   }
+
+  const publishedSite = ["GET", "HEAD"].includes(req.method) && url.pathname.match(/^\/p\/([a-f0-9]{24})(?:\/(.*))?$/);
+  if (publishedSite) return servePublishedSite(req, res, publishedSite[1], publishedSite[2] || "index.html");
 
   if (req.method === "POST" && url.pathname === "/api/billing/webhook") {
     const result = await billing.webhook(await readBody(req), req.headers["stripe-signature"]);
@@ -1064,6 +1168,7 @@ async function handle(req, res) {
     await dataFs.promises.mkdir(paths.trash, { recursive: true });
     const trashed = path.join(paths.trash, `${body.project}.${Date.now()}-${Math.random().toString(36).slice(2, 6)}.deleted`);
     await dataFs.promises.rename(root, trashed);
+    await unpublishProject(principal, body.project);
     return json(res, 200, { id: body.project, deleted: true });
   }
 
@@ -1113,6 +1218,27 @@ async function handle(req, res) {
     let name = project;
     try { name = JSON.parse(await dataFs.promises.readFile(path.join(root, ".nova-project.json"), "utf8")).name || name; } catch {}
     return json(res, 200, { format: "nova-project", version: 1, name, files: contents });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/project/publication") {
+    const project = url.searchParams.get("project");
+    projectRoot(project, principal);
+    const publication = await publicationFor(principal, project);
+    return json(res, 200, publication ? { published: true, id: publication.id, url: `/p/${publication.id}/`, updatedAt: publication.updatedAt } : { published: false });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/project/publish") {
+    const body = await readJson(req);
+    if (!validProjectId(body.project)) return json(res, 400, { error: "Alege un proiect valid pentru publicare." });
+    const publication = await publishProject(principal, body.project);
+    return json(res, 200, publication);
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/project/unpublish") {
+    const body = await readJson(req);
+    if (!validProjectId(body.project)) return json(res, 400, { error: "Alege un proiect valid." });
+    projectRoot(body.project, principal);
+    return json(res, 200, await unpublishProject(principal, body.project));
   }
 
   if (req.method === "GET" && url.pathname === "/api/files") {

@@ -1,5 +1,5 @@
 const el = id => document.getElementById(id);
-const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, view: "home" };
+const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, publication: null, view: "home" };
 let activeMessageStream = null;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 const starterProjectNames = ["Mountain Escape", "Travel App", "Neon Dreams", "Old Beat", "Band City"];
@@ -267,12 +267,16 @@ function setTask(task) {
     code: "Descrie aplicația sau unealta pe care vrei să o construiești…",
     text: "Ce text dorești? Spune publicul, scopul, tonul și lungimea…",
     lyrics: "Descrie tema, genul și emoția versurilor: strofe, refren și punte…",
-    business: "Descrie ideea de afacere online, publicul și bugetul de pornire…",
+    business: "Descrie ideea de afacere; Nova va crea site-ul funcțional și îl va publica online…",
     music: "Descrie genul, tempo-ul și starea compoziției…",
     video: "Descrie ideea, publicul și stilul videoclipului…"
   };
   el("prompt").placeholder = prompts[selected];
   el("generateImageBtn").classList.toggle("active", selected === "image");
+  if (selected === "business") {
+    el("modeSelect").value = "build";
+    el("allowChanges").checked = true;
+  }
 }
 
 function resizePrompt() {
@@ -789,6 +793,7 @@ async function loadProject(id) {
   state.activePath = state.files.some(file => file.path === savedActive) ? savedActive : (state.files.find(file => /\.(js|ts|py|gpc|html|css)$/i.test(file.path))?.path || state.files[0]?.path || null);
   renderFiles(); renderHomeProjects();
   if (state.activePath) await openFile(state.activePath, true);
+  await refreshPublication();
 }
 
 async function loadProjects() {
@@ -863,6 +868,47 @@ async function exportProject() {
     link.download = `${safeName}.nova.json`; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     toast(`${data.files.length} fișiere exportate`);
   } catch (error) { toast(error.message); }
+}
+
+function showPublication(publication) {
+  state.publication = publication?.published ? publication : null;
+  const link = el("publishedSiteLink"), unpublish = el("unpublishProjectBtn"), publish = el("publishProjectBtn");
+  link.hidden = !state.publication; unpublish.hidden = !state.publication;
+  publish.textContent = state.publication ? "Actualizează online" : "Publică online";
+  if (state.publication) link.href = new URL(state.publication.url, location.origin).href;
+  else link.removeAttribute("href");
+}
+
+async function refreshPublication() {
+  if (!state.project) return showPublication(null);
+  try { showPublication(await api(`/api/project/publication?project=${encodeURIComponent(state.project)}`)); }
+  catch { showPublication(null); }
+}
+
+function addPublishedSiteCard(publication) {
+  const node = document.createElement("div"); node.className = "message assistant";
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = "Nova Business · site publicat";
+  const textNode = document.createElement("div"); textNode.textContent = "Site-ul este online. Îl poți actualiza oricând publicând din nou proiectul.";
+  const link = document.createElement("a"); link.className = "btn small"; link.target = "_blank"; link.rel = "noopener noreferrer"; link.href = new URL(publication.url, location.origin).href; link.textContent = "Deschide site-ul";
+  node.append(meta, textNode, link); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
+}
+
+async function publishProject(openAfter = true) {
+  if (!state.project) throw new Error("Alege un proiect pentru publicare.");
+  if (state.dirty) await saveFile(false);
+  const button = el("publishProjectBtn"); button.disabled = true;
+  try {
+    const publication = await api("/api/project/publish", jsonBody({ project: state.project }));
+    showPublication(publication); toast("Site publicat online");
+    if (openAfter) window.open(new URL(publication.url, location.origin).href, "_blank", "noopener,noreferrer");
+    return publication;
+  } finally { button.disabled = false; }
+}
+
+async function unpublishProject() {
+  if (!state.project || !confirm("Oprești accesul public la acest site?")) return;
+  await api("/api/project/unpublish", jsonBody({ project: state.project }));
+  showPublication(null); toast("Publicarea a fost oprită");
 }
 
 async function importFolder(files) {
@@ -951,7 +997,7 @@ async function send() {
   const allowChanges = mode === "build" && (state.account?.role === "owner" || el("allowChanges").checked);
   const currentProject = state.projects.find(project => project.id === state.project);
   const activeContent = state.activePath ? el("editor").value : "";
-  const contextualPrompt = task === "code" || workspaceWasOpen
+  const contextualPrompt = ["code", "business"].includes(task) || workspaceWasOpen
     ? `${promptText}\n\nProiect: ${currentProject?.name || state.project}\nFișier activ: ${state.activePath || "niciunul"}\nConținutul fișierului activ:\n\`\`\`${state.activePath?.split(".").pop() || "text"}\n${activeContent}\n\`\`\``
     : promptText;
   state.chat.push({ role: "user", content: contextualPrompt, displayContent: promptText });
@@ -966,10 +1012,15 @@ async function send() {
     state.chat.push({ role: "assistant", content: result.content });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
     addBubble("assistant", result.content, result.events);
-    if (result.events.some(event => event.ok && event.tool === "write_file")) {
+    const wroteFiles = result.events.some(event => event.ok && event.tool === "write_file");
+    if (wroteFiles) {
       await refreshFiles(false);
       if (state.activePath && state.files.some(file => file.path === state.activePath)) await openFile(state.activePath, true);
       toast("Agentul a salvat modificările. Folosește Undo pentru a reveni.");
+    }
+    if (task === "business" && wroteFiles) {
+      try { addPublishedSiteCard(await publishProject(false)); }
+      catch (error) { addBubble("assistant", `Site-ul a fost creat, dar publicarea nu a reușit: ${error.message}`); }
     }
   } catch (error) {
     addBubble("assistant", error.message || "Nu am putut contacta agentul.");
@@ -1104,6 +1155,8 @@ el("renameProjectBtn").addEventListener("click", renameProject);
 el("deleteProjectBtn").addEventListener("click", deleteProject);
 el("restoreProjectBtn").addEventListener("click", restoreProject);
 el("exportProjectBtn").addEventListener("click", exportProject);
+el("publishProjectBtn").addEventListener("click", () => publishProject(true).catch(error => toast(error.message)));
+el("unpublishProjectBtn").addEventListener("click", () => unpublishProject().catch(error => toast(error.message)));
 el("importProjectBtn").addEventListener("click", () => el("folderImport").click());
 el("folderImport").addEventListener("change", event => { importFolder(Array.from(event.target.files || [])).finally(() => { event.target.value = ""; }); });
 el("fileSearch").addEventListener("input", event => { state.filter = event.target.value.trim(); renderFiles(); });
