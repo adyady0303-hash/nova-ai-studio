@@ -177,6 +177,15 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
           res.end(JSON.stringify({ choices: [{ message }], model: body.model }));
           return;
         }
+        if (body.messages.some(message => message.role === 'user' && message.content === 'Test web loop')) {
+          const canSearch = body.tools?.some(tool => tool.function.name === 'read_web_page');
+          const message = canSearch
+            ? { role: 'assistant', content: null, tool_calls: Array.from({ length: 4 }, (_, index) => ({ id: `web-loop-${body.messages.length}-${index}`, type: 'function', function: { name: 'read_web_page', arguments: JSON.stringify({ url: 'https://127.0.0.1/' }) } })) }
+            : { role: 'assistant', content: 'Răspuns final după căutările disponibile.' };
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ choices: [{ message }], model: body.model }));
+          return;
+        }
         if (body.messages.some(message => message.role === 'user' && message.content === 'Test web tools')) {
           assert.ok(body.tools.some(tool => tool.function.name === 'web_search'));
           assert.ok(body.tools.some(tool => tool.function.name === 'read_web_page'));
@@ -586,8 +595,14 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(webAgent.status, 200);
   const webAgentResult = await webAgent.json();
   assert.match(webAgentResult.content, /Rezultat verificat: Eroare:.*rezervate/);
-  assert.equal(webAgentResult.events[0].tool, 'read_web_page');
-  assert.equal(webAgentResult.events[0].ok, false);
+  assert.deepEqual(webAgentResult.events, []);
+  const boundedWebAgent = await post('/api/agent', {
+    project: project.id, model: 'gpt-4.1-mini', mode: 'plan', messages: [{ role: 'user', content: 'Test web loop' }]
+  });
+  assert.equal(boundedWebAgent.status, 200);
+  const boundedWebResult = await boundedWebAgent.json();
+  assert.match(boundedWebResult.content, /Răspuns final după căutările disponibile/);
+  assert.deepEqual(boundedWebResult.events, []);
   assert.equal((await post('/api/settings', {
     provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'invalid-test-key'
   })).status, 200);

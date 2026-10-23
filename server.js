@@ -584,13 +584,13 @@ async function providerChat(model, messages, tools, maxOutputTokens = null, veri
   if (aiProvider.provider === "ollama") {
     const result = await ollamaJson("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ model, stream: false, messages, tools, options: { temperature: 0.2, ...(maxOutputTokens ? { num_predict: maxOutputTokens } : {}) } })
+      body: JSON.stringify({ model, stream: false, messages, ...(tools?.length ? { tools } : {}), options: { temperature: 0.2, ...(maxOutputTokens ? { num_predict: maxOutputTokens } : {}) } })
     });
     return { message: result.message || {}, model: result.model || model };
   }
   const result = await openAiJson("/chat/completions", {
     method: "POST",
-    body: JSON.stringify({ model, messages, tools, ...(verifyWeb ? { tool_choice: { type: "function", function: { name: "web_search" } } } : {}), ...(maxOutputTokens ? { max_completion_tokens: maxOutputTokens } : {}) })
+    body: JSON.stringify({ model, messages, ...(tools?.length ? { tools } : {}), ...(verifyWeb && tools?.some(tool => tool.function?.name === "web_search") ? { tool_choice: { type: "function", function: { name: "web_search" } } } : {}), ...(maxOutputTokens ? { max_completion_tokens: maxOutputTokens } : {}) })
   });
   return { message: result.choices?.[0]?.message || {}, model: result.model || model };
 }
@@ -735,7 +735,7 @@ async function callAgentTool(name, args, project, allowChanges, principal = "own
 
 async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false) {
   verifyWeb = verifyWeb || automaticWebSearch(inputMessages);
-  let webAttempted = false, retryWeb = false;
+  let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
   const taskPrompts = creationPrompts;
   const prompt = mode === "review" && ["auto", "code"].includes(task)
     ? "Ești Nova, agent de revizie de cod. Inspectează proiectul cu uneltele list_files și read_file. Nu modifica fișierele. Identifică probleme reale, ordonează-le după severitate și indică fișierele relevante."
@@ -750,8 +750,14 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
   const events = [];
   const sources = [];
   const maxRounds = principal === "owner" ? 8 : 4;
+  const maxWebCalls = principal === "owner" ? 6 : 4;
   for (let round = 0; round < maxRounds; round++) {
-    const response = await providerChat(model, messages, tools, principal === "owner" ? null : 1500, (verifyWeb && round === 0) || retryWeb);
+    if (webCalls >= maxWebCalls && !webLimitNotified) {
+      messages.push({ role: "system", content: "Limita de căutări a fost atinsă. Nu mai cere unelte web. Formulează acum răspunsul final folosind sursele și rezultatele deja disponibile; ignoră sursele care au eșuat." });
+      webLimitNotified = true;
+    }
+    const activeTools = webCalls >= maxWebCalls ? tools.filter(tool => !webTools.some(webTool => webTool.function.name === tool.function.name)) : tools;
+    const response = await providerChat(model, messages, activeTools, principal === "owner" ? null : 1500, (verifyWeb && round === 0) || retryWeb);
     retryWeb = false;
     const message = response.message || {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -767,27 +773,31 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     let toolCount = 0;
     for (const call of calls) {
       const name = call.function?.name;
-      if (["web_search", "read_web_page"].includes(name)) webAttempted = true;
+      const isWebTool = ["web_search", "read_web_page"].includes(name);
+      if (isWebTool) { webAttempted = true; webCalls += 1; }
       try {
       if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
+      if (isWebTool && webCalls > maxWebCalls) throw new Error("Limita de căutări web a fost atinsă; redactează răspunsul din sursele existente.");
       let args = call.function?.arguments;
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges, principal);
       if (webTools.some(tool => tool.function.name === name)) collectSources(result, sources);
-        events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : name === "web_search" ? `Căutare web: ${args.query}` : name === "read_web_page" ? `Pagină web citită: ${args.url}` : `Fișier citit: ${args.path}` });
+        if (!isWebTool) events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
         const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : principal === "owner" ? 30000 : 10000;
         messages.push(aiProvider.provider === "openai"
           ? { role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) }
           : { role: "tool", tool_name: name, content: String(result).slice(0, toolResultLimit) });
       } catch (error) {
-        events.push({ tool: name || "unknown", ok: false, summary: error.message });
+        if (!isWebTool) events.push({ tool: name || "unknown", ok: false, summary: error.message });
         messages.push(aiProvider.provider === "openai"
           ? { role: "tool", tool_call_id: call.id, content: `Eroare: ${error.message}` }
           : { role: "tool", tool_name: name || "unknown", content: `Eroare: ${error.message}` });
       }
     }
   }
-  return { content: "Am atins limita de pași a agentului. Verifică schimbările efectuate și trimite o cerere de continuare dacă mai este nevoie.", events, model };
+  messages.push({ role: "system", content: "Oprește folosirea uneltelor și oferă acum răspunsul final, clar și complet. Folosește informațiile deja obținute, citează numai sursele valide și menționează concis ce nu a putut fi verificat." });
+  const finalResponse = await providerChat(model, messages, [], principal === "owner" ? null : 1500, false);
+  return { content: answerWithSources(finalResponse.message?.content || "Nu am putut formula răspunsul final din sursele disponibile.", sources, verifyWeb), events, model: finalResponse.model || model };
 }
 
 async function handle(req, res) {
@@ -1272,10 +1282,15 @@ async function handle(req, res) {
           ];
       let result;
       let verifyWeb = body.verifyWeb === true || automaticWebSearch(messages);
-      let webAttempted = false, retryWeb = false;
+      let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
+      const maxWebCalls = account.role === "owner" ? 6 : 4;
       const sources = [];
       for (let round = 0; round < 4; round++) {
-        result = await providerChat(body.model.trim(), chatMessages, webTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
+        if (webCalls >= maxWebCalls && !webLimitNotified) {
+          chatMessages.push({ role: "system", content: "Limita de căutări a fost atinsă. Nu mai cere unelte web. Răspunde acum folosind rezultatele și sursele valide deja disponibile." });
+          webLimitNotified = true;
+        }
+        result = await providerChat(body.model.trim(), chatMessages, webCalls >= maxWebCalls ? [] : webTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
         retryWeb = false;
         const message = result.message || {};
         if (!message.tool_calls?.length && !webAttempted && !verifyWeb && round < 3 && needsWebRetry(message.content)) {
@@ -1292,6 +1307,7 @@ async function handle(req, res) {
           let content;
           try {
             if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
+            if (++webCalls > maxWebCalls) throw new Error("Limita de căutări web a fost atinsă; redactează răspunsul din sursele existente.");
             const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments;
             if (!args || typeof args !== "object") throw new Error("Argumente invalide.");
             webAttempted = true;
@@ -1303,6 +1319,10 @@ async function handle(req, res) {
             : { role: "tool", tool_name: call.function?.name, content });
         }
         result = { message: { content: "Am atins limita de căutări web. Trimite o cerere de continuare." } };
+      }
+      if (result?.message?.tool_calls?.length || result?.message?.content === "Am atins limita de căutări web. Trimite o cerere de continuare.") {
+        chatMessages.push({ role: "system", content: "Oprește căutarea și oferă acum răspunsul final, clar și complet, din informațiile deja obținute. Citează numai sursele valide." });
+        result = await providerChat(body.model.trim(), chatMessages, [], account.role === "subscriber" ? 1500 : null, false);
       }
       return json(res, 200, {
         content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, verifyWeb),
