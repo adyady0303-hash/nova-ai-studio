@@ -97,9 +97,23 @@ test('a plain-text music answer is repaired into a playable complete arrangement
   const parsed = context.parseCreativeSpec(repaired);
   assert.equal(parsed.spec.title, 'Neon Circuit');
   assert.equal(parsed.spec.bpm, 128);
+  assert.equal(parsed.spec.genre, 'electronic');
   assert.equal(parsed.spec.bars, 40);
   assert.equal(parsed.spec.arrangement, true);
   assert.equal(parsed.spec.notes.length, 48);
+});
+
+test('plain music requests select genre-specific arrangements', () => {
+  const context = {}; vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('function parseCreativeSpec('), source.indexOf('function downloadBlob(')), context);
+  for (const [request, genre, bpm] of [
+    ['baladă pop', 'pop', 110], ['rock energic', 'rock', 124], ['trap întunecat', 'trap', 92],
+    ['ambient pentru relaxare', 'ambient', 72], ['jazz swing', 'jazz', 118], ['muzică clasică', 'classical', 90],
+    ['reggae de vară', 'reggae', 82], ['salsa latino', 'latin', 104], ['techno de club', 'electronic', 128]
+  ]) {
+    const spec = context.parseCreativeSpec(context.ensureMusicSpec('Compoziție completă', request)).spec;
+    assert.equal(spec.genre, genre); assert.equal(spec.bpm, bpm);
+  }
 });
 
 test('an upstream AI authentication failure does not log the visitor out of Nova', async () => {

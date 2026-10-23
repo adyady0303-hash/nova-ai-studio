@@ -297,7 +297,7 @@ function parseCreativeSpec(content) {
       })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
       if (!notes.length) throw new Error("Nu există note valide.");
       const chords = (Array.isArray(raw.chords) ? raw.chords : []).slice(0, 8).filter(chord => Array.isArray(chord) && chord.length >= 3 && chord.length <= 4 && chord.every(note => typeof note === "string" && /^[A-G]#?[2-6]$/.test(note)));
-      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: true, bars: Math.min(64, Math.max(16, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
+      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, genre: String(raw.genre || "electronic").trim().slice(0, 60), bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: true, bars: Math.min(64, Math.max(16, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
     }
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).filter(scene => scene && typeof scene === "object").slice(0, 12).map(scene => ({
       text: String(scene.text || "").slice(0, 280),
@@ -317,7 +317,8 @@ function ensureMusicSpec(content, request = "") {
   const titleMatch = content.match(/(?:\*\*)?Titlu(?:\*\*)?\s*:\s*[„“"']?([^\n”"']+)/i);
   const title = (titleMatch?.[1] || "Piesă Nova").replace(/[*_]/g, "").trim().replace(/^[„“”"']+|[„“”"']+$/g, "").slice(0, 100);
   const bpmMatch = source.match(/\b(5\d|6\d|7\d|8\d|9\d|1[0-7]\d|180)\s*BPM\b/i);
-  const bpm = bpmMatch ? Number(bpmMatch[1]) : /house|techno|dance|club/i.test(source) ? 128 : /trap|hip.?hop/i.test(source) ? 92 : 110;
+  const genre = /ambient|relax|medita/i.test(source) ? "ambient" : /clasic|classical|orchestr/i.test(source) ? "classical" : /jazz|swing|blues/i.test(source) ? "jazz" : /reggae|dub/i.test(source) ? "reggae" : /latin|latino|salsa|reggaeton/i.test(source) ? "latin" : /rock|metal|punk/i.test(source) ? "rock" : /trap|hip.?hop|rap/i.test(source) ? "trap" : /house|techno|edm|electro|dance|club/i.test(source) ? "electronic" : "pop";
+  const bpm = bpmMatch ? Number(bpmMatch[1]) : genre === "electronic" ? 128 : genre === "trap" ? 92 : genre === "ambient" ? 72 : genre === "reggae" ? 82 : genre === "latin" ? 104 : genre === "jazz" ? 118 : genre === "rock" ? 124 : genre === "classical" ? 90 : 110;
   const progressions = [
     [["A2", "C3", "E3"], ["F2", "A2", "C3"], ["C3", "E3", "G3"], ["G2", "B2", "D3"]],
     [["C3", "E3", "G3"], ["G2", "B2", "D3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"]],
@@ -333,7 +334,7 @@ function ensureMusicSpec(content, request = "") {
   }));
   const sectionBars = [...source.matchAll(/\b([1-9]|[1-5]\d|6[0-4])\s*(?:măsuri|masuri|bars)\b/gi)].map(match => Number(match[1]));
   const requestedBars = sectionBars.length > 1 ? sectionBars.reduce((sum, value) => sum + value, 0) : sectionBars[0] || 32;
-  const spec = { title, bpm, arrangement: true, bars: Math.min(64, Math.max(16, requestedBars)), drums: true, chords: progressions[seed % progressions.length], notes };
+  const spec = { title, genre, bpm, arrangement: true, bars: Math.min(64, Math.max(16, requestedBars)), drums: genre !== "classical" && genre !== "ambient", chords: progressions[seed % progressions.length], notes };
   return `${content.trim()}\n\n\`\`\`nova-music\n${JSON.stringify(spec)}\n\`\`\``;
 }
 
@@ -365,9 +366,23 @@ async function createArrangedWav(spec) {
   if (!Offline) throw new Error("Browserul nu acceptă export audio WAV.");
   const rate = 22050, beat = 60 / spec.bpm, bars = arrangementBars(spec), totalBeats = bars * 4;
   const duration = totalBeats * beat + 0.2, audio = new Offline(1, Math.ceil(duration * rate), rate);
-  const master = audio.createGain(); master.gain.value = 0.8;
-  master.gain.setValueAtTime(0.8, Math.max(0, duration - 2));
+  const master = audio.createGain(); master.gain.value = 0.72;
+  master.gain.setValueAtTime(0.72, Math.max(0, duration - 2));
   master.gain.linearRampToValueAtTime(0.0001, duration); master.connect(audio.destination);
+  const genre = String(spec.genre || "electronic").toLowerCase();
+  const profile = /ambient/.test(genre) ? { lead: "sine", bass: "sine", drums: "sparse", space: 0.2 }
+    : /classical/.test(genre) ? { lead: "triangle", bass: "sine", drums: "none", space: 0.16 }
+    : /jazz|blues/.test(genre) ? { lead: "triangle", bass: "triangle", drums: "swing", space: 0.09 }
+    : /rock|metal|punk/.test(genre) ? { lead: "sawtooth", bass: "square", drums: "rock", space: 0.055 }
+    : /trap|hip.?hop|rap/.test(genre) ? { lead: "square", bass: "sine", drums: "trap", space: 0.075 }
+    : /reggae|dub/.test(genre) ? { lead: "triangle", bass: "sine", drums: "reggae", space: 0.11 }
+    : /latin|salsa|reggaeton/.test(genre) ? { lead: "triangle", bass: "sawtooth", drums: "latin", space: 0.065 }
+    : /house|techno|edm|electro|dance/.test(genre) ? { lead: "sawtooth", bass: "sawtooth", drums: "dance", space: 0.075 }
+    : { lead: "triangle", bass: "sine", drums: "pop", space: 0.08 };
+  const impulse = audio.createBuffer(1, Math.ceil(rate * 1.25), rate), impulseData = impulse.getChannelData(0);
+  let impulseSeed = 24691;
+  for (let i = 0; i < impulseData.length; i++) { impulseSeed = (impulseSeed * 16807) % 2147483647; impulseData[i] = (impulseSeed / 2147483647 * 2 - 1) * Math.pow(1 - i / impulseData.length, 2.4); }
+  const reverb = audio.createConvolver(), wet = audio.createGain(); reverb.buffer = impulse; wet.gain.value = profile.space; reverb.connect(wet).connect(master);
   function tone(frequency, start, seconds, volume, type = "triangle", detune = 0) {
     const end = Math.min(duration - 0.02, start + seconds);
     if (end <= start) return;
@@ -376,7 +391,7 @@ async function createArrangedWav(spec) {
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.linearRampToValueAtTime(volume, Math.min(end, start + 0.015));
     gain.gain.exponentialRampToValueAtTime(0.0001, end);
-    oscillator.connect(gain).connect(master); oscillator.start(start); oscillator.stop(end);
+    oscillator.connect(gain); gain.connect(master); gain.connect(reverb); oscillator.start(start); oscillator.stop(end);
   }
   const chords = spec.chords?.length ? spec.chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]];
   for (let bar = 0; bar < bars; bar++) {
@@ -384,11 +399,11 @@ async function createArrangedWav(spec) {
     const section = Math.floor(bar / Math.max(4, Math.floor(bars / 4)));
     for (const note of chord) {
       tone(noteFrequency(note), start, beat * 3.9, section === 2 ? 0.032 : 0.022, "sine");
-      if (bar >= 4 && bar < bars - 2) for (let pulse = 0; pulse < 4; pulse++) tone(noteFrequency(note) * 2, start + (pulse + 0.5) * beat, beat * 0.34, section === 1 ? 0.018 : 0.012, "sawtooth");
+      if (bar >= 4 && bar < bars - 2) for (let pulse = 0; pulse < 4; pulse++) tone(noteFrequency(note) * 2, start + (pulse + 0.5) * beat, beat * 0.34, section === 1 ? 0.018 : 0.012, profile.lead);
     }
     if (bar > 1 && bar < bars - 1) for (let pulse = 0; pulse < 4; pulse++) {
       const bassStart = start + pulse * beat;
-      tone(noteFrequency(chord[0]), bassStart, beat * 0.72, section === 1 ? 0.12 : 0.09, "sawtooth");
+      tone(noteFrequency(chord[0]), bassStart, beat * 0.72, section === 1 ? 0.12 : 0.09, profile.bass);
       tone(noteFrequency(chord[0]), bassStart, beat * 0.76, 0.055, "sine", -7);
     }
   }
@@ -397,31 +412,34 @@ async function createArrangedWav(spec) {
     const item = spec.notes[index++ % spec.notes.length];
     const melodyStart = cursor * beat, melodyLength = Math.min(item.beats, totalBeats - 4 - cursor) * beat * 0.92;
     const chorus = cursor >= totalBeats * 0.25 && cursor < totalBeats * 0.55;
-    tone(noteFrequency(item.note), melodyStart, melodyLength, chorus ? 0.115 : 0.085, "triangle");
-    if (chorus) tone(noteFrequency(item.note), melodyStart, melodyLength, 0.035, "sawtooth", 7);
+    tone(noteFrequency(item.note), melodyStart, melodyLength, chorus ? 0.115 : 0.085, profile.lead);
+    if (chorus && profile.lead !== "sine") tone(noteFrequency(item.note), melodyStart, melodyLength, 0.035, profile.lead, 7);
     cursor += item.beats;
   }
-  if (spec.drums !== false) {
+  if (spec.drums !== false && profile.drums !== "none") {
     const noise = audio.createBuffer(1, Math.ceil(rate * 0.08), rate), data = noise.getChannelData(0);
     let seed = 12345;
     for (let i = 0; i < data.length; i++) { seed = (seed * 16807) % 2147483647; data[i] = (seed / 2147483647 * 2 - 1) * (1 - i / data.length); }
     for (let step = 8; step < totalBeats - 4; step++) {
       const start = step * beat;
-      if (step % 2 === 0) {
+      const kickHit = profile.drums === "dance" ? true : profile.drums === "trap" ? step % 4 === 0 || step % 8 === 3 : profile.drums === "reggae" ? step % 4 === 2 : profile.drums === "latin" ? step % 4 !== 3 : step % 2 === 0;
+      if (kickHit) {
         const kick = audio.createOscillator(), gain = audio.createGain();
         kick.frequency.setValueAtTime(130, start); kick.frequency.exponentialRampToValueAtTime(42, start + 0.12);
         gain.gain.setValueAtTime(0.12, start); gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
         kick.connect(gain).connect(master); kick.start(start); kick.stop(start + 0.2);
       }
-      if (step % 4 === 1 || step % 4 === 3) {
+      if ((profile.drums === "rock" && step % 2 === 1) || (profile.drums !== "sparse" && (step % 4 === 1 || step % 4 === 3))) {
         const snare = audio.createBufferSource(), snareGain = audio.createGain(), snareFilter = audio.createBiquadFilter();
         snare.buffer = noise; snareGain.gain.setValueAtTime(0.075, start); snareGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.1);
         snareFilter.type = "bandpass"; snareFilter.frequency.value = 1800;
         snare.connect(snareFilter).connect(snareGain).connect(master); snare.start(start);
       }
-      const hat = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter();
-      hat.buffer = noise; gain.gain.value = step % 2 ? 0.035 : 0.02; filter.type = "highpass"; filter.frequency.value = 6000;
-      hat.connect(filter).connect(gain).connect(master); hat.start(start);
+      if (profile.drums !== "sparse" || step % 4 === 0) {
+        const hat = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter();
+        hat.buffer = noise; gain.gain.value = step % 2 ? 0.035 : 0.02; filter.type = "highpass"; filter.frequency.value = 6000;
+        hat.connect(filter).connect(gain).connect(master); hat.start(start);
+      }
     }
   }
   return audio.startRendering();
@@ -737,7 +755,7 @@ function addCreativeCard(node, spec) {
         const player = document.createElement("audio"); player.controls = true; player.preload = "metadata"; player.src = audioUrl;
         const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă piesa WAV"; link.href = audioUrl; link.download = safeMediaName(spec.title, "wav");
         output.replaceChildren(player, link);
-        detail.textContent = `Piesă gata · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · melodie, armonie, bas${spec.drums !== false ? " și tobe" : ""} · intro, refren, variație și final`;
+        detail.textContent = `Piesă ${spec.genre || "instrumentală"} gata · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · melodie, armonie, bas${spec.drums !== false ? " și tobe" : ""} · intro, refren, variație și final`;
       } catch (error) { detail.textContent = `Generarea audio a eșuat: ${error.message}`; }
       finally { action.disabled = false; }
     };
