@@ -297,7 +297,9 @@ function parseCreativeSpec(content) {
       })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
       if (!notes.length) throw new Error("Nu există note valide.");
       const chords = (Array.isArray(raw.chords) ? raw.chords : []).slice(0, 8).filter(chord => Array.isArray(chord) && chord.length >= 3 && chord.length <= 4 && chord.every(note => typeof note === "string" && /^[A-G]#?[2-6]$/.test(note)));
-      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, genre: String(raw.genre || "electronic").trim().slice(0, 60), bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: true, bars: Math.min(64, Math.max(16, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
+      const requestedInstrument = String(raw.leadInstrument || "synth").toLowerCase();
+      const leadInstrument = ["saxophone", "piano", "guitar", "violin", "flute", "trumpet", "synth"].includes(requestedInstrument) ? requestedInstrument : "synth";
+      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, genre: String(raw.genre || "electronic").trim().slice(0, 60), leadInstrument, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: true, bars: Math.min(64, Math.max(16, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
     }
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).filter(scene => scene && typeof scene === "object").slice(0, 12).map(scene => ({
       text: String(scene.text || "").slice(0, 280),
@@ -318,6 +320,7 @@ function ensureMusicSpec(content, request = "") {
   const title = (titleMatch?.[1] || "Piesă Nova").replace(/[*_]/g, "").trim().replace(/^[„“”"']+|[„“”"']+$/g, "").slice(0, 100);
   const bpmMatch = source.match(/\b(5\d|6\d|7\d|8\d|9\d|1[0-7]\d|180)\s*BPM\b/i);
   const genre = /ambient|relax|medita/i.test(source) ? "ambient" : /clasic|classical|orchestr/i.test(source) ? "classical" : /jazz|swing|blues/i.test(source) ? "jazz" : /reggae|dub/i.test(source) ? "reggae" : /latin|latino|salsa|reggaeton/i.test(source) ? "latin" : /rock|metal|punk/i.test(source) ? "rock" : /trap|hip.?hop|rap/i.test(source) ? "trap" : /house|techno|edm|electro|dance|club/i.test(source) ? "electronic" : "pop";
+  const leadInstrument = /sax|saxofon/i.test(source) ? "saxophone" : /pian|clape/i.test(source) ? "piano" : /chitar|guitar/i.test(source) ? "guitar" : /vioar|violin/i.test(source) ? "violin" : /flaut|flute/i.test(source) ? "flute" : /trompet|trumpet/i.test(source) ? "trumpet" : "synth";
   const bpm = bpmMatch ? Number(bpmMatch[1]) : genre === "electronic" ? 128 : genre === "trap" ? 92 : genre === "ambient" ? 72 : genre === "reggae" ? 82 : genre === "latin" ? 104 : genre === "jazz" ? 118 : genre === "rock" ? 124 : genre === "classical" ? 90 : 110;
   const progressions = [
     [["A2", "C3", "E3"], ["F2", "A2", "C3"], ["C3", "E3", "G3"], ["G2", "B2", "D3"]],
@@ -334,7 +337,7 @@ function ensureMusicSpec(content, request = "") {
   }));
   const sectionBars = [...source.matchAll(/\b([1-9]|[1-5]\d|6[0-4])\s*(?:măsuri|masuri|bars)\b/gi)].map(match => Number(match[1]));
   const requestedBars = sectionBars.length > 1 ? sectionBars.reduce((sum, value) => sum + value, 0) : sectionBars[0] || 32;
-  const spec = { title, genre, bpm, arrangement: true, bars: Math.min(64, Math.max(16, requestedBars)), drums: genre !== "classical" && genre !== "ambient", chords: progressions[seed % progressions.length], notes };
+  const spec = { title, genre, leadInstrument, bpm, arrangement: true, bars: Math.min(64, Math.max(16, requestedBars)), drums: genre !== "classical" && genre !== "ambient", chords: progressions[seed % progressions.length], notes };
   return `${content.trim()}\n\n\`\`\`nova-music\n${JSON.stringify(spec)}\n\`\`\``;
 }
 
@@ -383,7 +386,7 @@ async function createArrangedWav(spec) {
   let impulseSeed = 24691;
   for (let i = 0; i < impulseData.length; i++) { impulseSeed = (impulseSeed * 16807) % 2147483647; impulseData[i] = (impulseSeed / 2147483647 * 2 - 1) * Math.pow(1 - i / impulseData.length, 2.4); }
   const reverb = audio.createConvolver(), wet = audio.createGain(); reverb.buffer = impulse; wet.gain.value = profile.space; reverb.connect(wet).connect(master);
-  function tone(frequency, start, seconds, volume, type = "triangle", detune = 0) {
+  function tone(frequency, start, seconds, volume, type = "triangle", detune = 0, vibrato = 0) {
     const end = Math.min(duration - 0.02, start + seconds);
     if (end <= start) return;
     const oscillator = audio.createOscillator(), gain = audio.createGain();
@@ -391,7 +394,36 @@ async function createArrangedWav(spec) {
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.linearRampToValueAtTime(volume, Math.min(end, start + 0.015));
     gain.gain.exponentialRampToValueAtTime(0.0001, end);
+    if (vibrato > 0) {
+      const lfo = audio.createOscillator(), depth = audio.createGain(); lfo.frequency.value = 5.2; depth.gain.value = vibrato;
+      lfo.connect(depth).connect(oscillator.detune); lfo.start(start); lfo.stop(end);
+    }
     oscillator.connect(gain); gain.connect(master); gain.connect(reverb); oscillator.start(start); oscillator.stop(end);
+  }
+  function leadVoice(frequency, start, seconds, volume, instrument) {
+    if (instrument === "saxophone") {
+      tone(frequency, start, seconds, volume * 0.72, "sawtooth", -4, 17);
+      tone(frequency * 2, start, seconds * 0.96, volume * 0.2, "triangle", 3, 13);
+      tone(frequency * 3, start, seconds * 0.9, volume * 0.08, "sine", 0, 9);
+    } else if (instrument === "piano") {
+      tone(frequency, start, Math.min(seconds, beat * 1.7), volume * 0.8, "triangle");
+      tone(frequency * 2, start, Math.min(seconds, beat * 1.2), volume * 0.2, "sine", 2);
+    } else if (instrument === "guitar") {
+      tone(frequency, start, Math.min(seconds, beat * 1.15), volume * 0.76, "sawtooth", -5);
+      tone(frequency * 2, start + 0.008, Math.min(seconds, beat), volume * 0.24, "triangle", 5);
+    } else if (instrument === "violin") {
+      tone(frequency, start, seconds, volume * 0.68, "sawtooth", -6, 11);
+      tone(frequency, start, seconds, volume * 0.32, "triangle", 6, 9);
+    } else if (instrument === "flute") {
+      tone(frequency, start, seconds, volume * 0.86, "sine", 0, 8);
+      tone(frequency * 2, start, seconds * 0.94, volume * 0.14, "sine", 0, 5);
+    } else if (instrument === "trumpet") {
+      tone(frequency, start, seconds, volume * 0.7, "square", -3, 10);
+      tone(frequency * 2, start, seconds * 0.95, volume * 0.22, "sawtooth", 3, 8);
+      tone(frequency * 3, start, seconds * 0.9, volume * 0.08, "sine");
+    } else {
+      tone(frequency, start, seconds, volume, profile.lead);
+    }
   }
   const chords = spec.chords?.length ? spec.chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]];
   for (let bar = 0; bar < bars; bar++) {
@@ -412,8 +444,8 @@ async function createArrangedWav(spec) {
     const item = spec.notes[index++ % spec.notes.length];
     const melodyStart = cursor * beat, melodyLength = Math.min(item.beats, totalBeats - 4 - cursor) * beat * 0.92;
     const chorus = cursor >= totalBeats * 0.25 && cursor < totalBeats * 0.55;
-    tone(noteFrequency(item.note), melodyStart, melodyLength, chorus ? 0.115 : 0.085, profile.lead);
-    if (chorus && profile.lead !== "sine") tone(noteFrequency(item.note), melodyStart, melodyLength, 0.035, profile.lead, 7);
+    leadVoice(noteFrequency(item.note), melodyStart, melodyLength, chorus ? 0.115 : 0.085, spec.leadInstrument || "synth");
+    if (chorus && (spec.leadInstrument || "synth") === "synth" && profile.lead !== "sine") tone(noteFrequency(item.note), melodyStart, melodyLength, 0.035, profile.lead, 7);
     cursor += item.beats;
   }
   if (spec.drums !== false && profile.drums !== "none") {
@@ -755,7 +787,7 @@ function addCreativeCard(node, spec) {
         const player = document.createElement("audio"); player.controls = true; player.preload = "metadata"; player.src = audioUrl;
         const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă piesa WAV"; link.href = audioUrl; link.download = safeMediaName(spec.title, "wav");
         output.replaceChildren(player, link);
-        detail.textContent = `Piesă ${spec.genre || "instrumentală"} gata · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · melodie, armonie, bas${spec.drums !== false ? " și tobe" : ""} · intro, refren, variație și final`;
+        detail.textContent = `Piesă ${spec.genre || "instrumentală"} gata · lead ${spec.leadInstrument || "synth"} modelat · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · armonie, bas${spec.drums !== false ? " și tobe" : ""} · intro, refren, variație și final`;
       } catch (error) { detail.textContent = `Generarea audio a eșuat: ${error.message}`; }
       finally { action.disabled = false; }
     };

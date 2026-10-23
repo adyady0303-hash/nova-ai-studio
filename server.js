@@ -910,7 +910,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "multi-genre-music-engine-v3",
+      release: "modeled-instrument-orchestration-v4",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }

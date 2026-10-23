@@ -116,6 +116,15 @@ test('plain music requests select genre-specific arrangements', () => {
   }
 });
 
+test('requested lead instruments are preserved instead of becoming a generic synth', () => {
+  const context = {}; vm.createContext(context);
+  vm.runInContext(source.slice(source.indexOf('function parseCreativeSpec('), source.indexOf('function downloadBlob(')), context);
+  for (const [request, instrument] of [['electro house cu saxofon lead', 'saxophone'], ['rock cu chitară', 'guitar'], ['jazz cu pian', 'piano'], ['clasic cu vioară', 'violin'], ['ambient cu flaut', 'flute'], ['latin cu trompetă', 'trumpet']]) {
+    const spec = context.parseCreativeSpec(context.ensureMusicSpec('Piesă completă', request)).spec;
+    assert.equal(spec.leadInstrument, instrument);
+  }
+});
+
 test('an upstream AI authentication failure does not log the visitor out of Nova', async () => {
   let redirects = 0, providerError = true;
   const context = { state: { account: null }, window: { location: { replace() { redirects++; } } },
