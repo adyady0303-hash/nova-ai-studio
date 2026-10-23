@@ -149,7 +149,10 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     }
     if (req.method === 'GET' && req.url === '/v1/models') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      return res.end(JSON.stringify({ data: [{ id: 'gpt-4.1-mini' }] }));
+      return res.end(JSON.stringify({ data: [
+        { id: 'gpt-4.1-mini' }, { id: 'gpt-6.1-mini' }, { id: 'gpt-image-1' },
+        { id: 'gpt-6.1' }, { id: 'gpt-6.1-2026-10-01' }
+      ] }));
     }
     if (req.method === 'POST' && req.url === '/v1/chat/completions') {
       const chunks = [];
@@ -382,7 +385,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   }
   const aiHealth = await request('/api/health');
   assert.deepEqual(await aiHealth.json(), {
-    connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-5.4']
+    connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-6.1', 'gpt-6.1-mini', 'gpt-4.1-mini']
   });
   const aiChat = await post('/api/chat', {
     model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut Nova' }]

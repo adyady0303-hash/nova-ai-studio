@@ -391,6 +391,25 @@ function publicProviderSettings() {
   };
 }
 
+function availableOpenAiChatModels(catalog, fallback) {
+  const candidates = Array.isArray(catalog?.data)
+    ? catalog.data
+      .map(item => String(item?.id || "").trim())
+      .filter(id => /^gpt-\d+(?:\.\d+){0,2}(?:-(?:mini|nano))?$/i.test(id))
+    : [];
+  if (!candidates.length) return fallback ? [fallback] : [];
+  const tier = id => id.endsWith("-mini") ? 1 : id.endsWith("-nano") ? 0 : 2;
+  const version = id => (id.match(/^gpt-(\d+(?:\.\d+){0,2})/i)?.[1] || "0").split(".").map(Number);
+  return [...new Set(candidates)].sort((left, right) => {
+    const a = version(left), b = version(right);
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const difference = (b[index] || 0) - (a[index] || 0);
+      if (difference) return difference;
+    }
+    return tier(right) - tier(left) || left.localeCompare(right);
+  });
+}
+
 function aiSettingsCipherKey() {
   const secret = process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD || process.env.DATABASE_URL || localAiEncryptionSecret;
   if (!secret) throw new Error("Lipsește cheia pentru criptarea configurării AI persistente.");
@@ -1183,9 +1202,11 @@ async function handle(req, res) {
           models: []
         });
       }
+      let availableModels;
       try {
         // Validate the server-side credential without generating content or using model tokens.
-        await openAiJson("/models", {}, 10000);
+        const catalog = await openAiJson("/models", {}, 10000);
+        availableModels = availableOpenAiChatModels(catalog, aiProvider.textModel);
       } catch (error) {
         const status = error.status;
         const message = status === 401 || status === 403
@@ -1201,7 +1222,7 @@ async function handle(req, res) {
         connected: true,
         provider: "openai",
         version: "Conexiune verificată",
-        models: aiProvider.textModel ? [aiProvider.textModel] : []
+        models: account.role === "owner" ? availableModels : aiProvider.textModel ? [aiProvider.textModel] : []
       });
     }
     try {
