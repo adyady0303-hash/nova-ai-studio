@@ -257,7 +257,7 @@ function messageContainer() {
 }
 
 function setTask(task) {
-  const supported = ["auto", "image", "code", "text", "lyrics", "business", "music", "video"];
+  const supported = ["auto", "image", "code", "text", "lyrics", "business"];
   const selected = supported.includes(task) ? task : "auto";
   el("taskSelect").value = selected;
   document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
@@ -267,9 +267,7 @@ function setTask(task) {
     code: "Descrie aplicația sau unealta pe care vrei să o construiești…",
     text: "Ce text dorești? Spune publicul, scopul, tonul și lungimea…",
     lyrics: "Descrie tema, genul și emoția versurilor: strofe, refren și punte…",
-    business: "Descrie ideea de afacere; Nova va crea site-ul funcțional și îl va publica online…",
-    music: "Descrie piesa completă: gen, atmosferă, tempo și durată…",
-    video: "Descrie ideea, publicul și stilul videoclipului…"
+    business: "Descrie ideea de afacere; Nova va crea site-ul funcțional și îl va publica online…"
   };
   el("prompt").placeholder = prompts[selected];
   el("generateImageBtn").classList.toggle("active", selected === "image");
@@ -285,62 +283,6 @@ function resizePrompt() {
   prompt.style.height = `${Math.min(prompt.scrollHeight, 190)}px`;
 }
 
-function parseCreativeSpec(content) {
-  const match = content.match(/```nova-(music|video)\s*([\s\S]*?)```/i);
-  if (!match) return { text: content, spec: null };
-  try {
-    const raw = JSON.parse(match[2]);
-    const title = String(raw.title || (match[1] === "music" ? "Compoziție Nova" : "Video Nova")).slice(0, 100);
-    if (match[1].toLowerCase() === "music") {
-      const notes = (Array.isArray(raw.notes) ? raw.notes : []).filter(item => item && typeof item === "object").slice(0, 128).map(item => ({
-        note: String(item.note || ""), beats: Math.min(4, Math.max(0.25, Number(item.beats) || 1))
-      })).filter(item => /^[A-G]#?[2-6]$/.test(item.note));
-      if (!notes.length) throw new Error("Nu există note valide.");
-      const chords = (Array.isArray(raw.chords) ? raw.chords : []).slice(0, 8).filter(chord => Array.isArray(chord) && chord.length >= 3 && chord.length <= 4 && chord.every(note => typeof note === "string" && /^[A-G]#?[2-6]$/.test(note)));
-      const requestedInstrument = String(raw.leadInstrument || "synth").toLowerCase();
-      const leadInstrument = ["saxophone", "piano", "guitar", "violin", "flute", "trumpet", "synth"].includes(requestedInstrument) ? requestedInstrument : "synth";
-      return { text: content.replace(match[0], "").trim(), spec: { type: "music", title, genre: String(raw.genre || "electronic").trim().slice(0, 60), leadInstrument, bpm: Math.min(180, Math.max(50, Number(raw.bpm) || 96)), notes, arrangement: true, bars: Math.min(64, Math.max(16, Math.round(Number(raw.bars) || 32))), drums: raw.drums !== false, chords: chords.length ? chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]] } };
-    }
-    const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).filter(scene => scene && typeof scene === "object").slice(0, 12).map(scene => ({
-      text: String(scene.text || "").slice(0, 280),
-      seconds: Math.min(8, Math.max(2, Number(scene.seconds) || 4)),
-      background: /^#[0-9a-f]{6}$/i.test(String(scene.background || "")) ? scene.background : "#18221a"
-    })).filter(scene => scene.text.trim());
-    if (scenes.length < 2) throw new Error("Videoclipul are nevoie de cel puțin două scene.");
-    return { text: content.replace(match[0], "").trim(), spec: { type: "video", title, scenes, aspect: ["portrait", "landscape", "square"].includes(raw.aspect) ? raw.aspect : "landscape" } };
-  } catch {
-    return { text: content, spec: null };
-  }
-}
-
-function ensureMusicSpec(content, request = "") {
-  if (parseCreativeSpec(content).spec) return content;
-  const source = `${request}\n${content}`;
-  const titleMatch = content.match(/(?:\*\*)?Titlu(?:\*\*)?\s*:\s*[„“"']?([^\n”"']+)/i);
-  const title = (titleMatch?.[1] || "Piesă Nova").replace(/[*_]/g, "").trim().replace(/^[„“”"']+|[„“”"']+$/g, "").slice(0, 100);
-  const bpmMatch = source.match(/\b(5\d|6\d|7\d|8\d|9\d|1[0-7]\d|180)\s*BPM\b/i);
-  const genre = /ambient|relax|medita/i.test(source) ? "ambient" : /clasic|classical|orchestr/i.test(source) ? "classical" : /jazz|swing|blues/i.test(source) ? "jazz" : /reggae|dub/i.test(source) ? "reggae" : /latin|latino|salsa|reggaeton/i.test(source) ? "latin" : /rock|metal|punk/i.test(source) ? "rock" : /trap|hip.?hop|rap/i.test(source) ? "trap" : /house|techno|edm|electro|dance|club/i.test(source) ? "electronic" : "pop";
-  const leadInstrument = /sax|saxofon/i.test(source) ? "saxophone" : /pian|clape/i.test(source) ? "piano" : /chitar|guitar/i.test(source) ? "guitar" : /vioar|violin/i.test(source) ? "violin" : /flaut|flute/i.test(source) ? "flute" : /trompet|trumpet/i.test(source) ? "trumpet" : "synth";
-  const bpm = bpmMatch ? Number(bpmMatch[1]) : genre === "electronic" ? 128 : genre === "trap" ? 92 : genre === "ambient" ? 72 : genre === "reggae" ? 82 : genre === "latin" ? 104 : genre === "jazz" ? 118 : genre === "rock" ? 124 : genre === "classical" ? 90 : 110;
-  const progressions = [
-    [["A2", "C3", "E3"], ["F2", "A2", "C3"], ["C3", "E3", "G3"], ["G2", "B2", "D3"]],
-    [["C3", "E3", "G3"], ["G2", "B2", "D3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"]],
-    [["D3", "F3", "A3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["C3", "E3", "G3"]]
-  ];
-  let seed = 2166136261;
-  for (const char of source) { seed ^= char.charCodeAt(0); seed = Math.imul(seed, 16777619) >>> 0; }
-  const scale = ["A3", "C4", "D4", "E4", "G4", "A4", "C5", "D5", "E5"];
-  const pattern = [0, 2, 4, 2, 5, 4, 2, 1, 0, 2, 3, 4, 7, 5, 4, 2];
-  const notes = Array.from({ length: 48 }, (_, index) => ({
-    note: scale[(pattern[index % pattern.length] + (seed % 3) + Math.floor(index / 16)) % scale.length],
-    beats: index % 8 === 7 ? 1 : index % 4 === 2 ? 0.5 : 0.75
-  }));
-  const sectionBars = [...source.matchAll(/\b([1-9]|[1-5]\d|6[0-4])\s*(?:măsuri|masuri|bars)\b/gi)].map(match => Number(match[1]));
-  const requestedBars = sectionBars.length > 1 ? sectionBars.reduce((sum, value) => sum + value, 0) : sectionBars[0] || 32;
-  const spec = { title, genre, leadInstrument, bpm, arrangement: true, bars: Math.min(64, Math.max(16, requestedBars)), drums: genre !== "classical" && genre !== "ambient", chords: progressions[seed % progressions.length], notes };
-  return `${content.trim()}\n\n\`\`\`nova-music\n${JSON.stringify(spec)}\n\`\`\``;
-}
-
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob), link = document.createElement("a");
   link.href = url; link.download = filename; link.click();
@@ -350,275 +292,6 @@ function downloadBlob(blob, filename) {
 function safeMediaName(title, extension) {
   const stem = title.normalize("NFKD").replace(/[^\w -]/g, "").trim().replace(/\s+/g, "-").slice(0, 48) || "nova-media";
   return `${stem}.${extension}`;
-}
-
-function noteFrequency(note) {
-  const match = note.match(/^([A-G])(#?)([2-6])$/);
-  if (!match) return 220;
-  const semitone = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[match[1]] + (match[2] ? 1 : 0);
-  const midi = (Number(match[3]) + 1) * 12 + semitone;
-  return 440 * Math.pow(2, (midi - 69) / 12);
-}
-
-function arrangementBars(spec) {
-  return Math.max(4, Math.min(64, spec.bars || 32, Math.floor(119.8 / (4 * 60 / spec.bpm))));
-}
-
-async function createArrangedWav(spec) {
-  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Offline) throw new Error("Browserul nu acceptă export audio WAV.");
-  const rate = 22050, beat = 60 / spec.bpm, bars = arrangementBars(spec), totalBeats = bars * 4;
-  const duration = totalBeats * beat + 0.2, audio = new Offline(1, Math.ceil(duration * rate), rate);
-  const master = audio.createGain(); master.gain.value = 0.72;
-  master.gain.setValueAtTime(0.72, Math.max(0, duration - 2));
-  master.gain.linearRampToValueAtTime(0.0001, duration); master.connect(audio.destination);
-  const genre = String(spec.genre || "electronic").toLowerCase();
-  const profile = /ambient/.test(genre) ? { lead: "sine", bass: "sine", drums: "sparse", space: 0.2 }
-    : /classical/.test(genre) ? { lead: "triangle", bass: "sine", drums: "none", space: 0.16 }
-    : /jazz|blues/.test(genre) ? { lead: "triangle", bass: "triangle", drums: "swing", space: 0.09 }
-    : /rock|metal|punk/.test(genre) ? { lead: "sawtooth", bass: "square", drums: "rock", space: 0.055 }
-    : /trap|hip.?hop|rap/.test(genre) ? { lead: "square", bass: "sine", drums: "trap", space: 0.075 }
-    : /reggae|dub/.test(genre) ? { lead: "triangle", bass: "sine", drums: "reggae", space: 0.11 }
-    : /latin|salsa|reggaeton/.test(genre) ? { lead: "triangle", bass: "sawtooth", drums: "latin", space: 0.065 }
-    : /house|techno|edm|electro|dance/.test(genre) ? { lead: "sawtooth", bass: "sawtooth", drums: "dance", space: 0.075 }
-    : { lead: "triangle", bass: "sine", drums: "pop", space: 0.08 };
-  const impulse = audio.createBuffer(1, Math.ceil(rate * 1.25), rate), impulseData = impulse.getChannelData(0);
-  let impulseSeed = 24691;
-  for (let i = 0; i < impulseData.length; i++) { impulseSeed = (impulseSeed * 16807) % 2147483647; impulseData[i] = (impulseSeed / 2147483647 * 2 - 1) * Math.pow(1 - i / impulseData.length, 2.4); }
-  const reverb = audio.createConvolver(), wet = audio.createGain(); reverb.buffer = impulse; wet.gain.value = profile.space; reverb.connect(wet).connect(master);
-  function tone(frequency, start, seconds, volume, type = "triangle", detune = 0, vibrato = 0) {
-    const end = Math.min(duration - 0.02, start + seconds);
-    if (end <= start) return;
-    const oscillator = audio.createOscillator(), gain = audio.createGain();
-    oscillator.type = type; oscillator.frequency.value = frequency; oscillator.detune.value = detune;
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.linearRampToValueAtTime(volume, Math.min(end, start + 0.015));
-    gain.gain.exponentialRampToValueAtTime(0.0001, end);
-    if (vibrato > 0) {
-      const lfo = audio.createOscillator(), depth = audio.createGain(); lfo.frequency.value = 5.2; depth.gain.value = vibrato;
-      lfo.connect(depth).connect(oscillator.detune); lfo.start(start); lfo.stop(end);
-    }
-    oscillator.connect(gain); gain.connect(master); gain.connect(reverb); oscillator.start(start); oscillator.stop(end);
-  }
-  function leadVoice(frequency, start, seconds, volume, instrument) {
-    if (instrument === "saxophone") {
-      tone(frequency, start, seconds, volume * 0.72, "sawtooth", -4, 17);
-      tone(frequency * 2, start, seconds * 0.96, volume * 0.2, "triangle", 3, 13);
-      tone(frequency * 3, start, seconds * 0.9, volume * 0.08, "sine", 0, 9);
-    } else if (instrument === "piano") {
-      tone(frequency, start, Math.min(seconds, beat * 1.7), volume * 0.8, "triangle");
-      tone(frequency * 2, start, Math.min(seconds, beat * 1.2), volume * 0.2, "sine", 2);
-    } else if (instrument === "guitar") {
-      tone(frequency, start, Math.min(seconds, beat * 1.15), volume * 0.76, "sawtooth", -5);
-      tone(frequency * 2, start + 0.008, Math.min(seconds, beat), volume * 0.24, "triangle", 5);
-    } else if (instrument === "violin") {
-      tone(frequency, start, seconds, volume * 0.68, "sawtooth", -6, 11);
-      tone(frequency, start, seconds, volume * 0.32, "triangle", 6, 9);
-    } else if (instrument === "flute") {
-      tone(frequency, start, seconds, volume * 0.86, "sine", 0, 8);
-      tone(frequency * 2, start, seconds * 0.94, volume * 0.14, "sine", 0, 5);
-    } else if (instrument === "trumpet") {
-      tone(frequency, start, seconds, volume * 0.7, "square", -3, 10);
-      tone(frequency * 2, start, seconds * 0.95, volume * 0.22, "sawtooth", 3, 8);
-      tone(frequency * 3, start, seconds * 0.9, volume * 0.08, "sine");
-    } else {
-      tone(frequency, start, seconds, volume, profile.lead);
-    }
-  }
-  const chords = spec.chords?.length ? spec.chords : [["C3", "E3", "G3"], ["A2", "C3", "E3"], ["F2", "A2", "C3"], ["G2", "B2", "D3"]];
-  for (let bar = 0; bar < bars; bar++) {
-    const chord = chords[bar % chords.length], start = bar * 4 * beat;
-    const section = Math.floor(bar / Math.max(4, Math.floor(bars / 4)));
-    for (const note of chord) {
-      tone(noteFrequency(note), start, beat * 3.9, section === 2 ? 0.032 : 0.022, "sine");
-      if (bar >= 4 && bar < bars - 2) for (let pulse = 0; pulse < 4; pulse++) tone(noteFrequency(note) * 2, start + (pulse + 0.5) * beat, beat * 0.34, section === 1 ? 0.018 : 0.012, profile.lead);
-    }
-    if (bar > 1 && bar < bars - 1) for (let pulse = 0; pulse < 4; pulse++) {
-      const bassStart = start + pulse * beat;
-      tone(noteFrequency(chord[0]), bassStart, beat * 0.72, section === 1 ? 0.12 : 0.09, profile.bass);
-      tone(noteFrequency(chord[0]), bassStart, beat * 0.76, 0.055, "sine", -7);
-    }
-  }
-  let cursor = 8, index = 0;
-  while (cursor < totalBeats - 4) {
-    const item = spec.notes[index++ % spec.notes.length];
-    const melodyStart = cursor * beat, melodyLength = Math.min(item.beats, totalBeats - 4 - cursor) * beat * 0.92;
-    const chorus = cursor >= totalBeats * 0.25 && cursor < totalBeats * 0.55;
-    leadVoice(noteFrequency(item.note), melodyStart, melodyLength, chorus ? 0.115 : 0.085, spec.leadInstrument || "synth");
-    if (chorus && (spec.leadInstrument || "synth") === "synth" && profile.lead !== "sine") tone(noteFrequency(item.note), melodyStart, melodyLength, 0.035, profile.lead, 7);
-    cursor += item.beats;
-  }
-  if (spec.drums !== false && profile.drums !== "none") {
-    const noise = audio.createBuffer(1, Math.ceil(rate * 0.08), rate), data = noise.getChannelData(0);
-    let seed = 12345;
-    for (let i = 0; i < data.length; i++) { seed = (seed * 16807) % 2147483647; data[i] = (seed / 2147483647 * 2 - 1) * (1 - i / data.length); }
-    for (let step = 8; step < totalBeats - 4; step++) {
-      const start = step * beat;
-      const kickHit = profile.drums === "dance" ? true : profile.drums === "trap" ? step % 4 === 0 || step % 8 === 3 : profile.drums === "reggae" ? step % 4 === 2 : profile.drums === "latin" ? step % 4 !== 3 : step % 2 === 0;
-      if (kickHit) {
-        const kick = audio.createOscillator(), gain = audio.createGain();
-        kick.frequency.setValueAtTime(130, start); kick.frequency.exponentialRampToValueAtTime(42, start + 0.12);
-        gain.gain.setValueAtTime(0.12, start); gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
-        kick.connect(gain).connect(master); kick.start(start); kick.stop(start + 0.2);
-      }
-      if ((profile.drums === "rock" && step % 2 === 1) || (profile.drums !== "sparse" && (step % 4 === 1 || step % 4 === 3))) {
-        const snare = audio.createBufferSource(), snareGain = audio.createGain(), snareFilter = audio.createBiquadFilter();
-        snare.buffer = noise; snareGain.gain.setValueAtTime(0.075, start); snareGain.gain.exponentialRampToValueAtTime(0.0001, start + 0.1);
-        snareFilter.type = "bandpass"; snareFilter.frequency.value = 1800;
-        snare.connect(snareFilter).connect(snareGain).connect(master); snare.start(start);
-      }
-      if (profile.drums !== "sparse" || step % 4 === 0) {
-        const hat = audio.createBufferSource(), gain = audio.createGain(), filter = audio.createBiquadFilter();
-        hat.buffer = noise; gain.gain.value = step % 2 ? 0.035 : 0.02; filter.type = "highpass"; filter.frequency.value = 6000;
-        hat.connect(filter).connect(gain).connect(master); hat.start(start);
-      }
-    }
-  }
-  return audio.startRendering();
-}
-
-async function createWav(spec) {
-  if (spec.arrangement) return createArrangedWav(spec);
-  const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Offline) throw new Error("Browserul nu acceptă export audio WAV.");
-  const rate = 22050, beatSeconds = 60 / spec.bpm;
-  const duration = Math.min(90, spec.notes.reduce((sum, item) => sum + item.beats * beatSeconds, 0) + 0.2);
-  const audio = new Offline(1, Math.ceil(duration * rate), rate);
-  let cursor = 0;
-  for (const item of spec.notes) {
-    const start = cursor, end = Math.min(duration - 0.02, start + item.beats * beatSeconds);
-    if (end <= start) break;
-    const oscillator = audio.createOscillator(), gain = audio.createGain();
-    oscillator.type = "triangle"; oscillator.frequency.value = noteFrequency(item.note);
-    gain.gain.setValueAtTime(0.0001, start);
-    gain.gain.linearRampToValueAtTime(0.12, Math.min(end, start + 0.025));
-    gain.gain.setValueAtTime(0.12, Math.max(start + 0.03, end - 0.04));
-    gain.gain.exponentialRampToValueAtTime(0.0001, end);
-    oscillator.connect(gain).connect(audio.destination); oscillator.start(start); oscillator.stop(end);
-    cursor += item.beats * beatSeconds;
-    if (cursor >= duration) break;
-  }
-  return audio.startRendering();
-}
-
-function audioBufferToWav(buffer) {
-  const samples = buffer.getChannelData(0), bytes = new ArrayBuffer(44 + samples.length * 2), view = new DataView(bytes);
-  const write = (offset, value) => { for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i)); };
-  write(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); write(8, "WAVE"); write(12, "fmt ");
-  view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
-  view.setUint32(24, buffer.sampleRate, true); view.setUint32(28, buffer.sampleRate * 2, true);
-  view.setUint16(32, 2, true); view.setUint16(34, 16, true); write(36, "data"); view.setUint32(40, samples.length * 2, true);
-  for (let i = 0; i < samples.length; i++) { const value = Math.max(-1, Math.min(1, samples[i])); view.setInt16(44 + i * 2, value < 0 ? value * 32768 : value * 32767, true); }
-  return new Blob([bytes], { type: "audio/wav" });
-}
-
-function drawVideoFrame(ctx, spec, elapsed, width, height) {
-  const total = spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
-  const time = Math.min(Math.max(elapsed, 0), Math.max(0, total - 0.001));
-  let cursor = 0, index = 0;
-  for (; index < spec.scenes.length - 1; index++) { if (time < cursor + spec.scenes[index].seconds) break; cursor += spec.scenes[index].seconds; }
-  const scene = spec.scenes[index], progress = Math.min(1, (time - cursor) / scene.seconds);
-  const image = spec.sceneImages?.[index];
-  if (image) {
-    const scale = Math.max(width / image.width, height / image.height), drawWidth = image.width * scale, drawHeight = image.height * scale;
-    ctx.drawImage(image, (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
-    const shade = ctx.createLinearGradient(0, 0, 0, height); shade.addColorStop(0, "rgba(0,0,0,.22)"); shade.addColorStop(.5, "rgba(0,0,0,.48)"); shade.addColorStop(1, "rgba(0,0,0,.65)"); ctx.fillStyle = shade; ctx.fillRect(0, 0, width, height);
-  } else {
-    ctx.fillStyle = scene.background; ctx.fillRect(0, 0, width, height);
-    const glow = ctx.createRadialGradient(width * 0.76, height * 0.16, 2, width * 0.76, height * 0.16, width * 0.8);
-    glow.addColorStop(0, "rgba(255,255,255,.13)"); glow.addColorStop(1, "rgba(0,0,0,.3)"); ctx.fillStyle = glow; ctx.fillRect(0, 0, width, height);
-  }
-  ctx.fillStyle = "rgba(255,255,255,.72)"; ctx.font = "600 22px Segoe UI, sans-serif"; ctx.textAlign = "left"; ctx.fillText(spec.title, 72, 72);
-  ctx.fillStyle = "#f5f5f0"; ctx.font = "700 52px Segoe UI, sans-serif"; ctx.textAlign = "center";
-  const words = scene.text.split(/\s+/), lines = []; let line = "";
-  for (const word of words) { const candidate = line ? `${line} ${word}` : word; if (ctx.measureText(candidate).width > width - 180 && line) { lines.push(line); line = word; } else line = candidate; }
-  if (line) lines.push(line);
-  const shown = lines.slice(0, 5), lineHeight = 66, y = (height - shown.length * lineHeight) / 2;
-  ctx.globalAlpha = Math.min(1, progress * 5 + 0.1);
-  shown.forEach((text, i) => ctx.fillText(text, width / 2, y + i * lineHeight, width - 140));
-  ctx.globalAlpha = 1; ctx.fillStyle = "rgba(255,255,255,.24)"; ctx.fillRect(72, height - 54, width - 144, 5);
-  ctx.fillStyle = "#b4ed79"; ctx.fillRect(72, height - 54, (width - 144) * Math.min(1, time / total), 5);
-  ctx.fillStyle = "rgba(255,255,255,.55)"; ctx.font = "16px Segoe UI, sans-serif"; ctx.textAlign = "right"; ctx.fillText(`${index + 1} / ${spec.scenes.length}`, width - 72, height - 72);
-}
-
-function waitForMedia(media, readyEvent, ready, description) {
-  return new Promise((resolve, reject) => {
-    const cleanup = () => { clearTimeout(timer); media.removeEventListener(readyEvent, loaded); media.removeEventListener("error", failed); };
-    const loaded = () => { cleanup(); resolve(); };
-    const failed = () => { cleanup(); reject(new Error(`${description} nu a putut fi încărcat. Regenerează fișierul și reîncearcă.`)); };
-    const timer = setTimeout(failed, 15000);
-    media.addEventListener(readyEvent, loaded, { once: true });
-    media.addEventListener("error", failed, { once: true });
-    if (media.error) failed(); else if (ready()) loaded();
-  });
-}
-
-async function exportVideo(spec) {
-  if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) throw new Error("Browserul nu acceptă export video WebM.");
-  const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type));
-  if (!mime) throw new Error("Browserul nu oferă un format WebM compatibil.");
-  let stream, voice, audioContext, recorder, frameId, recordingTimer;
-  try {
-    spec.sceneImages = await Promise.all(spec.scenes.map(async scene => {
-      if (!scene.image) return null;
-      const image = new Image();
-      image.crossOrigin = "anonymous";
-      image.src = scene.image;
-      await waitForMedia(image, "load", () => image.complete && image.naturalWidth > 0, "Imaginea scenei");
-      return image;
-    }));
-    if (spec.voiceDataUrl) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) throw new Error("Browserul nu poate include voice-over în videoclip.");
-      audioContext = new AudioContextClass();
-      voice = new Audio(); voice.preload = "auto"; voice.src = spec.voiceDataUrl;
-      await waitForMedia(voice, "loadedmetadata", () => voice.readyState >= 1, "Voice-over-ul");
-      if (!Number.isFinite(voice.duration) || voice.duration <= 0) throw new Error("Voice-over-ul nu are o durată validă. Regenerează fișierul audio.");
-    }
-    const canvas = document.createElement("canvas");
-    const dimensions = spec.aspect === "portrait" ? [720, 1280] : spec.aspect === "square" ? [1080, 1080] : [1280, 720];
-    [canvas.width, canvas.height] = dimensions;
-    const ctx = canvas.getContext("2d");
-    stream = canvas.captureStream(24);
-    if (voice) {
-      const source = audioContext.createMediaElementSource(voice), destination = audioContext.createMediaStreamDestination();
-      source.connect(destination);
-      for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
-      await audioContext.resume();
-    }
-    const chunks = [];
-    recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 2500000 });
-    const sceneDuration = spec.scenes.reduce((sum, scene) => sum + scene.seconds, 0);
-    const total = Math.min(120, Math.max(sceneDuration, voice?.duration || 0));
-    drawVideoFrame(ctx, spec, 0, canvas.width, canvas.height);
-    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-    await new Promise((resolve, reject) => {
-      recorder.onstop = resolve;
-      recorder.onerror = () => reject(new Error("Exportul video a eșuat."));
-      recordingTimer = setTimeout(() => reject(new Error("Exportul video a expirat. Păstrează fila activă și reîncearcă.")), (total + 15) * 1000);
-      recorder.start(250);
-      if (voice) voice.play().catch(reject);
-      const start = performance.now();
-      const frame = now => {
-        try {
-          const elapsed = (now - start) / 1000;
-          drawVideoFrame(ctx, spec, elapsed, canvas.width, canvas.height);
-          if (elapsed >= total) recorder.stop(); else frameId = requestAnimationFrame(frame);
-        } catch (error) { reject(error); }
-      };
-      frameId = requestAnimationFrame(frame);
-    });
-    const blob = new Blob(chunks, { type: mime });
-    if (!blob.size) throw new Error("Exportul video este gol. Reîncearcă într-un browser compatibil.");
-    return blob;
-  } finally {
-    clearTimeout(recordingTimer);
-    if (frameId !== undefined) cancelAnimationFrame(frameId);
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    stream?.getTracks().forEach(track => track.stop());
-    if (voice) { voice.pause(); voice.removeAttribute("src"); voice.load(); }
-    if (audioContext && audioContext.state !== "closed") await audioContext.close();
-  }
 }
 
 function selectedSpeechOptions() {
@@ -766,89 +439,16 @@ async function generateImageEdit() {
   } finally { button.disabled = false; }
 }
 
-function addCreativeCard(node, spec) {
-  const card = document.createElement("div"); card.className = "creative-card";
-  const heading = document.createElement("strong"); heading.textContent = spec.type === "music" ? `♫ ${spec.title}` : `▶ ${spec.title}`;
-  const detail = document.createElement("div"); detail.className = "creative-detail";
-  const action = document.createElement("button"); action.className = "btn small";
-  const output = document.createElement("div"); output.className = "creative-output";
-  const exportProject = document.createElement("button"); exportProject.className = "btn small"; exportProject.textContent = "Descarcă proiect JSON";
-  exportProject.addEventListener("click", () => { const { sceneImages, ...project } = spec; downloadBlob(new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }), safeMediaName(spec.title, "json")); });
-  if (spec.type === "music") {
-    detail.textContent = `Se compune piesa completă · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri…`;
-    action.textContent = "Regenerează piesa";
-    let audioUrl = "";
-    const renderMusic = async () => {
-      action.disabled = true; detail.textContent = "Se generează melodia, armonia, basul și percuția…";
-      try {
-        const blob = audioBufferToWav(await createWav(spec));
-        if (audioUrl) URL.revokeObjectURL(audioUrl);
-        audioUrl = URL.createObjectURL(blob);
-        const player = document.createElement("audio"); player.controls = true; player.preload = "metadata"; player.src = audioUrl;
-        const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă piesa WAV"; link.href = audioUrl; link.download = safeMediaName(spec.title, "wav");
-        output.replaceChildren(player, link);
-        detail.textContent = `Piesă ${spec.genre || "instrumentală"} gata · lead ${spec.leadInstrument || "synth"} modelat · ${spec.bpm} BPM · ${arrangementBars(spec)} măsuri · armonie, bas${spec.drums !== false ? " și tobe" : ""} · intro, refren, variație și final`;
-      } catch (error) { detail.textContent = `Generarea audio a eșuat: ${error.message}`; }
-      finally { action.disabled = false; }
-    };
-    action.addEventListener("click", renderMusic);
-    Promise.resolve().then(renderMusic);
-  } else {
-    detail.textContent = `${spec.scenes.length} scene · videoclip WebM${spec.scenes.some(scene => scene.image) ? " cu imagini AI" : " cu fundaluri animate"}`;
-    const aspect = document.createElement("select"); aspect.className = "btn small"; aspect.setAttribute("aria-label", "Formatul videoclipului");
-    for (const [value, label] of [["portrait", "Vertical 9:16"], ["landscape", "Orizontal 16:9"], ["square", "Pătrat 1:1"]]) aspect.add(new Option(label, value));
-    aspect.value = spec.aspect || "landscape";
-    aspect.addEventListener("change", () => { spec.aspect = aspect.value; });
-    const images = document.createElement("button"); images.className = "btn small"; images.textContent = "Generează imagini pentru scene";
-    images.addEventListener("click", async () => {
-      if (!confirm(`Se va genera câte o imagine AI pentru ${spec.scenes.length} scene. Furnizorul API poate taxa fiecare imagine. Continui?`)) return;
-      images.disabled = true;
-      const gallery = document.createElement("div"); gallery.className = "creative-output"; output.replaceChildren(gallery);
-      try {
-        for (let i = 0; i < spec.scenes.length; i++) {
-          detail.textContent = `Se generează imaginea ${i + 1}/${spec.scenes.length}…`;
-          const scene = spec.scenes[i];
-          if (!scene.image) {
-            const result = await api("/api/media/image", jsonBody({ prompt: `${scene.text}. Cinematic storyboard frame, expressive composition, no text, no letters.` }));
-            scene.image = result.dataUrl;
-          }
-          const img = document.createElement("img"); img.className = "creative-image"; img.alt = scene.text; img.src = scene.image; gallery.append(img);
-        }
-        detail.textContent = `${spec.scenes.length} imagini AI pregătite · următorul export include voice-over, dacă l-ai generat.`;
-      } catch (error) { detail.textContent = error.message; }
-      finally { images.disabled = false; }
-    });
-    const voice = document.createElement("button"); voice.className = "btn small"; voice.textContent = "Generează voice-over MP3";
-    voice.addEventListener("click", async () => {
-      voice.disabled = true; detail.textContent = "Se generează voice-over…";
-      try {
-        const result = await generateSpeech(spec.scenes.map(scene => scene.text).join(". "), selectedSpeechOptions());
-        spec.voiceDataUrl = result.dataUrl;
-        const player = document.createElement("audio"); player.controls = true; player.src = result.dataUrl;
-        const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă voice-over MP3"; link.href = result.dataUrl; link.download = safeMediaName(spec.title, "mp3");
-        output.replaceChildren(player, link); detail.textContent = "Voice-over creat · exportul video îl va include ca pistă audio.";
-      } catch (error) { detail.textContent = error.message; }
-      finally { voice.disabled = false; }
-    });
-    action.textContent = "Exportă WebM";
-    action.addEventListener("click", async () => { action.disabled = true; detail.textContent = "Se pregătește videoclipul…"; try { const blob = await exportVideo(spec), url = URL.createObjectURL(blob); const player = document.createElement("video"); player.controls = true; player.src = url; const link = document.createElement("a"); link.className = "btn small"; link.textContent = "Descarcă WebM"; link.href = url; link.download = safeMediaName(spec.title, "webm"); output.replaceChildren(player, link); detail.textContent = `WebM creat${spec.voiceDataUrl ? " cu voice-over" : ""} · ${Math.round(blob.size / 1024)} KiB`; } catch (error) { detail.textContent = error.message; } finally { action.disabled = false; } });
-    card.append(heading, detail, exportProject, aspect, images, voice, action, output); node.append(card); return;
-  }
-  card.append(heading, detail, exportProject, action, output); node.append(card);
-}
-
-function addBubble(role, content, events = []) {
+ function addBubble(role, content, events = []) {
   const node = document.createElement("div"); node.className = `message ${role}`;
   const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = role === "user" ? "Tu" : "Nova";
-  const creative = role === "assistant" ? parseCreativeSpec(content) : { text: content, spec: null };
-  const body = document.createElement("div"); body.textContent = creative.text;
+  const body = document.createElement("div"); body.textContent = content;
   node.append(meta, body);
   if (role === "assistant" && content.trim()) {
     const download = document.createElement("button"); download.className = "btn small"; download.textContent = "Descarcă TXT";
-    download.addEventListener("click", () => downloadBlob(new Blob([content], { type: "text/plain;charset=utf-8" }), safeMediaName(creative.text.split("\n")[0].slice(0, 70) || "Nova", "txt")));
+    download.addEventListener("click", () => downloadBlob(new Blob([content], { type: "text/plain;charset=utf-8" }), safeMediaName(content.split("\n")[0].slice(0, 70) || "Nova", "txt")));
     node.append(download);
   }
-  if (creative.spec) addCreativeCard(node, creative.spec);
   if (events?.length) {
     const activity = document.createElement("div"); activity.className = "agent-events";
     activity.textContent = events.map(event => `${event.ok ? "✓" : "!"} ${event.summary}`).join("\n"); node.append(activity);
@@ -1117,7 +717,7 @@ async function send() {
   try {
     if (state.dirty) await saveFile(false);
     const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages: state.chat.map(({ role, content }) => ({ role, content })) }));
-    const assistantContent = task === "music" ? ensureMusicSpec(result.content, promptText) : result.content;
+    const assistantContent = result.content;
     state.chat.push({ role: "assistant", content: assistantContent });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
     addBubble("assistant", assistantContent, result.events);
@@ -1238,7 +838,7 @@ el("creatorHome").addEventListener("click", async event => {
   if (!card) return;
   const action = card.dataset.homeAction;
   const draft = el("homePrompt").value.trim();
-  if (["chat", "code", "text", "lyrics", "business", "music", "video"].includes(action)) {
+  if (["chat", "code", "text", "lyrics", "business"].includes(action)) {
     const task = action === "chat" ? "auto" : action;
     setTask(task); if (draft) { el("prompt").value = draft; el("homePrompt").value = ""; resizePrompt(); }
     setView("chat"); el("prompt").focus(); return;

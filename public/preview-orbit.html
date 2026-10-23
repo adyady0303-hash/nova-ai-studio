@@ -154,11 +154,8 @@
     .toast { position: fixed; z-index: 20; left: 50%; bottom: 24px; transform: translate(-50%, 10px); opacity: 0; pointer-events: none; transition: .2s; border: 1px solid #575071; border-radius: 10px; background: #272337; color: #eee9ff; padding: 10px 14px; box-shadow: 0 8px 30px #0008; font-size: 11px; font-weight: 650; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
     .agent-events { margin-top: 12px; padding: 9px 11px; border: 1px solid #343b49; border-radius: 10px; background: #141820; color: #a9d5bc; font: 10px/1.7 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
-    .creative-card { display: grid; gap: 9px; margin-top: 14px; padding: 14px; border: 1px solid #343949; border-radius: 14px; background: #151922; }
-    .creative-card strong { color: #e9e6f7; font-size: 12px; }
-    .creative-detail { color: #9ca2b2; font-size: 10px; }
     .creative-output { display: grid; gap: 8px; }
-    .creative-output audio, .creative-output video { width: min(100%, 580px); max-height: 300px; border-radius: 10px; background: #08090d; }
+    .creative-output audio { width: min(100%, 580px); border-radius: 10px; background: #08090d; }
     .creative-output a { width: max-content; text-decoration: none; }
     .creative-image { display: block; max-width: min(100%, 620px); max-height: 460px; border: 1px solid var(--line); border-radius: 12px; object-fit: contain; }
     .apply-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
@@ -930,7 +927,7 @@ body { overflow: hidden; background: radial-gradient(ellipse at 50% -36%, #14344
 .creator-card-copy strong { color: #eaf5ff; font-size: 11px; font-weight: 700; }
 .creator-card-copy small { color: #8ba1b2; font-size: 9px; line-height: 1.45; }
 .creator-arrow { position: absolute; right: 12px; bottom: 12px; color: #8eb8c2; font-size: 12px; }
-.card-chat { --card-glow: #4f87ef; }.card-code { --card-glow: #42cbb0; }.card-image { --card-glow: #9e78f3; }.card-music { --card-glow: #d779cb; }.card-video { --card-glow: #45a6e4; }.card-text { --card-glow: #e0a457; }
+.card-chat { --card-glow: #4f87ef; }.card-code { --card-glow: #42cbb0; }.card-image { --card-glow: #9e78f3; }.card-text { --card-glow: #e0a457; }
 .home-history[hidden] { display: none !important; }
 .resume-card { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 10px 42px 10px 12px; border: 1px solid #284b55; border-radius: 13px; text-align: left; color: #eaf7ff; background: linear-gradient(115deg, #102b32, #111f31); }
 .resume-card > span:nth-child(2) { display: grid; gap: 4px; min-width: 0; }
@@ -1127,8 +1124,6 @@ body { overflow: hidden; color: #eff5ff; background: radial-gradient(ellipse at 
 .creator-card-copy small { color: rgb(244 248 255 / 82%); font-size: 8px; line-height: 1.35; }
 .card-code { border-color: #0879c4; background: linear-gradient(130deg,#0874c4,#02aee7); }
 .card-image { border-color: #6434b9; background: linear-gradient(130deg,#5b32b8,#a545dc); }
-.card-music { border-color: #ad1b99; background: linear-gradient(130deg,#a21291,#e026aa); }
-.card-video { border-color: #0b829a; background: linear-gradient(130deg,#0b758e,#12a6b4); }
 .card-text { border-color: #5140b5; background: linear-gradient(130deg,#5540be,#7c59e6); }
 .home-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 2px 10px; }
 .home-section-heading h2 { margin: 0; color: #ecf4ff; font-size: 13px; font-weight: 700; letter-spacing: -.02em; }
@@ -1458,8 +1453,6 @@ body { color:var(--text); }
         <button class="create-item" data-task="text" type="button"><span class="create-icon">✎</span><span>Texte & articole</span></button>
         <button class="create-item" data-task="business" type="button"><span class="create-icon">↗</span><span>Afaceri online</span></button>
         <button class="create-item" data-task="lyrics" aria-label="Versuri originale" title="Versuri originale"><span class="create-icon">♫</span><span>Versuri</span></button>
-        <button class="create-item" data-task="music" aria-label="Muzică" title="Muzică"><span class="create-icon">♫</span><span>Muzică</span></button>
-        <button class="create-item" data-task="video" aria-label="Video și scenarii" title="Video și scenarii"><span class="create-icon">▶</span><span>Video & scenarii</span></button>
       </nav>
 
       <div class="side-divider"></div>
@@ -1508,8 +1501,6 @@ body { color:var(--text); }
             <div class="creator-grid">
               <button class="creator-card card-chat" type="button" data-home-action="chat"><span class="tool-number">01</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0Z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg></span><span class="creator-card-copy"><strong>Chat AI</strong><small>Întrebări, idei și surse web</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-image" type="button" data-home-action="image"><span class="tool-number">02</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span><span class="creator-card-copy"><strong>Imagine</strong><small>Vizualuri pornind de la cuvinte</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
-              <button class="creator-card card-music" type="button" data-home-action="music"><span class="tool-number">03</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l12-2v13M9 9l12-2"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="16" rx="3" ry="3"/></svg></span><span class="creator-card-copy"><strong>Muzică</strong><small>Melodie, ritm și acompaniament</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
-              <button class="creator-card card-video" type="button" data-home-action="video"><span class="tool-number">04</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="15" height="14" rx="3"/><path d="m17 10 5-3v10l-5-3M7 9l5 3-5 3Z"/></svg></span><span class="creator-card-copy"><strong>Video</strong><small>Scene, povești și voce</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-code" type="button" data-home-action="code"><span class="tool-number">05</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-16-2 20"/></svg></span><span class="creator-card-copy"><strong>Cod & aplicații</strong><small>Construiește următorul proiect</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-text" type="button" data-home-action="text"><span class="tool-number">06</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M12 4v16M8 20h8M3 8V4m18 4V4"/></svg></span><span class="creator-card-copy"><strong>Texte</strong><small>Cuvintele potrivite pentru ideea ta</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-lyrics" type="button" data-home-action="lyrics"><span class="tool-number">07</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6M4 20l4-1 12-12a3 3 0 0 0-4-4L4 15v5ZM14 20h7"/></svg></span><span class="creator-card-copy"><strong>Versuri</strong><small>Strofe, refren și emoție</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
@@ -1524,7 +1515,7 @@ body { color:var(--text); }
 
           <section class="home-projects" aria-labelledby="projectsTitle">
             <div class="home-section-heading"><div><span class="section-index">02 / SPAȚIUL TĂU</span><h2 id="projectsTitle">Proiectele tale</h2></div><button class="text-action" type="button" id="seeProjectsBtn">Vezi toate <span aria-hidden="true">→</span></button></div>
-            <div class="home-project-grid" id="homeProjects" aria-live="polite"><div class="preview-project">Ideea ta de mâine<small>Proiect demonstrativ · Cod și aplicații</small></div><div class="preview-project">Un univers în imagini<small>Proiect demonstrativ · Creație vizuală</small></div><div class="preview-project">Sunetul unei idei<small>Proiect demonstrativ · Muzică</small></div></div>
+            <div class="home-project-grid" id="homeProjects" aria-live="polite"><div class="preview-project">Ideea ta de mâine<small>Proiect demonstrativ · Cod și aplicații</small></div><div class="preview-project">Un univers în imagini<small>Proiect demonstrativ · Creație vizuală</small></div><div class="preview-project">Afacerea ta online<small>Proiect demonstrativ · Business</small></div></div>
           </section>
         </div>
       </section>
@@ -1537,15 +1528,13 @@ body { color:var(--text); }
             <button class="mode-chip" data-task="text">Texte</button>
             <button class="mode-chip" data-task="lyrics">Versuri</button>
             <button class="mode-chip" data-task="business">Afaceri</button>
-            <button class="mode-chip" data-task="music">Muzică</button>
-            <button class="mode-chip" data-task="video">Video</button>
             <span class="tool-divider"></span>
             <button class="btn small subtle composer-image" id="generateImageBtn" title="Creează o imagine AI pe baza descrierii">Imagine</button>
             <button class="btn small subtle" id="voiceComposerBtn" type="button" title="Creează și descarcă un voice-over MP3">Voice-over</button>
           </div>
           <label class="sr-only" for="taskSelect">Tipul cererii</label>
           <select id="taskSelect" class="sr-only" aria-label="Tipul cererii">
-            <option value="auto">Chat liber</option><option value="code">Cod și aplicații</option><option value="text">Texte și articole</option><option value="lyrics">Versuri</option><option value="business">Afaceri online</option><option value="music">Compoziție muzicală</option><option value="video">Scenariu video</option>
+            <option value="auto">Chat liber</option><option value="code">Cod și aplicații</option><option value="text">Texte și articole</option><option value="lyrics">Versuri</option><option value="business">Afaceri online</option>
           </select>
           <textarea class="prompt" id="prompt" placeholder="Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)" aria-label="Mesaj pentru Nova"></textarea>
           <div class="composer-bottom">

@@ -910,7 +910,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "modeled-instrument-orchestration-v4",
+      release: "focused-tools-without-music-video-v1",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -1302,6 +1302,7 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/agent") {
     const body = await readJson(req);
+    if (["music", "video"].includes(body.task)) return json(res, 410, { error: "Instrumentul solicitat a fost eliminat din Nova AI Studio." });
     if (typeof body.model !== "string" || !body.model.trim()) return json(res, 400, { error: "Alege un model AI în bara de chat." });
     if (!validProjectId(body.project)) return json(res, 400, { error: "Alege un proiect." });
     if (!Array.isArray(body.messages) || !body.messages.length) return json(res, 400, { error: "Trimite o cerere agentului." });

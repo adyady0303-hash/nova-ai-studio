@@ -45,9 +45,10 @@ test('Orbit dashboard routes creation tools to implemented actions', () => {
   assert.match(html, /id="homePrompt"/);
   assert.match(html, /id="homeSendBtn"/);
   assert.match(html, /id="resumeChatBtn"/);
-  for (const action of ['code', 'image', 'music', 'video', 'lyrics']) {
+  for (const action of ['code', 'image', 'lyrics', 'business']) {
     assert.match(html, new RegExp(`data-home-action="${action}"`));
   }
+  assert.doesNotMatch(html, /data-(?:home-action|task)="(?:music|video)"/);
   assert.match(html, /id="homeProjects"/);
   assert.match(html, /class="home-kicker"/);
   assert.match(html, /id="newProjectDialog"/);
@@ -289,7 +290,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'modeled-instrument-orchestration-v4');
+  assert.equal(versionData.release, 'focused-tools-without-music-video-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -513,11 +514,16 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const { project } = await created.json();
   assert.equal(project.id, 'proiect-test-nova');
   assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key' })).status, 200);
-  for (const [task, expected] of [['text', /Scrie textul final/], ['lyrics', /strofe/], ['business', /calendar de lansare/], ['music', /nova-music/], ['video', /nova-video/]]) {
+  for (const [task, expected] of [['text', /Scrie textul final/], ['lyrics', /strofe/], ['business', /calendar de lansare/]]) {
     const response = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', task, mode: 'plan', messages: [{ role: 'user', content: 'Creează un exemplu complet' }] });
     assert.equal(response.status, 200);
     await response.json();
     assert.match(mockSystemPrompt, expected);
+  }
+  for (const task of ['music', 'video']) {
+    const removed = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', task, mode: 'plan', messages: [{ role: 'user', content: 'Creează' }] });
+    assert.equal(removed.status, 410);
+    assert.match((await removed.json()).error, /eliminat/);
   }
   for (const endpoint of ['/api/chat', '/api/agent']) {
     const automatic = await post(endpoint, { project: project.id, model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Care sunt ultimele noutăți online?' }] });
