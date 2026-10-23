@@ -23,6 +23,7 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="generateVoiceBtn"/);
   assert.match(html, /id="voiceComposerBtn"/);
   assert.match(html, /id="editImageBtn"[^>]*>＋ Adaugă foto<\/button>/);
+  assert.match(html, /id="textModel" value="gpt-5\.4"/);
   assert.match(html, /id="imageEditDialog"/);
   assert.match(html, /id="imageEditFile"/);
   assert.match(html, /id="adminDashboardLink"/);
@@ -381,7 +382,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   }
   const aiHealth = await request('/api/health');
   assert.deepEqual(await aiHealth.json(), {
-    connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-4.1-mini']
+    connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-5.4']
   });
   const aiChat = await post('/api/chat', {
     model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut Nova' }]

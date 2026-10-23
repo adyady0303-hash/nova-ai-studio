@@ -15,6 +15,8 @@ const OLLAMA = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
 const DATA_DIR = process.env.NOVA_DATA_DIR || __dirname;
 const ACCESS_USER = process.env.NOVA_ACCESS_USER || "";
 const ACCESS_PASSWORD = process.env.NOVA_ACCESS_PASSWORD || "";
+const DEFAULT_TEXT_MODEL = "gpt-5.4";
+const AI_SETTINGS_SCHEMA_VERSION = 2;
 const configuredAiProvider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
 const aiProvider = {
   provider: configuredAiProvider === "ollama"
@@ -24,7 +26,7 @@ const aiProvider = {
       : "ollama",
   baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
   apiKey: process.env.OPENAI_API_KEY || "",
-  textModel: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+  textModel: process.env.OPENAI_MODEL || DEFAULT_TEXT_MODEL,
   imageModel: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini",
   speechModel: process.env.OPENAI_SPEECH_MODEL || "gpt-4o-mini-tts",
   voice: "nova"
@@ -400,6 +402,7 @@ function storedAiSettings(settings = aiProvider) {
   const cipher = crypto.createCipheriv("aes-256-gcm", aiSettingsCipherKey(), iv);
   const encryptedKey = Buffer.concat([cipher.update(settings.apiKey || "", "utf8"), cipher.final()]);
   return {
+    schemaVersion: AI_SETTINGS_SCHEMA_VERSION,
     provider: settings.provider,
     baseUrl: settings.baseUrl,
     textModel: settings.textModel,
@@ -421,10 +424,14 @@ function applyStoredAiSettings(value) {
       decipher.update(Buffer.from(value.apiKeyCipher || "", "base64")),
       decipher.final()
     ]).toString("utf8");
+    const storedTextModel = String(value.textModel || aiProvider.textModel);
+    const textModel = Number(value.schemaVersion || 1) < AI_SETTINGS_SCHEMA_VERSION && storedTextModel === "gpt-4.1-mini"
+      ? DEFAULT_TEXT_MODEL
+      : storedTextModel;
     Object.assign(aiProvider, {
       provider: value.provider,
       baseUrl: String(value.baseUrl || aiProvider.baseUrl),
-      textModel: String(value.textModel || aiProvider.textModel),
+      textModel,
       imageModel: String(value.imageModel || aiProvider.imageModel),
       speechModel: String(value.speechModel || aiProvider.speechModel),
       voice: String(value.voice || aiProvider.voice),
@@ -868,7 +875,7 @@ async function handle(req, res) {
         return json(res, 400, { error: "Adresa API trebuie să fie HTTP(S), fără autentificare în URL." });
       }
       nextProvider.baseUrl = endpoint.toString().replace(/\/+$/, "");
-      nextProvider.textModel = String(body.textModel || "gpt-4.1-mini").trim().slice(0, 120);
+      nextProvider.textModel = String(body.textModel || DEFAULT_TEXT_MODEL).trim().slice(0, 120);
       nextProvider.imageModel = String(body.imageModel || "gpt-image-1-mini").trim().slice(0, 120);
       nextProvider.speechModel = String(body.speechModel || "gpt-4o-mini-tts").trim().slice(0, 120);
       nextProvider.voice = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"].includes(body.voice) ? body.voice : "nova";
