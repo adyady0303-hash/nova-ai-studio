@@ -910,7 +910,7 @@ async function handle(req, res) {
     const commit = process.env.RENDER_GIT_COMMIT || "";
     return json(res, 200, {
       version: require("./package.json").version,
-      release: "focused-tools-without-music-video-v1",
+      release: "real-project-dashboard-v2",
       commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null
     });
   }
@@ -1122,9 +1122,12 @@ async function handle(req, res) {
       if (!entry.isDirectory() || !validProjectId(entry.name)) continue;
       let name = entry.name;
       try { name = JSON.parse(await dataFs.promises.readFile(path.join(projectsDir, entry.name, ".nova-project.json"), "utf8")).name || name; } catch {}
-      projects.push({ id: entry.name, name });
+      const files = await listProjectFiles(path.join(projectsDir, entry.name));
+      const rootStat = await dataFs.promises.stat(path.join(projectsDir, entry.name));
+      const updatedAt = files.reduce((latest, file) => file.modified > latest ? file.modified : latest, rootStat.mtime.toISOString());
+      projects.push({ id: entry.name, name, fileCount: files.length, updatedAt });
     }
-    return json(res, 200, { projects: projects.sort((a, b) => a.name.localeCompare(b.name)) });
+    return json(res, 200, { projects: projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.name.localeCompare(b.name)) });
   }
 
   if (req.method === "POST" && url.pathname === "/api/projects") {

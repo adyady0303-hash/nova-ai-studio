@@ -53,9 +53,11 @@ test('Orbit dashboard routes creation tools to implemented actions', () => {
   assert.match(html, /class="home-kicker"/);
   assert.match(html, /id="newProjectDialog"/);
   assert.match(app, /function renderHomeProjects\(\)/);
-  assert.match(app, /slice\(0, 5\)/);
+  assert.match(app, /slice\(0, 4\)/);
   assert.match(app, /data-create-project/);
-  assert.match(app, /starterProjectNames = \["Mountain Escape", "Travel App", "Neon Dreams", "Old Beat", "Band City"\]/);
+  assert.doesNotMatch(app, /Neon Dreams|Old Beat|Band City|starterProjectNames/);
+  assert.match(app, /name\.textContent = "Proiect nou"/);
+  assert.match(html, /id="newHomeProjectBtn"/);
   assert.match(app, /async function saveNewProject\(name\)/);
   assert.match(app, /project-cover/);
   assert.match(app, /function submitHomePrompt\(\)/);
@@ -290,7 +292,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'focused-tools-without-music-video-v1');
+  assert.equal(versionData.release, 'real-project-dashboard-v2');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -542,7 +544,9 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.deepEqual(mockToolChoice, { type: 'function', function: { name: 'web_search' } });
   assert.match((await verifiedAgent.json()).content, /nu pot fi confirmate/);
   const projects = await request('/api/projects');
-  assert.ok((await projects.json()).projects.some(item => item.id === project.id));
+  const listedProject = (await projects.json()).projects.find(item => item.id === project.id);
+  assert.equal(listedProject.fileCount, 3);
+  assert.match(listedProject.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
 
   const initialFiles = await request(`/api/files?project=${project.id}`);
   assert.deepEqual((await initialFiles.json()).files.map(file => file.path).sort(), ['README.md', 'package.json', 'src/index.js'].sort());

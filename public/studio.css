@@ -567,6 +567,7 @@ body { overflow: hidden; background: radial-gradient(ellipse at 50% -36%, #14344
 .home-project-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .home-project-card { position: relative; display: grid; min-width: 0; grid-template-columns: 43px minmax(0,1fr) 20px; grid-template-rows: auto auto; align-items: center; column-gap: 10px; padding: 9px; border: 1px solid #243d50; border-radius: 13px; text-align: left; background: #0e1a27; }
 .home-project-card:hover { border-color: #41887c; background: #112532; }
+.home-project-actions { display: flex; align-items: center; gap: 12px; }
 .project-preview { display: grid; width: 43px; height: 43px; grid-row: 1 / 3; place-items: center; border: 1px solid #285162; border-radius: 11px; color: #a9fff0; background: radial-gradient(circle at 68% 24%, #267c75, #13273a 75%); font-size: 16px; }
 .project-tone-1 .project-preview { color: #d3b3ff; border-color: #4d4076; background: radial-gradient(circle at 68% 24%, #6948a2, #182239 75%); }
 .project-tone-2 .project-preview { color: #a8d6ff; border-color: #315883; background: radial-gradient(circle at 68% 24%, #316792, #142339 75%); }

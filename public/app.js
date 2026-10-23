@@ -2,7 +2,6 @@ const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, publication: null, view: "home" };
 let activeMessageStream = null;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
-const starterProjectNames = ["Mountain Escape", "Travel App", "Neon Dreams", "Old Beat", "Band City"];
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -148,7 +147,7 @@ function renderHomeProjects() {
   const list = el("homeProjects");
   if (!list) return;
   list.replaceChildren();
-  const projects = state.projects.slice(0, 5);
+  const projects = state.projects.slice(0, 4);
   projects.forEach((project, index) => {
     const card = document.createElement("button"); card.className = `home-project-card project-tone-${index % 5}`; card.type = "button";
     card.dataset.projectId = project.id;
@@ -160,24 +159,24 @@ function renderHomeProjects() {
     cover.append(glow, scene, detailLines);
     const name = document.createElement("strong"); name.className = "project-name"; name.textContent = project.name;
     const detail = document.createElement("small"); detail.className = "project-description";
-    detail.textContent = project.id === state.project ? `${state.files.length} fișiere · Deschis` : "Deschide proiectul";
+    const fileCount = project.id === state.project ? state.files.length : Number.isInteger(project.fileCount) ? project.fileCount : null;
+    const countLabel = fileCount === 1 ? "1 fișier" : fileCount === 0 ? "Proiect gol" : fileCount === null ? "Proiect" : `${fileCount} fișiere`;
+    detail.textContent = project.id === state.project ? `${countLabel} · Activ` : `${countLabel} · Deschide`;
     card.append(cover, name, detail); list.append(card);
   });
-  for (let index = projects.length; index < 5; index++) {
-    const card = document.createElement("button"); card.type = "button";
-    card.className = `home-project-card project-create-card project-tone-${index % 5}`;
-    card.dataset.createProject = starterProjectNames[index];
-    card.setAttribute("aria-label", `Creează proiectul ${starterProjectNames[index]}`);
-    const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 5}`; cover.setAttribute("aria-hidden", "true");
-    const scene = document.createElement("span"); scene.className = "cover-scene";
-    const glow = document.createElement("span"); glow.className = "cover-glow";
-    const detailLines = document.createElement("span"); detailLines.className = "cover-detail";
-    const plus = document.createElement("span"); plus.className = "project-create-plus"; plus.setAttribute("aria-hidden", "true"); plus.textContent = "+";
-    cover.append(glow, scene, detailLines, plus);
-    const name = document.createElement("strong"); name.className = "project-name"; name.textContent = starterProjectNames[index];
-    const detail = document.createElement("small"); detail.className = "project-description"; detail.textContent = "Creează acest proiect";
-    card.append(cover, name, detail); list.append(card);
-  }
+  const index = projects.length;
+  const card = document.createElement("button"); card.type = "button";
+  card.className = `home-project-card project-create-card project-tone-${index % 5}`;
+  card.dataset.createProject = ""; card.setAttribute("aria-label", "Creează un proiect nou");
+  const cover = document.createElement("span"); cover.className = `project-cover cover-${index % 5}`; cover.setAttribute("aria-hidden", "true");
+  const scene = document.createElement("span"); scene.className = "cover-scene";
+  const glow = document.createElement("span"); glow.className = "cover-glow";
+  const detailLines = document.createElement("span"); detailLines.className = "cover-detail";
+  const plus = document.createElement("span"); plus.className = "project-create-plus"; plus.setAttribute("aria-hidden", "true"); plus.textContent = "+";
+  cover.append(glow, scene, detailLines, plus);
+  const name = document.createElement("strong"); name.className = "project-name"; name.textContent = "Proiect nou";
+  const detail = document.createElement("small"); detail.className = "project-description"; detail.textContent = "Alege numele și începe";
+  card.append(cover, name, detail); list.append(card);
 }
 
 function updateHomeHistory() {
@@ -806,6 +805,7 @@ el("app").addEventListener("click", event => {
   if (event.target === el("app") && el("app").classList.contains("projects-open")) setProjectsOpen(false);
 });
 el("seeProjectsBtn").addEventListener("click", () => setProjectsOpen(true));
+el("newHomeProjectBtn").addEventListener("click", () => createProject());
 el("homeProjects").addEventListener("click", async event => {
   const createCard = event.target.closest("[data-create-project]");
   if (createCard) { createProject(createCard.dataset.createProject); return; }

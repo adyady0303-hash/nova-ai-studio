@@ -124,7 +124,7 @@ Pentru întrebări despre informații actuale, activează **Verifică surse web*
 
 ### Generatoare 1.3.0
 
-Moduri dedicate pentru texte, versuri originale și planuri de afaceri online, cu descărcare TXT. Instrumentele Muzică și Video au fost eliminate în versiunea 1.9.0. Generarea AI necesită serviciul cloud configurat și disponibil.
+Moduri dedicate pentru texte, versuri originale și planuri de afaceri online, cu descărcare TXT. Instrumentele Muzică și Video au fost eliminate în versiunea 1.9.0. În versiunea 2.0.0, tabloul de proiecte afișează numai proiecte reale, numărul real de fișiere și o singură acțiune clară pentru un proiect nou. Generarea AI necesită serviciul cloud configurat și disponibil.
 
 Chatul caută automat surse pentru întrebări actuale și încearcă o căutare când modelul declară că nu are informații. Erorile de autentificare ale furnizorului rămân distincte; căutarea web nu înlocuiește cheia AI.
 
