@@ -292,7 +292,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const publicVersion = await fetch(`${baseUrl}/api/version`);
   assert.equal(publicVersion.status, 200);
   const versionData = await publicVersion.json();
-  assert.equal(versionData.release, 'social-sharing-container-fix-v2');
+  assert.equal(versionData.release, 'android-ios-installable-pwa-v1');
   assert.equal(versionData.version, require('../package.json').version);
   assert.ok(versionData.commit === null || /^[a-f0-9]{40}$/i.test(versionData.commit));
   assert.deepEqual(Object.keys(versionData).sort(), ['commit', 'release', 'version']);
@@ -324,6 +324,9 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(loginHtml, /data-password-toggle="password"/);
   assert.match(loginHtml, /property="og:title" content="Nova AI Studio/);
   assert.match(loginHtml, /id="share-nova"/);
+  assert.match(loginHtml, /id="install-nova"/);
+  assert.match(loginHtml, /rel="manifest" href="\/manifest\.webmanifest"/);
+  assert.match(loginHtml, /apple-mobile-web-app-capable/);
   assert.doesNotMatch(loginHtml, /id="confirm-password"/);
   const robots = await fetch(`${baseUrl}/robots.txt`);
   assert.equal(robots.status, 200);
@@ -337,6 +340,15 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const shareImage = await fetch(`${baseUrl}/share-image.png`);
   assert.equal(shareImage.headers.get('content-type'), 'image/png');
   assert.ok((await shareImage.arrayBuffer()).byteLength > 100000);
+  const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`);
+  assert.equal(manifestResponse.status, 200);
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.display, 'standalone');
+  assert.ok(manifest.icons.some(icon => icon.sizes === '512x512' && icon.purpose.includes('maskable')));
+  const serviceWorker = await fetch(`${baseUrl}/service-worker.js`);
+  assert.equal(serviceWorker.headers.get('service-worker-allowed'), '/');
+  assert.match(await serviceWorker.text(), /nova-mobile-shell/);
+  assert.equal((await fetch(`${baseUrl}/icon-192.png`)).headers.get('content-type'), 'image/png');
   assert.match(loginHtml, /password\.maxLength=8/);
   assert.match(loginHtml, /Fără cerințe de majuscule/);
   assert.match(loginHtml, /password\.maxLength=128/);

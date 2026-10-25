@@ -912,6 +912,7 @@ if (projectDrawer) {
   projectDrawer.open = false;
 }
 window.addEventListener("beforeunload", event => { if (state.dirty) { event.preventDefault(); event.returnValue = ""; } });
+if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js").catch(() => {}));
 
 loadAccount().then(() => Promise.all([loadProviderSettings(), loadProjects()])).catch(error => {
   el("projectName").textContent = "Server indisponibil"; toast(error.message);

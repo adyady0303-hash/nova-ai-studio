@@ -1,0 +1,38 @@
+{
+  "name": "Nova AI Studio",
+  "short_name": "Nova",
+  "description": "Studio AI pentru cod, imagini, texte, voice-over și afaceri online.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#050a0e",
+  "theme_color": "#07101b",
+  "lang": "ro",
+  "categories": ["productivity", "business", "developer"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Deschide Nova", "short_name": "Nova", "url": "/" },
+    { "name": "Despre platformă", "short_name": "Despre", "url": "/about" }
+  ]
+}

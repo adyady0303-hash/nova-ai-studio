@@ -142,6 +142,8 @@ Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul a
 
 Versiunea 2.1.0 adaugă distribuire nativă din pagina de acces, metadate Open Graph/Twitter, imagine socială publică, pagină publică de prezentare la `/about`, `robots.txt`, sitemap XML și date structurate pentru descoperirea în Google. Publicarea efectivă în conturile Facebook, Instagram sau TikTok rămâne sub controlul proprietarului conturilor.
 
+Versiunea 2.2.0 transformă Nova într-o Progressive Web App instalabilă pe Android și iOS. Include manifest, iconuri adaptive, mod standalone, service worker cu pagină offline sigură și instrucțiuni de instalare pentru Safari pe iPhone. Proiectele și AI-ul necesită în continuare conexiune la server.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.
