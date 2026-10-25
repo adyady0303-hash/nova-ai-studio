@@ -12,6 +12,7 @@ COPY --chown=node:node server.js data-store.js billing.js web-tools.js ai-qualit
 COPY --chown=node:node public ./public
 COPY --chown=node:node site/index.html site/privacy.html ./site/
 COPY --chown=node:node site/media/nova-publicitate-coperta.png ./site/media/
+COPY --chown=node:node site/downloads/Nova-AI-Studio-Android-2.3.0.apk ./site/downloads/
 RUN mkdir -p /data && chown node:node /data
 EXPOSE 10000
 USER node

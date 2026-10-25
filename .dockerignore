@@ -6,5 +6,7 @@ node_modules
 projects
 data
 downloads
+!site/downloads/
+!site/downloads/*.apk
 outputs
 README.md
