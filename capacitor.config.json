@@ -1,0 +1,18 @@
+{
+  "appId": "eu.nova.ai.studio",
+  "appName": "Nova AI Studio",
+  "webDir": "mobile-shell",
+  "server": {
+    "url": "https://www.nova-ai-studio.eu",
+    "cleartext": false,
+    "allowNavigation": ["www.nova-ai-studio.eu"]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile"
+  }
+}

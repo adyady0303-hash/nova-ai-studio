@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2732 2732">
+  <defs>
+    <radialGradient id="bg" cx="68%" cy="18%" r="95%"><stop stop-color="#16465a"/><stop offset=".55" stop-color="#081923"/><stop offset="1" stop-color="#050a0e"/></radialGradient>
+    <linearGradient id="n" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#9af2ff"/><stop offset="1" stop-color="#b4ed79"/></linearGradient>
+  </defs>
+  <rect width="2732" height="2732" fill="url(#bg)"/>
+  <circle cx="1366" cy="1280" r="410" fill="none" stroke="#75ddec" stroke-opacity=".24" stroke-width="18"/>
+  <circle cx="1366" cy="1280" r="330" fill="#07131b" stroke="#7ce8f6" stroke-width="12"/>
+  <path d="M1146 1510v-460h112l205 279v-279h112v460h-105l-212-288v288z" fill="url(#n)"/>
+  <circle cx="1648" cy="998" r="40" fill="#b4ed79"/>
+  <text x="1366" y="1835" text-anchor="middle" fill="#edfaff" font-family="system-ui,sans-serif" font-size="112" font-weight="700">Nova AI Studio</text>
+</svg>

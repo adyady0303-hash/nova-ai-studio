@@ -144,6 +144,8 @@ Versiunea 2.1.0 adaugă distribuire nativă din pagina de acces, metadate Open G
 
 Versiunea 2.2.0 transformă Nova într-o Progressive Web App instalabilă pe Android și iOS. Include manifest, iconuri adaptive, mod standalone, service worker cu pagină offline sigură și instrucțiuni de instalare pentru Safari pe iPhone. Proiectele și AI-ul necesită în continuare conexiune la server.
 
+Versiunea 2.3.0 adaugă proiecte native Capacitor pentru Android și iOS, iconuri și ecrane de pornire proprii și configurare HTTPS exclusivă către `www.nova-ai-studio.eu`. Android poate fi construit cu `npm run mobile:sync`, apoi `cd android && ./gradlew assembleDebug`. Publicarea în magazine necesită conturile și certificatele de semnare ale proprietarului.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.
