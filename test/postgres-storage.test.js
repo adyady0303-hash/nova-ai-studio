@@ -55,7 +55,11 @@ test('PostgreSQL storage imports disk data and shares projects, sessions and set
 
   const imported = await get(serverB, '/api/projects', ownerCookie);
   assert.equal(imported.response.status, 200, imported.body);
-  assert.deepEqual(imported.body.projects, [{ id: 'legacy-project', name: 'Legacy project' }]);
+  assert.equal(imported.body.projects.length, 1);
+  assert.equal(imported.body.projects[0].id, 'legacy-project');
+  assert.equal(imported.body.projects[0].name, 'Legacy project');
+  assert.equal(imported.body.projects[0].fileCount, 1);
+  assert.ok(Number.isFinite(Date.parse(imported.body.projects[0].updatedAt)));
   const importedFile = await get(serverB, '/api/file?project=legacy-project&path=src%2Findex.js', ownerCookie);
   assert.equal(importedFile.body.content, 'export const state = "from disk";\n');
 
