@@ -936,6 +936,17 @@ async function handle(req, res) {
     res.writeHead(200, { "content-type": "image/png", "content-length": image.length, "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" });
     return res.end(req.method === "HEAD" ? undefined : image);
   }
+  if (["GET", "HEAD"].includes(req.method) && url.pathname === "/downloads/Nova-AI-Studio-Android-2.3.0.apk") {
+    const apk = await fs.promises.readFile(path.join(__dirname, "site", "downloads", "Nova-AI-Studio-Android-2.3.0.apk"));
+    res.writeHead(200, {
+      "content-type": "application/vnd.android.package-archive",
+      "content-length": apk.length,
+      "content-disposition": 'attachment; filename="Nova-AI-Studio-Android-2.3.0.apk"',
+      "cache-control": "public, max-age=86400, immutable",
+      "x-content-type-options": "nosniff"
+    });
+    return res.end(req.method === "HEAD" ? undefined : apk);
+  }
   const mobileAsset = { "/manifest.webmanifest": ["manifest.webmanifest", "application/manifest+json; charset=utf-8"], "/icon.svg": ["icon.svg", "image/svg+xml"], "/icon-192.png": ["icon-192.png", "image/png"], "/icon-512.png": ["icon-512.png", "image/png"], "/offline.html": ["offline.html", "text/html; charset=utf-8"], "/service-worker.js": ["service-worker.js", "text/javascript; charset=utf-8"] }[url.pathname];
   if (["GET", "HEAD"].includes(req.method) && mobileAsset) {
     const file = await fs.promises.readFile(path.join(PUBLIC_DIR, mobileAsset[0]));

@@ -339,6 +339,10 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(await about.text(), /property="og:image"/);
   const shareImage = await fetch(`${baseUrl}/share-image.png`);
   assert.equal(shareImage.headers.get('content-type'), 'image/png');
+  const androidApk = await fetch(`${baseUrl}/downloads/Nova-AI-Studio-Android-2.3.0.apk`, { method: 'HEAD' });
+  assert.equal(androidApk.status, 200);
+  assert.equal(androidApk.headers.get('content-type'), 'application/vnd.android.package-archive');
+  assert.match(androidApk.headers.get('content-disposition'), /Nova-AI-Studio-Android-2\.3\.0\.apk/);
   assert.ok((await shareImage.arrayBuffer()).byteLength > 100000);
   const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
