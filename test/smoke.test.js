@@ -325,6 +325,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(loginHtml, /property="og:title" content="Nova AI Studio/);
   assert.match(loginHtml, /id="share-nova"/);
   assert.match(loginHtml, /id="install-nova"/);
+  assert.match(loginHtml, /id="android-download"/);
+  assert.match(loginHtml, /iPhone\/iPad · Instalează din Safari/);
   assert.match(loginHtml, /rel="manifest" href="\/manifest\.webmanifest"/);
   assert.match(loginHtml, /apple-mobile-web-app-capable/);
   assert.doesNotMatch(loginHtml, /id="confirm-password"/);
