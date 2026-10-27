@@ -45,7 +45,7 @@ test('Orbit dashboard routes creation tools to implemented actions', () => {
   assert.match(html, /id="homePrompt"/);
   assert.match(html, /id="homeSendBtn"/);
   assert.match(html, /id="resumeChatBtn"/);
-  for (const action of ['code', 'image', 'lyrics', 'business']) {
+  for (const action of ['code', 'image', 'cv', 'lyrics', 'business']) {
     assert.match(html, new RegExp(`data-home-action="${action}"`));
   }
   assert.doesNotMatch(html, /data-(?:home-action|task)="(?:music|video)"/);
@@ -61,6 +61,10 @@ test('Orbit dashboard routes creation tools to implemented actions', () => {
   assert.match(app, /async function saveNewProject\(name\)/);
   assert.match(app, /project-cover/);
   assert.match(app, /function submitHomePrompt\(\)/);
+  assert.match(html, /id="cvDialog"/);
+  assert.match(html, /id="openCvBuilderBtn"/);
+  assert.match(app, /api\("\/api\/cv"/);
+  assert.match(app, /looksLikeCvCreationRequest/);
   assert.match(app, /api\("\/api\/agent"/);
   assert.match(app, /generateImageFromPrompt\(\)/);
   assert.match(app, /generateImageEdit\(\)/);
@@ -341,10 +345,10 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(await about.text(), /property="og:image"/);
   const shareImage = await fetch(`${baseUrl}/share-image.png`);
   assert.equal(shareImage.headers.get('content-type'), 'image/png');
-  const androidApk = await fetch(`${baseUrl}/downloads/Nova-AI-Studio-Android-2.3.0.apk`, { method: 'HEAD' });
+  const androidApk = await fetch(`${baseUrl}/downloads/Nova-AI-Studio-Android-2.3.1.apk`, { method: 'HEAD' });
   assert.equal(androidApk.status, 200);
   assert.equal(androidApk.headers.get('content-type'), 'application/vnd.android.package-archive');
-  assert.match(androidApk.headers.get('content-disposition'), /Nova-AI-Studio-Android-2\.3\.0\.apk/);
+  assert.match(androidApk.headers.get('content-disposition'), /Nova-AI-Studio-Android-2\.3\.1\.apk/);
   assert.ok((await shareImage.arrayBuffer()).byteLength > 100000);
   const manifestResponse = await fetch(`${baseUrl}/manifest.webmanifest`);
   assert.equal(manifestResponse.status, 200);
@@ -373,6 +377,30 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     const simpleLogin = await fetch(`${baseUrl}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl }, body: JSON.stringify({ username, password }) });
     assert.equal(simpleLogin.status, 200);
   }
+
+  const pendingRegistration = await fetch(`${baseUrl}/api/auth/register`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'pending-delete', password: 'retry123' })
+  });
+  assert.equal(pendingRegistration.status, 201);
+  const pendingCookie = pendingRegistration.headers.get('set-cookie').split(';', 1)[0];
+  const accountsPath = path.join(dataDir, 'data', 'subscriber-accounts.json');
+  const pendingAccounts = JSON.parse(fs.readFileSync(accountsPath, 'utf8'));
+  pendingAccounts.users.find(user => user.username === 'pending-delete').deleting = true;
+  fs.writeFileSync(accountsPath, JSON.stringify(pendingAccounts));
+  const pendingPage = await fetch(`${baseUrl}/`, { headers: { cookie: pendingCookie } });
+  assert.equal(pendingPage.status, 423);
+  assert.match(await pendingPage.text(), /Finalizează ștergerea contului/);
+  const pendingLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl },
+    body: JSON.stringify({ username: 'pending-delete', password: 'retry123' })
+  });
+  assert.equal(pendingLogin.status, 200);
+  const pendingDelete = await fetch(`${baseUrl}/api/auth/account`, {
+    method: 'DELETE', headers: { cookie: pendingCookie, origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ confirmation: 'pending-delete' })
+  });
+  assert.equal(pendingDelete.status, 200, await pendingDelete.text());
 
   const overlongRegistration = await fetch(`${baseUrl}/api/auth/register`, {
     method: 'POST',
@@ -547,6 +575,48 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(created.status, 201);
   const { project } = await created.json();
   assert.equal(project.id, 'proiect-test-nova');
+  const crossOriginCv = await request('/api/cv', {
+    method: 'POST', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Ana', role: 'Designer' })
+  });
+  assert.equal(crossOriginCv.status, 403);
+  const invalidCv = await request('/api/cv', {
+    method: 'POST', headers: { origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ requestId: '6d38476c-4d9d-4d4e-9857-28bc4ffbb424', name: 'Ana' })
+  });
+  assert.equal(invalidCv.status, 400);
+  const cvPayload = {
+    requestId: 'cff6b45b-8bfa-44e8-b918-87d12a9a8370',
+    name: 'Ana <script>alert(1)</script>', role: 'Designer UX', email: 'ana@example.com', location: 'Cluj-Napoca',
+    summary: 'Construiesc produse clare și accesibile.', experience: 'Designer · Studio X · 2022–prezent',
+    education: 'Design digital · Universitatea X', skills: 'Figma, cercetare, prototipare', links: 'Portofoliu: https://example.com/portofoliu'
+  };
+  const createdCv = await request('/api/cv', {
+    method: 'POST', headers: { origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify(cvPayload)
+  });
+  assert.equal(createdCv.status, 201);
+  const cvResult = await createdCv.json();
+  assert.match(cvResult.project.id, /^cv-ana-script-alert-1-script/);
+  assert.match(cvResult.publication.url, /^\/p\/[a-f0-9]{24}\/$/);
+  const retriedCv = await request('/api/cv', {
+    method: 'POST', headers: { origin: baseUrl, 'content-type': 'application/json' }, body: JSON.stringify(cvPayload)
+  });
+  assert.equal(retriedCv.status, 201);
+  const retriedCvResult = await retriedCv.json();
+  assert.equal(retriedCvResult.project.id, cvResult.project.id);
+  assert.equal(retriedCvResult.publication.url, cvResult.publication.url);
+  const publicCv = await fetch(`${baseUrl}${cvResult.publication.url}`);
+  assert.equal(publicCv.status, 200);
+  assert.match(publicCv.headers.get('content-security-policy'), /sandbox[^;]*allow-modals/);
+  const cvHtml = await publicCv.text();
+  assert.match(cvHtml, /Ana &lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.doesNotMatch(cvHtml, /<script>alert\(1\)<\/script>/);
+  assert.match(cvHtml, /Descarcă PDF \/ Tipărește/);
+  assert.match(cvHtml, /noindex,nofollow/);
+  assert.match(cvHtml, /href="https:\/\/example\.com\/portofoliu"/);
+  assert.equal((await fetch(`${baseUrl}${cvResult.publication.url}styles.css`)).headers.get('content-type'), 'text/css; charset=utf-8');
+  assert.match(await (await fetch(`${baseUrl}${cvResult.publication.url}app.js`)).text(), /navigator\.share/);
   assert.equal((await post('/api/settings', { provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key' })).status, 200);
   for (const [task, expected] of [['text', /Scrie textul final/], ['lyrics', /strofe/], ['business', /calendar de lansare/]]) {
     const response = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', task, mode: 'plan', messages: [{ role: 'user', content: 'Creează un exemplu complet' }] });
@@ -747,6 +817,10 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal((await subscriberRequest('/api/web/health')).status, 403);
   assert.equal((await subscriberRequest(`/api/files?project=${project.id}`)).status, 404);
   assert.ok((await (await subscriberRequest('/api/projects')).json()).projects.some(item => item.id === privateProject.id));
+  const concurrentProjects = await Promise.all(Array.from({ length: 12 }, (_, index) => subscriberPost('/api/projects', { name: `Concurent ${index + 1}` })));
+  assert.equal(concurrentProjects.filter(response => response.status === 201).length, 9);
+  assert.ok(concurrentProjects.filter(response => response.status === 403).length >= 3);
+  assert.equal((await (await subscriberRequest('/api/projects')).json()).projects.length, 10);
 
   assert.equal((await subscriberPost('/api/ai/test', { model: 'gpt-4.1-mini' })).status, 502);
   assert.equal((await subscriberPost('/api/ai/test', { model: 'gpt-4.1-mini' })).status, 502);
@@ -831,6 +905,43 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const subscriberScript = await writerRequest(`/api/file?project=${writerProject.id}&path=scripts%2Fsubscriber-deploy.sh`);
   assert.equal(subscriberScript.status, 200);
   assert.equal((await subscriberScript.json()).content, '#!/usr/bin/env node\nconsole.log("subscriber");\n');
+
+  const ownerDelete = await fetch(`${baseUrl}/api/auth/account`, {
+    method: 'DELETE', headers: { cookie: ownerCookie, origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ confirmation: 'nova-test-user' })
+  });
+  assert.equal(ownerDelete.status, 403);
+  const crossOriginDelete = await writerRequest('/api/auth/account', {
+    method: 'DELETE', headers: { origin: 'https://attacker.example', 'content-type': 'application/json' },
+    body: JSON.stringify({ confirmation: 'writer-subscriber' })
+  });
+  assert.equal(crossOriginDelete.status, 403);
+  const wrongDelete = await writerRequest('/api/auth/account', {
+    method: 'DELETE', headers: { origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ confirmation: 'wrong-name' })
+  });
+  assert.equal(wrongDelete.status, 400);
+  const secondWriterLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'writer-subscriber', password: 'write123' })
+  });
+  assert.equal(secondWriterLogin.status, 200);
+  const secondWriterCookie = secondWriterLogin.headers.get('set-cookie').split(';', 1)[0];
+  const deletedAccount = await writerRequest('/api/auth/account', {
+    method: 'DELETE', headers: { origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ confirmation: 'writer-subscriber' })
+  });
+  assert.equal(deletedAccount.status, 200);
+  assert.deepEqual(await deletedAccount.json(), { deleted: true });
+  assert.match(deletedAccount.headers.get('set-cookie'), /Max-Age=0/);
+  assert.equal((await fetch(`${baseUrl}${subscriberPublicUrl}`)).status, 404);
+  assert.equal((await writerRequest('/api/auth/me')).status, 401);
+  assert.equal((await fetch(`${baseUrl}/api/auth/me`, { headers: { cookie: secondWriterCookie } })).status, 401);
+  const deletedLogin = await fetch(`${baseUrl}/api/auth/login`, {
+    method: 'POST', headers: { origin: baseUrl, 'content-type': 'application/json' },
+    body: JSON.stringify({ username: 'writer-subscriber', password: 'write123' })
+  });
+  assert.equal(deletedLogin.status, 401);
 });
 
 async function getFreePort() {

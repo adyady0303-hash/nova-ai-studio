@@ -183,6 +183,61 @@ test('portal is scoped to the authenticated customer and owners cannot buy a vis
   await assert.rejects(billing.portal({ role: 'owner' }), { status: 403 });
 });
 
+test('account closure deletes the Stripe customer before local account removal', async () => {
+  const { billing, calls } = harness(call => {
+    assert.equal(call.path, '/customers/cus_visitor');
+    assert.equal(call.options.method, 'DELETE');
+    return { id: 'cus_visitor', deleted: true };
+  });
+  assert.deepEqual(await billing.closeAccount(account), { billingClosed: true });
+  assert.deepEqual(await billing.closeAccount(account), { billingClosed: true });
+  assert.equal(calls.length, 1);
+
+  const free = harness(() => { throw Error('No Stripe call expected'); }, { id: account.userId });
+  assert.deepEqual(await free.billing.closeAccount(account), { billingClosed: true });
+  assert.equal(free.calls.length, 0);
+  await assert.rejects(billing.closeAccount({ role: 'owner', userId: 'owner' }), { status: 403 });
+
+  const partial = harness(() => ({ id: 'cus_visitor', deleted: true }), undefined, { STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY });
+  assert.deepEqual(await partial.billing.closeAccount(account), { billingClosed: true });
+  assert.equal(partial.calls.length, 1);
+});
+
+test('billing operations reject an account once deletion has started', async () => {
+  const deleting = harness(call => call.path.startsWith('/prices/') ? price : (() => { throw Error(call.path); })(), {
+    id: account.userId, deleting: true, billing: { customerId: 'cus_visitor' }
+  });
+  await assert.rejects(deleting.billing.summary(account, 5), { status: 423 });
+  await assert.rejects(deleting.billing.portal(account), { status: 423 });
+  await assert.rejects(deleting.billing.checkout(account), { status: 423 });
+  assert.equal(deleting.calls.length, 1);
+});
+
+test('account closure aborts when Stripe cannot confirm customer deletion', async () => {
+  const database = { version: 1, users: [{ id: account.userId, billing: { customerId: 'cus_visitor' } }] };
+  const billing = createBilling({
+    env,
+    readAccounts: async () => structuredClone(database),
+    writeAccounts: async () => {},
+    withAccountsLock: operation => operation(),
+    request: async () => ({ ok: false, json: async () => ({}) })
+  });
+  await assert.rejects(billing.closeAccount(account), { status: 503 });
+});
+
+test('account closure treats an already absent Stripe customer as closed', async () => {
+  const database = { version: 1, users: [{ id: account.userId, billing: { customerId: 'cus_visitor' } }] };
+  const billing = createBilling({
+    env: { STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY },
+    readAccounts: async () => structuredClone(database),
+    writeAccounts: async value => Object.assign(database, structuredClone(value)),
+    withAccountsLock: operation => operation(),
+    request: async () => ({ ok: false, status: 404, json: async () => ({ error: { code: 'resource_missing' } }) })
+  });
+  assert.deepEqual(await billing.closeAccount(account), { billingClosed: true });
+  assert.match(database.users[0].deletion.billingClosedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
 const bankEnv = { NOVA_BANK_IBAN: 'DE89 3704 0044 0532 0130 00', NOVA_BANK_BENEFICIARY: 'Beneficiar de test' };
 test('bank configuration checks IBAN checksum and requires a beneficiary', () => {
   assert.equal(bankConfiguration(bankEnv).iban, 'DE89370400440532013000');

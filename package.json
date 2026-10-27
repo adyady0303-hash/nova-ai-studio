@@ -1,6 +1,6 @@
 {
   "name": "nova-ai-studio",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "private": true,
   "description": "Studio AI pentru chat, programare, imagini, voice-over și afaceri online",
   "scripts": {
@@ -12,15 +12,15 @@
     "mobile:ios": "cap open ios"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.3",
-    "@capacitor/core": "^8.5.3",
-    "@capacitor/ios": "^8.5.3",
     "pg": "8.23.1"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
     "@capacitor/cli": "^8.5.3"
   },
   "overrides": {

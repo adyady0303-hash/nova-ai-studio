@@ -6,8 +6,11 @@ const path = require("node:path");
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const DUAL_WRITE_TO_DISK = process.env.NOVA_STORAGE_DUAL_WRITE === "true";
 const LOCK_ID = 741230119;
+const USER_LOCK_SEED = 741230121;
 let pool = null;
 let dataRoot = "";
+const deletedUsers = new Set();
+const localUserQueues = new Map();
 
 function dataRelative(value) {
   const absolute = path.resolve(String(value));
@@ -18,6 +21,60 @@ function dataRelative(value) {
 
 function makeError(code, message) {
   return Object.assign(new Error(message || code), { code });
+}
+
+function userIdFromRelative(relative) {
+  return String(relative || "").match(/^users\/([a-f0-9]{32})(?:\/|$)/)?.[1] || "";
+}
+
+function userIdsFromPaths(paths) {
+  return [...new Set(paths.map(filePath => userIdFromRelative(dataRelative(filePath))).filter(Boolean))].sort();
+}
+
+function deletedUserError() {
+  return makeError("EACCES", "Account workspace is being deleted");
+}
+
+async function withLocalUserLock(userId, operation) {
+  const previous = localUserQueues.get(userId) || Promise.resolve();
+  let release;
+  const current = new Promise(resolve => { release = resolve; });
+  localUserQueues.set(userId, current);
+  await previous;
+  try { return await operation(); }
+  finally {
+    release();
+    if (localUserQueues.get(userId) === current) localUserQueues.delete(userId);
+  }
+}
+
+async function withLocalUserLocks(userIds, operation, index = 0) {
+  if (index >= userIds.length) return operation();
+  return withLocalUserLock(userIds[index], () => withLocalUserLocks(userIds, operation, index + 1));
+}
+
+async function assertDatabaseUsersWritable(client, relativePaths) {
+  const userIds = [...new Set(relativePaths.map(userIdFromRelative).filter(Boolean))].sort();
+  for (const userId of userIds) {
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, ${USER_LOCK_SEED}))`, [userId]);
+  }
+  if (!userIds.length) return;
+  const blocked = await client.query("SELECT user_id FROM nova_deleted_users WHERE user_id = ANY($1::text[]) LIMIT 1", [userIds]);
+  if (blocked.rowCount) throw deletedUserError();
+}
+
+function mutationPaths(method, args) {
+  if (method === "rename") return [args[0], args[1]];
+  if (method === "copyFile") return [args[1]];
+  return [args[0]];
+}
+
+async function runNativeMutation(method, args) {
+  const userIds = userIdsFromPaths(mutationPaths(method, args));
+  return withLocalUserLocks(userIds, async () => {
+    if (userIds.some(userId => deletedUsers.has(userId))) throw deletedUserError();
+    return nativeFs.promises[method](...args);
+  });
 }
 
 function stats(row) {
@@ -126,11 +183,17 @@ async function init(root) {
       value JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS nova_deleted_users (
+      user_id TEXT PRIMARY KEY,
+      deleted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
     CREATE TABLE IF NOT EXISTS nova_meta (
       key TEXT PRIMARY KEY,
       value JSONB NOT NULL
     );
   `);
+  const tombstones = await pool.query("SELECT user_id FROM nova_deleted_users");
+  for (const row of tombstones.rows) deletedUsers.add(row.user_id);
   const client = await pool.connect();
   try {
     await client.query("SELECT pg_advisory_lock($1)", [LOCK_ID]);
@@ -186,6 +249,37 @@ async function deleteSession(token) {
   if (pool) await pool.query("DELETE FROM nova_sessions WHERE token = $1", [token]);
 }
 
+async function deleteSessionsForUser(userId) {
+  if (!/^[a-f0-9]{32}$/.test(userId || "")) throw makeError("EINVAL", "Invalid user identifier");
+  if (pool) await pool.query("DELETE FROM nova_sessions WHERE payload->>'userId' = $1", [userId]);
+}
+
+async function deleteUserData(userId) {
+  if (!/^[a-f0-9]{32}$/.test(userId || "")) throw makeError("EINVAL", "Invalid user identifier");
+  if (!dataRoot) throw makeError("EINVAL", "Persistent data root is not initialized");
+  const relative = `users/${userId}`;
+  if (pool) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, ${USER_LOCK_SEED}))`, [userId]);
+      await client.query("INSERT INTO nova_deleted_users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", [userId]);
+      await client.query(
+        "DELETE FROM nova_files WHERE file_path = $1 OR left(file_path, length($2)) = $2",
+        [relative, `${relative}/`]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally { client.release(); }
+  }
+  deletedUsers.add(userId);
+  if (!pool || DUAL_WRITE_TO_DISK) {
+    await withLocalUserLocks([userId], () => nativeFs.promises.rm(path.join(dataRoot, "users", userId), { recursive: true, force: true }));
+  }
+}
+
 async function getSetting(key) {
   if (!pool) return null;
   const result = await pool.query("SELECT value FROM nova_settings WHERE setting_key = $1", [key]);
@@ -236,6 +330,7 @@ const dbPromises = {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      await assertDatabaseUsersWritable(client, [relative]);
       await ensureDatabaseDirectory(client, relative);
       await client.query(
         `INSERT INTO nova_files (file_path, kind, content, modified_at) VALUES ($1, 'file', $2, now())
@@ -257,6 +352,7 @@ const dbPromises = {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      await assertDatabaseUsersWritable(client, [relative]);
       for (let i = 0; i < paths.length; i++) {
         const existing = await client.query("SELECT kind FROM nova_files WHERE file_path = $1", [paths[i]]);
         if (existing.rowCount && existing.rows[0].kind !== "dir") throw makeError("ENOTDIR", `Not a directory: ${paths[i]}`);
@@ -308,6 +404,7 @@ const dbPromises = {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      await assertDatabaseUsersWritable(client, [from, to]);
       await ensureDatabaseDirectory(client, to);
       const source = await client.query(
         "SELECT file_path, kind, content, modified_at FROM nova_files WHERE file_path = $1 OR left(file_path, length($2)) = $2 ORDER BY length(file_path)",
@@ -340,8 +437,15 @@ const dbPromises = {
   async unlink(filePath) {
     const relative = dataRelative(filePath);
     if (relative === null || !relative) throw makeError("EINVAL", "Invalid persistent file path");
-    const result = await pool.query("DELETE FROM nova_files WHERE file_path = $1 AND kind = 'file'", [relative]);
-    if (!result.rowCount) throw makeError("ENOENT", `No such file: ${filePath}`);
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await assertDatabaseUsersWritable(client, [relative]);
+      const result = await client.query("DELETE FROM nova_files WHERE file_path = $1 AND kind = 'file'", [relative]);
+      if (!result.rowCount) throw makeError("ENOENT", `No such file: ${filePath}`);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK").catch(() => {}); throw error; }
+    finally { client.release(); }
   },
   async copyFile(fromPath, toPath) {
     const data = await this.readFile(fromPath);
@@ -351,9 +455,19 @@ const dbPromises = {
 
 function filesystem(root) {
   dataRoot = path.resolve(root);
-  if (!pool) return nativeFs;
-  if (!DUAL_WRITE_TO_DISK) return { ...nativeFs, promises: dbPromises };
   const mirroredMethods = new Set(["writeFile", "mkdir", "rename", "unlink", "copyFile"]);
+  if (!pool) {
+    const promises = new Proxy(nativeFs.promises, {
+      get(target, property) {
+        const operation = target[property];
+        if (typeof operation !== "function") return operation;
+        if (!mirroredMethods.has(property)) return operation.bind(target);
+        return (...args) => runNativeMutation(property, args);
+      }
+    });
+    return { ...nativeFs, promises };
+  }
+  if (!DUAL_WRITE_TO_DISK) return { ...nativeFs, promises: dbPromises };
   const promises = new Proxy(dbPromises, {
     get(target, property) {
       const operation = target[property];
@@ -361,7 +475,7 @@ function filesystem(root) {
       if (!mirroredMethods.has(property)) return operation.bind(target);
       return async (...args) => {
         const result = await operation.apply(target, args);
-        try { await nativeFs.promises[property](...args); }
+        try { await runNativeMutation(property, args); }
         catch (error) {
           console.error(`Nova disk mirror failed during ${String(property)}; PostgreSQL remains authoritative:`, error.message);
         }
@@ -379,6 +493,8 @@ module.exports = {
   getSession,
   createSession,
   deleteSession,
+  deleteSessionsForUser,
+  deleteUserData,
   getSetting,
   setSetting,
   healthCheck,

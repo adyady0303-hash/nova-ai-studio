@@ -49,6 +49,7 @@ async function loadAccount() {
   el("imageEditSettingsBtn").hidden = subscriber;
   el("editImageBtn").hidden = false;
   el("adminDashboardLink").hidden = subscriber;
+  el("deleteAccountBtn").hidden = !subscriber;
   el("logoutBtn").hidden = !account.authEnabled;
   updateAccountLabel();
   el("accountAvatarLabel").textContent = account.username.slice(0, 1).toUpperCase();
@@ -259,7 +260,7 @@ function setTask(task) {
   const supported = ["auto", "image", "code", "text", "lyrics", "business"];
   const selected = supported.includes(task) ? task : "auto";
   el("taskSelect").value = selected;
-  document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
+  document.querySelectorAll(".create-item[data-task], .mode-chip[data-task]").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
   const prompts = {
     auto: "Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)",
     image: "Descrie imaginea pe care vrei s-o creezi…",
@@ -529,6 +530,72 @@ async function saveNewProject(name) {
   } catch (error) { toast(error.message); return false; }
 }
 
+function looksLikeCvCreationRequest(value) {
+  const text = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /\b(cv|curriculum vitae|resume)\b/.test(text) && /\b(cree|crea|fac|generez|trimit|public|online)/.test(text);
+}
+
+function openCvBuilder() {
+  const dialog = el("cvDialog"), form = el("cvForm");
+  try {
+    const draft = JSON.parse(sessionStorage.getItem(storageKey("nova-cv-draft")) || "null");
+    if (draft?.requestId && draft.payload) {
+      form.dataset.requestId = draft.requestId;
+      for (const field of ["Name", "Role", "Email", "Phone", "Location", "Summary", "Experience", "Education", "Skills", "Links"]) {
+        const key = field.toLowerCase();
+        if (typeof draft.payload[key] === "string") el(`cv${field}`).value = draft.payload[key];
+      }
+    }
+  } catch { sessionStorage.removeItem(storageKey("nova-cv-draft")); }
+  el("cvStatus").hidden = true;
+  dialog.showModal();
+  requestAnimationFrame(() => el("cvName").focus());
+}
+
+function newCvRequestId() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64; bytes[8] = (bytes[8] & 63) | 128;
+  const hex = [...bytes].map(value => value.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+async function createCvOnline() {
+  const form = el("cvForm"), button = el("createCvBtn"), status = el("cvStatus");
+  form.dataset.requestId ||= newCvRequestId();
+  const payload = {
+    requestId: form.dataset.requestId,
+    name: el("cvName").value,
+    role: el("cvRole").value,
+    email: el("cvEmail").value,
+    phone: el("cvPhone").value,
+    location: el("cvLocation").value,
+    summary: el("cvSummary").value,
+    experience: el("cvExperience").value,
+    education: el("cvEducation").value,
+    skills: el("cvSkills").value,
+    links: el("cvLinks").value
+  };
+  if (!payload.name.trim() || !payload.role.trim()) return;
+  sessionStorage.setItem(storageKey("nova-cv-draft"), JSON.stringify({ requestId: form.dataset.requestId, payload }));
+  button.disabled = true; status.hidden = false; status.textContent = "Se creează și se publică CV-ul…";
+  try {
+    const result = await api("/api/cv", jsonBody(payload));
+    const projects = await api("/api/projects");
+    state.projects = projects.projects;
+    state.project = result.project.id;
+    localStorage.setItem(storageKey("nova-project"), result.project.id);
+    await loadProject(result.project.id);
+    el("cvDialog").close();
+    form.reset(); delete form.dataset.requestId; sessionStorage.removeItem(storageKey("nova-cv-draft"));
+    setView("chat");
+    addPublishedSiteCard(result.publication, "cv");
+    toast("CV-ul este online și gata de trimis");
+  } catch (error) {
+    status.textContent = error.message;
+  } finally { button.disabled = false; }
+}
+
 async function renameProject() {
   const current = state.projects.find(project => project.id === state.project); if (!current) return;
   const name = prompt("Noul nume al proiectului:", current.name); if (!name?.trim() || name.trim() === current.name) return;
@@ -592,12 +659,15 @@ async function refreshPublication() {
   catch { showPublication(null); }
 }
 
-function addPublishedSiteCard(publication) {
+function addPublishedSiteCard(publication, type = "site") {
   const node = document.createElement("div"); node.className = "message assistant";
-  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = "Nova Business · site publicat";
-  const textNode = document.createElement("div"); textNode.textContent = "Site-ul este online. Îl poți actualiza oricând publicând din nou proiectul.";
-  const link = document.createElement("a"); link.className = "btn small"; link.target = "_blank"; link.rel = "noopener noreferrer"; link.href = new URL(publication.url, location.origin).href; link.textContent = "Deschide site-ul";
-  node.append(meta, textNode, link); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
+  const isCv = type === "cv";
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = isCv ? "Nova CV · publicat online" : "Nova Business · site publicat";
+  const textNode = document.createElement("div"); textNode.textContent = isCv ? "CV-ul este online. Deschide-l, descarcă-l ca PDF sau copiază linkul pentru a-l trimite." : "Site-ul este online. Îl poți actualiza oricând publicând din nou proiectul.";
+  const url = new URL(publication.url, location.origin).href;
+  const link = document.createElement("a"); link.className = "btn small"; link.target = "_blank"; link.rel = "noopener noreferrer"; link.href = url; link.textContent = isCv ? "Deschide CV-ul" : "Deschide site-ul";
+  const copy = document.createElement("button"); copy.className = "btn small"; copy.type = "button"; copy.textContent = "Copiază linkul"; copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); toast("Link copiat"); } catch { toast(`Link: ${url}`); } });
+  node.append(meta, textNode, link, copy); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
 async function publishProject(openAfter = true) {
@@ -690,6 +760,9 @@ async function send() {
   if (state.busy) return;
   const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
   if (!promptText) return;
+  if (el("taskSelect").value === "auto" && looksLikeCvCreationRequest(promptText)) {
+    el("prompt").value = ""; resizePrompt(); openCvBuilder(); return;
+  }
   if (el("taskSelect").value === "image") {
     state.busy = true; el("sendBtn").disabled = true;
     try { await generateImageFromPrompt(); }
@@ -774,7 +847,7 @@ el("saveProviderSettings").addEventListener("click", () => saveProviderSettings(
 el("taskSelect").addEventListener("change", event => {
   setTask(event.target.value);
 });
-document.querySelectorAll(".create-item, .mode-chip").forEach(button => button.addEventListener("click", () => {
+document.querySelectorAll(".create-item[data-task], .mode-chip[data-task]").forEach(button => button.addEventListener("click", () => {
   setTask(button.dataset.task);
   setView("chat");
   el("prompt").focus();
@@ -822,6 +895,7 @@ el("resumeChatBtn").addEventListener("click", () => { setView("chat"); el("promp
 function submitHomePrompt() {
   const value = el("homePrompt").value.trim();
   if (!value || state.busy) return;
+  if (looksLikeCvCreationRequest(value)) { el("homePrompt").value = ""; openCvBuilder(); return; }
   el("prompt").value = value; el("homePrompt").value = ""; resizePrompt(); setView("chat"); send();
 }
 el("homeSendBtn").addEventListener("click", submitHomePrompt);
@@ -838,6 +912,7 @@ el("creatorHome").addEventListener("click", async event => {
   if (!card) return;
   const action = card.dataset.homeAction;
   const draft = el("homePrompt").value.trim();
+  if (action === "cv") { openCvBuilder(); return; }
   if (["chat", "code", "text", "lyrics", "business"].includes(action)) {
     const task = action === "chat" ? "auto" : action;
     setTask(task); if (draft) { el("prompt").value = draft; el("homePrompt").value = ""; resizePrompt(); }
@@ -854,6 +929,8 @@ el("prompt").addEventListener("keydown", event => { if (event.key === "Enter" &&
 el("refreshModels").addEventListener("click", refreshHealth);
 el("refreshModelsTop").addEventListener("click", refreshHealth);
 el("newProjectBtn").addEventListener("click", createProject);
+el("openCvBuilderBtn").addEventListener("click", openCvBuilder);
+el("cvForm").addEventListener("submit", event => { event.preventDefault(); createCvOnline(); });
 el("newProjectForm").addEventListener("submit", event => {
   event.preventDefault();
   const name = el("newProjectName").value.trim();
@@ -876,6 +953,28 @@ el("projectSelect").addEventListener("change", async event => { try { await load
 el("logoutBtn").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); window.location.replace("/"); }
   catch (error) { toast(error.message); }
+});
+el("deleteAccountBtn").addEventListener("click", async () => {
+  const username = state.account?.username || "";
+  if (!username || !confirm("Contul, proiectele și site-urile publicate vor fi șterse definitiv. Continui?")) return;
+  const confirmation = prompt(`Pentru confirmare, scrie exact numele contului: ${username}`);
+  if (confirmation !== username) { toast("Numele introdus nu corespunde contului."); return; }
+  const button = el("deleteAccountBtn");
+  button.disabled = true;
+  try {
+    await api("/api/auth/account", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmation }) });
+    const accountSuffix = `-${state.account.id}`;
+    for (const storage of [localStorage, sessionStorage]) {
+      for (let index = storage.length - 1; index >= 0; index--) {
+        const key = storage.key(index);
+        if (key?.endsWith(accountSuffix)) storage.removeItem(key);
+      }
+    }
+    window.location.replace("/?account=deleted");
+  } catch (error) {
+    button.disabled = false;
+    toast(error.message);
+  }
 });
 el("clearChat").addEventListener("click", () => {
   state.chat = [];

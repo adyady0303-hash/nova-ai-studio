@@ -33,12 +33,16 @@ jobs:
           mkdir -p dist
           zip -r dist/Nova-AI-Studio.zip server.js data-store.js billing.js web-tools.js ai-quality.js creation-prompts.js google-auth.js package.json package-lock.json README.md Start_Nova_AI_Studio.bat public Dockerfile docker-compose.yml .env.example render.yaml
           sha256sum dist/Nova-AI-Studio.zip > dist/Nova-AI-Studio.zip.sha256
+          cp "site/downloads/Nova-AI-Studio-Android-${{ steps.version.outputs.value }}.apk" dist/
+          sha256sum "dist/Nova-AI-Studio-Android-${{ steps.version.outputs.value }}.apk" > "dist/Nova-AI-Studio-Android-${{ steps.version.outputs.value }}.apk.sha256"
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag || format('v{0}', steps.version.outputs.value) }}
         run: |
           gh release create "$RELEASE_TAG" dist/Nova-AI-Studio.zip dist/Nova-AI-Studio.zip.sha256 \
+            "dist/Nova-AI-Studio-Android-${{ steps.version.outputs.value }}.apk" \
+            "dist/Nova-AI-Studio-Android-${{ steps.version.outputs.value }}.apk.sha256" \
             --target "$GITHUB_SHA" \
             --title "Nova AI Studio $RELEASE_TAG" \
             --generate-notes

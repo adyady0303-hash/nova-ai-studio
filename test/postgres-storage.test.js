@@ -92,6 +92,32 @@ test('PostgreSQL storage imports disk data and shares projects, sessions and set
   assert.equal(settingsFromOtherInstance.body.settings.provider, 'openai');
   assert.equal(settingsFromOtherInstance.body.settings.apiKeyConfigured, true);
   assert.doesNotMatch(JSON.stringify(settingsFromOtherInstance.body), /test-key-encrypted/);
+
+  const deletionRegistration = await post(serverA, '/api/auth/register', { username: 'delete-db-user', password: 'delete12' });
+  assert.equal(deletionRegistration.response.status, 201, deletionRegistration.body);
+  const deletionAccount = await get(serverA, '/api/auth/me', deletionRegistration.cookie);
+  const deletionId = deletionAccount.body.id;
+  assert.match(deletionId, /^[a-f0-9]{32}$/);
+  const deletionLogin = await post(serverB, '/api/auth/login', { username: 'delete-db-user', password: 'delete12' });
+  assert.equal(deletionLogin.response.status, 200, deletionLogin.body);
+  const deletionProject = await request(serverA, '/api/projects', deletionRegistration.cookie, {
+    method: 'POST', body: { name: 'Proiect de șters' }
+  });
+  assert.equal(deletionProject.response.status, 201, deletionProject.body);
+  const storedBeforeDelete = await admin.query(`SELECT count(*)::integer AS count FROM "${schema}".nova_files WHERE file_path LIKE $1`, [`users/${deletionId}/%`]);
+  assert.ok(storedBeforeDelete.rows[0].count > 0);
+  const deleted = await request(serverA, '/api/auth/account', deletionRegistration.cookie, {
+    method: 'DELETE', body: { confirmation: 'delete-db-user' }
+  });
+  assert.equal(deleted.response.status, 200, deleted.body);
+  assert.deepEqual(deleted.body, { deleted: true });
+  assert.equal((await get(serverA, '/api/auth/me', deletionRegistration.cookie)).response.status, 401);
+  assert.equal((await get(serverB, '/api/auth/me', deletionLogin.cookie)).response.status, 401);
+  const storedAfterDelete = await admin.query(`SELECT count(*)::integer AS count FROM "${schema}".nova_files WHERE file_path LIKE $1`, [`users/${deletionId}/%`]);
+  assert.equal(storedAfterDelete.rows[0].count, 0);
+  const tombstone = await admin.query(`SELECT count(*)::integer AS count FROM "${schema}".nova_deleted_users WHERE user_id = $1`, [deletionId]);
+  assert.equal(tombstone.rows[0].count, 1);
+  assert.equal((await post(serverB, '/api/auth/login', { username: 'delete-db-user', password: 'delete12' })).response.status, 401);
 });
 
 async function startServer(dataDir, databaseUrl) {

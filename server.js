@@ -64,13 +64,14 @@ const googleAuth = createGoogleAuth({
 });
 const LOGIN_PAGE = `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="referrer" content="no-referrer"><meta name="theme-color" content="#07101b"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="Nova"><meta name="description" content="Nova AI Studio — chat AI pentru cod, imagini, texte, voice-over și afaceri online."><link rel="canonical" href="https://www.nova-ai-studio.eu/"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png"><meta property="og:type" content="website"><meta property="og:locale" content="ro_RO"><meta property="og:site_name" content="Nova AI Studio"><meta property="og:title" content="Nova AI Studio — transformă ideile în proiecte"><meta property="og:description" content="Creează cod, imagini, texte și site-uri publicabile într-un singur studio AI online."><meta property="og:url" content="https://www.nova-ai-studio.eu/"><meta property="og:image" content="https://www.nova-ai-studio.eu/share-image.png"><meta property="og:image:width" content="1080"><meta property="og:image:height" content="1920"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Nova AI Studio"><meta name="twitter:description" content="Cod, imagini, texte și afaceri online într-un singur studio AI."><meta name="twitter:image" content="https://www.nova-ai-studio.eu/share-image.png"><title>Nova AI Studio · Acces</title><script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Nova AI Studio","url":"https://www.nova-ai-studio.eu/","applicationCategory":"BusinessApplication","operatingSystem":"Web","description":"Studio AI online pentru cod, imagini, texte, voice-over și afaceri online.","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR"}}</script><style>
 :root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#050a0e;color:#edfaff}*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 65% 15%,#123c4c55,transparent 60%),#050a0e}.card{width:min(100%,420px);padding:32px;border:1px solid #28495a;border-radius:22px;background:#0b171ff2;box-shadow:0 24px 80px #0008}.mark{display:grid;place-items:center;width:46px;height:46px;border:1px solid #3f8aa1;border-radius:50%;background:#102a37;color:#8ce9ff;font-weight:700;font-size:23px}h1{margin:22px 0 8px;font-size:26px;letter-spacing:-.04em}p{margin:0 0 24px;color:#8faab7;line-height:1.6;font-size:14px}.benefit{margin:-8px 0 22px;padding:12px 14px;border:1px solid #285244;border-radius:12px;background:#0c211e;color:#b6f2df;font-size:13px;line-height:1.5}label{display:block;margin:18px 0 8px;font-size:13px;color:#c7dce6}input{width:100%;height:48px;padding:0 14px;border:1px solid #315064;border-radius:11px;background:#08121b;color:#fff;font:inherit;outline:none}input:focus{border-color:#60d9fa;box-shadow:0 0 0 3px #60d9fa18}.password-field{position:relative}.password-field input{padding-right:54px}.password-toggle{position:absolute;right:7px;top:7px;display:grid;place-items:center;width:36px;height:34px;margin:0;padding:0;border:0;border-radius:8px;background:transparent;color:#8faab7;cursor:pointer}.password-toggle:hover{background:#ffffff0d;color:#edfaff}.password-toggle:focus-visible{outline:2px solid #60d9fa;outline-offset:1px}.password-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.password-hint{display:block;margin-top:8px;color:#8faab7;font-size:12px;line-height:1.6}button{width:100%;height:48px;margin-top:22px;border:0;border-radius:11px;background:linear-gradient(120deg,#79e7ff,#37b7dd);color:#03212c;font:inherit;font-weight:700;cursor:pointer}button:disabled{opacity:.65;cursor:wait}.switch{display:block;width:auto;height:auto;margin:16px auto 0;padding:4px;background:transparent;color:#9bdded;font:inherit;text-decoration:underline;font-size:13px}.status{min-height:22px;margin:14px 0 0;color:#ffaaa9;font-size:13px;line-height:1.6}.status.ok{color:#91ead1}footer{margin-top:24px;color:#7195a5;font-size:12px;text-align:center;line-height:1.8}footer a{color:#9bdded}.google-login{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;min-height:46px;padding:10px 14px;margin-top:20px;border:1px solid #36556a;border-radius:11px;background:#10232e;color:#e8f7ff;font-size:14px;text-decoration:none}.google-login:hover{border-color:#60d9fa}.google-symbol{font-size:18px;font-weight:700;color:#8edff6}[hidden]{display:none!important}@media(max-width:420px){body{padding:16px}.card{padding:26px 22px}}
-</style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău Nova.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. După înregistrare intri direct în aplicație.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Între 1 și 8 caractere, alese de tine. Fără cerințe de majuscule, cifre sau simboluri.</small><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><a id="google-login" class="google-login" href="/api/auth/google" __GOOGLE_LOGIN_HIDDEN__><span class="google-symbol" aria-hidden="true">G</span>Continuă cu Google</a><a id="android-download" class="google-login" href="/downloads/Nova-AI-Studio-Android-2.3.0.apk" download>Android · Descarcă APK ↓</a><button id="install-nova" class="switch" type="button">iPhone/iPad · Instalează din Safari</button><button id="share-nova" class="switch" type="button">Distribuie Nova ↗</button><footer><a href="/about">Despre Nova</a> · <a href="/plans.html">Abonamente 9,99 €/lună</a><br>Sesiune protejată · Nova AI Studio</footer></main><script>
+</style></head><body><main class="card"><div class="mark" aria-hidden="true">N</div><h1>Nova AI Studio</h1><p id="subtitle">Conectează-te pentru a deschide spațiul tău Nova.</p><div id="benefit" class="benefit" hidden>Cont fără taxă de înscriere · __AI_LIMIT__ cereri AI pe zi. După înregistrare intri direct în aplicație.</div><form id="auth-form"><label for="username">Utilizator</label><input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" required autofocus><label for="password">Parolă</label><div class="password-field"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button class="password-toggle" type="button" data-password-toggle="password" aria-label="Afișează parola" aria-pressed="false"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path><circle cx="12" cy="12" r="3"></circle><path data-password-slash d="M3 3l18 18" style="display:none"></path></svg></button></div><small id="password-hint" class="password-hint" hidden>Între 1 și 8 caractere, alese de tine. Fără cerințe de majuscule, cifre sau simboluri.</small><button id="submit" type="submit">Autentificare</button><button id="switch" class="switch" type="button">Creează un cont de abonat</button><div id="status" class="status" role="status" aria-live="polite"></div></form><a id="google-login" class="google-login" href="/api/auth/google" __GOOGLE_LOGIN_HIDDEN__><span class="google-symbol" aria-hidden="true">G</span>Continuă cu Google</a><a id="android-download" class="google-login" href="/downloads/Nova-AI-Studio-Android-2.3.1.apk" download>Android · Descarcă APK ↓</a><button id="install-nova" class="switch" type="button">iPhone/iPad · Instalează din Safari</button><button id="share-nova" class="switch" type="button">Distribuie Nova ↗</button><footer><a href="/about">Despre Nova</a> · <a href="/plans.html">Abonamente 9,99 €/lună</a><br>Sesiune protejată · Nova AI Studio</footer></main><script>
 const form=document.getElementById("auth-form"),button=document.getElementById("submit"),status=document.getElementById("status"),password=document.getElementById("password"),switchButton=document.getElementById("switch"),benefit=document.getElementById("benefit"),passwordHint=document.getElementById("password-hint"),toggle=document.querySelector("[data-password-toggle]");let registering=false;
 function resetPasswordVisibility(){password.type="password";toggle.setAttribute("aria-pressed","false");toggle.setAttribute("aria-label","Afișează parola");toggle.querySelector("[data-password-slash]").style.display="none";}
 toggle.addEventListener("click",()=>{const visible=password.type==="password";password.type=visible?"text":"password";toggle.setAttribute("aria-pressed",String(visible));toggle.setAttribute("aria-label",visible?"Ascunde parola":"Afișează parola");toggle.querySelector("[data-password-slash]").style.display=visible?"block":"none";});
 const iosInstallMessage="Pe iPhone/iPad: deschide această pagină în Safari, apasă butonul Partajare (pătratul cu săgeată în sus), apoi «Adăugați la ecranul principal».";document.getElementById("install-nova").addEventListener("click",()=>{status.textContent=navigator.standalone?"Nova este deja instalată pe acest dispozitiv.":iosInstallMessage;status.classList.add("ok");});if(new URLSearchParams(location.search).get("install")==="ios"){status.textContent=iosInstallMessage;status.classList.add("ok");}if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("/service-worker.js").catch(()=>{}));document.getElementById("share-nova").addEventListener("click",async()=>{const data={title:"Nova AI Studio",text:"Creează cod, imagini, texte și site-uri cu Nova AI Studio.",url:"https://www.nova-ai-studio.eu/"};try{if(navigator.share)await navigator.share(data);else{await navigator.clipboard.writeText(data.url);status.textContent="Linkul Nova a fost copiat. Îl poți lipi pe Facebook, Instagram sau TikTok.";status.classList.add("ok");}}catch(error){if(error.name!=="AbortError")status.textContent="Copiază linkul: "+data.url;}});
 if(new URLSearchParams(location.search).get("auth")==="google-failed")status.textContent="Conectarea cu Google nu a reușit. Poți reîncerca sau folosi utilizatorul și parola.";
 if(new URLSearchParams(location.search).get("session")==="expired")status.textContent="Sesiunea a expirat. Autentifică-te din nou.";
+if(new URLSearchParams(location.search).get("account")==="deleted"){status.textContent="Contul și datele sale au fost șterse definitiv.";status.classList.add("ok");}
 switchButton.addEventListener("click",()=>{registering=!registering;status.textContent="";status.classList.remove("ok");password.value="";resetPasswordVisibility();document.getElementById("subtitle").textContent=registering?"Alege un utilizator și parola dorită. Intri direct în Nova.":"Conectează-te pentru a deschide spațiul tău Nova.";button.textContent=registering?"Creează cont și intră":"Autentificare";switchButton.textContent=registering?"Am deja cont · Autentificare":"Creează un cont de abonat";benefit.hidden=!registering;passwordHint.hidden=!registering;password.autocomplete=registering?"new-password":"current-password";if(registering){password.minLength=1;password.maxLength=8;}else{password.removeAttribute("minlength");password.maxLength=128;}});
 form.addEventListener("submit",async event=>{event.preventDefault();if(registering&&password.value.length>8){status.textContent="Alege o parolă de maximum 8 caractere.";password.focus();return;}button.disabled=true;switchButton.disabled=true;status.textContent="";status.classList.remove("ok");try{const response=await fetch(registering?"/api/auth/register":"/api/auth/login",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json"},body:JSON.stringify({username:document.getElementById("username").value,password:password.value})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||"Cererea nu a putut fi finalizată.");password.value="";if(registering){status.textContent="Cont creat. Se deschide Nova…";status.classList.add("ok");}window.location.replace("/");}catch(error){status.textContent=error.message||"Nu s-a putut realiza autentificarea.";button.disabled=false;switchButton.disabled=false;password.focus();}});
 </script></body></html>`;
@@ -103,7 +104,10 @@ async function sessionFor(req) {
     if (dataStore.enabled) await dataStore.deleteSession(token);
     return null;
   }
-  return session;
+  if (session.role !== "subscriber") return session;
+  const record = (await readAccounts()).users.find(user => user.id === session.userId);
+  if (!record) return null;
+  return { ...session, username: record.username, deleting: Boolean(record.deleting) };
 }
 
 function normalizedUsername(value) {
@@ -163,6 +167,15 @@ async function createSession(res, account) {
   return true;
 }
 
+async function createVerifiedSession(res, account) {
+  if (account.role !== "subscriber") return createSession(res, account);
+  return withAccountsLock(async () => {
+    const record = (await readAccounts()).users.find(user => user.id === account.userId);
+    if (!record) return false;
+    return createSession(res, { userId: record.id, role: "subscriber", username: record.username });
+  });
+}
+
 function sendLoginPage(res, headOnly = false) {
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
@@ -173,6 +186,13 @@ function sendLoginPage(res, headOnly = false) {
     "x-frame-options": "DENY"
   });
   res.end(headOnly ? "" : LOGIN_PAGE.replace("__AI_LIMIT__", String(SUBSCRIBER_DAILY_AI_LIMIT)).replace("__GOOGLE_LOGIN_HIDDEN__", ACCESS_PASSWORD && googleAuth.enabled ? "" : "hidden"));
+}
+
+function sendPendingDeletionPage(res, account, headOnly = false) {
+  const username = JSON.stringify(account.username).replaceAll("<", "\\u003c");
+  const page = `<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>Finalizează ștergerea · Nova</title><style>body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;background:#050a0e;color:#edfaff;font:16px/1.6 system-ui}.card{width:min(100%,440px);padding:30px;border:1px solid #583b35;border-radius:20px;background:#0b171f}h1{margin-top:0;font-size:25px}p{color:#a9bac3}button{width:100%;min-height:48px;border:0;border-radius:11px;background:#ffaaa9;color:#351216;font:inherit;font-weight:750;cursor:pointer}.status{min-height:24px;margin-top:14px;color:#ffcbc9}</style></head><body><main class="card"><h1>Finalizează ștergerea contului</h1><p>Contul este blocat pentru a preveni modificarea datelor în timpul ștergerii. Apasă butonul pentru a relua operația în siguranță.</p><button id="retry" type="button">Finalizează ștergerea</button><div id="status" class="status" role="status"></div></main><script>const username=${username},button=document.getElementById("retry"),status=document.getElementById("status");button.addEventListener("click",async()=>{button.disabled=true;status.textContent="Se finalizează…";try{const response=await fetch("/api/auth/account",{method:"DELETE",headers:{"content-type":"application/json"},body:JSON.stringify({confirmation:username})});const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||"Ștergerea nu a putut fi finalizată.");location.replace("/?account=deleted");}catch(error){status.textContent=error.message;button.disabled=false;}});</script></body></html>`;
+  res.writeHead(423, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'", "x-content-type-options": "nosniff" });
+  res.end(headOnly ? "" : page);
 }
 
 function sameOrigin(req) {
@@ -205,7 +225,7 @@ async function login(req, res) {
     }
   }
   if (!account) return json(res, 401, { error: "Utilizatorul sau parola nu sunt corecte." });
-  if (!await createSession(res, account)) return json(res, 503, { error: "Sunt prea multe sesiuni active. Încearcă mai târziu." });
+  if (!await createVerifiedSession(res, account)) return json(res, 503, { error: "Sesiunea nu a putut fi creată. Reîncearcă." });
   return json(res, 200, { ok: true });
 }
 
@@ -241,7 +261,7 @@ async function register(req, res) {
   } catch (error) {
     return json(res, error.status || 503, { error: error.message || "Contul nu a putut fi creat." });
   }
-  if (!await createSession(res, account)) return json(res, 503, { error: "Contul a fost creat, dar sunt prea multe sesiuni active. Autentifică-te." });
+  if (!await createVerifiedSession(res, account)) return json(res, 503, { error: "Contul a fost creat, dar sesiunea nu a putut fi creată. Autentifică-te." });
   return json(res, 201, { ok: true });
 }
 
@@ -249,6 +269,7 @@ async function accountForGoogle(identity) {
   return withAccountsLock(async () => {
     const database = await readAccounts();
     let record = database.users.find(user => user.googleSub === identity.sub);
+    if (record?.deleting) return { userId: record.id, role: "subscriber", username: record.username };
     if (!record) {
       if (database.users.length >= MAX_ACCOUNTS) throw Object.assign(new Error("Înregistrările sunt momentan închise."), { status: 503 });
       let username;
@@ -272,7 +293,7 @@ async function googleCallback(req, res, url) {
     callback.search = url.search;
     const { identity } = await googleAuth.finish(callback.href, req.headers.cookie);
     const account = await accountForGoogle(identity);
-    if (!await createSession(res, account)) throw new Error("Sesiunile disponibile sunt ocupate.");
+    if (!await createVerifiedSession(res, account)) throw new Error("Sesiunea nu a putut fi creată.");
     const sessionCookie = res.getHeader("set-cookie");
     res.setHeader("set-cookie", [googleAuth.clearCookie, ...(Array.isArray(sessionCookie) ? sessionCookie : [sessionCookie])]);
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" });
@@ -292,6 +313,7 @@ async function consumeAiQuota(req, res, units = 1) {
       const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
       if (!record) throw Object.assign(new Error("Contul nu mai este disponibil. Autentifică-te din nou."), { status: 401 });
+      if (record.deleting) throw Object.assign(new Error("Ștergerea contului este în curs."), { status: 423 });
       const quota = consumeQuota(record, SUBSCRIBER_DAILY_AI_LIMIT, undefined, units);
       if (quota.allowed) await writeAccounts(database);
       return quota;
@@ -624,6 +646,117 @@ function projectRoot(project, principal = "owner") {
   return root;
 }
 
+function cvField(value, maximum) {
+  return typeof value === "string" ? value.trim().replace(/\r\n?/g, "\n").slice(0, maximum) : "";
+}
+
+function escapeCvHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+}
+
+function cvList(value, { commas = false } = {}) {
+  const pattern = commas ? /[,\n]/ : /\n/;
+  return value.split(pattern).map(item => item.trim().replace(/^[-•]\s*/, "")).filter(Boolean);
+}
+
+function cvSection(title, items, className = "timeline") {
+  if (!items.length) return "";
+  return `<section><h2>${escapeCvHtml(title)}</h2><ul class="${className}">${items.map(item => `<li>${escapeCvHtml(item)}</li>`).join("")}</ul></section>`;
+}
+
+function cvLinkHtml(item) {
+  const match = item.match(/https:\/\/[^\s<>"']+/i);
+  if (!match) return `<li>${escapeCvHtml(item)}</li>`;
+  try {
+    const parsed = new URL(match[0]);
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) throw new Error("unsafe URL");
+    return `<li><a href="${escapeCvHtml(parsed.href)}" target="_blank" rel="noopener noreferrer">${escapeCvHtml(item)}</a></li>`;
+  } catch { return `<li>${escapeCvHtml(item)}</li>`; }
+}
+
+function buildCvFiles(input) {
+  input = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const value = {
+    name: cvField(input.name, 80),
+    role: cvField(input.role, 100),
+    email: cvField(input.email, 160),
+    phone: cvField(input.phone, 60),
+    location: cvField(input.location, 120),
+    summary: cvField(input.summary, 1600),
+    experience: cvField(input.experience, 5000),
+    education: cvField(input.education, 3000),
+    skills: cvField(input.skills, 1600),
+    links: cvField(input.links, 1600)
+  };
+  if (!value.name || !value.role) throw Object.assign(new Error("Completează numele și titlul profesional."), { status: 400 });
+  if (value.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.email)) throw Object.assign(new Error("Adresa de e-mail nu este validă."), { status: 400 });
+  const contact = [value.email, value.phone, value.location].filter(Boolean).map(item => `<li>${escapeCvHtml(item)}</li>`)
+    .concat(cvList(value.links).map(cvLinkHtml));
+  const summary = value.summary ? `<section class="profile"><h2>Profil</h2><p>${escapeCvHtml(value.summary).replaceAll("\n", "<br>")}</p></section>` : "";
+  const html = `<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="CV profesional — ${escapeCvHtml(value.name)}">
+  <title>${escapeCvHtml(value.name)} · CV</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="cv-actions" aria-label="Acțiuni CV"><button id="printCv" type="button">Descarcă PDF / Tipărește</button><button id="shareCv" type="button">Trimite CV-ul</button><span id="shareStatus" role="status"></span></div>
+  <main class="cv">
+    <header><p class="eyebrow">Curriculum Vitae</p><h1>${escapeCvHtml(value.name)}</h1><p class="role">${escapeCvHtml(value.role)}</p>${contact.length ? `<ul class="contact">${contact.join("")}</ul>` : ""}</header>
+    ${summary}
+    ${cvSection("Experiență", cvList(value.experience))}
+    ${cvSection("Educație", cvList(value.education))}
+    ${cvSection("Competențe", cvList(value.skills, { commas: true }), "skills")}
+  </main>
+</body>
+</html>
+`;
+  const css = `:root{color-scheme:light;--ink:#17212b;--muted:#596773;--accent:#176b68;--paper:#fff;--line:#d9e3e6;font:16px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;padding:32px;background:#eef3f4;color:var(--ink)}.cv{width:min(900px,100%);margin:0 auto;padding:64px;background:var(--paper);box-shadow:0 20px 70px #18363b20}.eyebrow{margin:0 0 10px;color:var(--accent);font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}h1{margin:0;font-size:clamp(38px,7vw,68px);line-height:1;letter-spacing:-.045em}.role{margin:14px 0 22px;color:var(--muted);font-size:21px}.contact{display:flex;flex-wrap:wrap;gap:8px 20px;margin:0;padding:18px 0 0;border-top:1px solid var(--line);list-style:none;color:var(--muted);font-size:14px}.contact a{color:var(--accent);overflow-wrap:anywhere}section{display:grid;grid-template-columns:180px 1fr;gap:32px;margin-top:42px;padding-top:30px;border-top:1px solid var(--line)}h2{margin:0;color:var(--accent);font-size:15px;letter-spacing:.08em;text-transform:uppercase}.profile p{margin:0;white-space:normal}.timeline{display:grid;gap:16px;margin:0;padding:0;list-style:none}.timeline li{position:relative;padding-left:20px}.timeline li::before{content:"";position:absolute;left:0;top:.65em;width:7px;height:7px;border-radius:50%;background:var(--accent)}.skills{display:flex;flex-wrap:wrap;gap:9px;margin:0;padding:0;list-style:none}.skills li{padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:#f7faf9;font-size:14px}.cv-actions{position:sticky;top:12px;z-index:2;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;width:min(900px,100%);margin:0 auto 18px}.cv-actions button{padding:11px 16px;border:0;border-radius:9px;background:#176b68;color:#fff;font:inherit;font-weight:750;cursor:pointer}.cv-actions button+button{background:#253746}.cv-actions span{width:100%;color:#36545b;text-align:center;font-size:13px}@media(max-width:700px){body{padding:0}.cv{padding:34px 24px;box-shadow:none}section{grid-template-columns:1fr;gap:14px;margin-top:30px}.cv-actions{position:static;margin:0;padding:12px;background:#e4edef}}@media print{body{padding:0;background:#fff}.cv{width:100%;padding:12mm;box-shadow:none}.cv-actions{display:none}section{break-inside:avoid}a{color:inherit;text-decoration:none}}`;
+  const script = `"use strict";\ndocument.getElementById("printCv").addEventListener("click",()=>window.print());\ndocument.getElementById("shareCv").addEventListener("click",async()=>{const status=document.getElementById("shareStatus"),data={title:document.title,text:"CV profesional",url:location.href};try{if(navigator.share)await navigator.share(data);else{await navigator.clipboard.writeText(location.href);status.textContent="Linkul CV-ului a fost copiat.";}}catch(error){if(error.name!=="AbortError")status.textContent="Copiază linkul din bara browserului.";}});\n`;
+  return { projectName: `CV ${value.name}`.slice(0, 80), files: { "index.html": html, "styles.css": css, "app.js": script } };
+}
+
+async function createProjectWorkspace(originalName, principal, { empty = false, subscriber = false, metadata = {} } = {}) {
+  const name = typeof originalName === "string" ? originalName.trim() : "";
+  if (!name || name.length > 80) throw Object.assign(new Error("Numele proiectului trebuie să aibă între 1 și 80 de caractere."), { status: 400 });
+  if (subscriber) {
+    const currentProjects = await dataFs.promises.readdir(workspacePaths(principal).projects).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
+    if (currentProjects.length >= 10) throw Object.assign(new Error("Un cont de abonat poate avea cel mult 10 proiecte."), { status: 403 });
+  }
+  const slug = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 45) || "proiect";
+  let id = slug;
+  const paths = workspacePaths(principal);
+  await dataFs.promises.mkdir(paths.trash, { recursive: true });
+  while (await pathExists(path.join(paths.projects, id)) || (await dataFs.promises.readdir(paths.trash)).some(item => item.startsWith(`${id}.`))) id = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
+  const root = projectRoot(id, principal);
+  await dataFs.promises.mkdir(path.join(root, "src"), { recursive: true });
+  await dataFs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name, ...metadata }, null, 2), "utf8");
+  if (!empty) {
+    await dataFs.promises.writeFile(path.join(root, "README.md"), `# ${name}\n\nProiect creat în Nova AI Studio.\n`, "utf8");
+    await dataFs.promises.writeFile(path.join(root, "src", "index.js"), `// Începe să construiești ${name}.\n\nfunction main() {\n  console.log("Salut, Nova!");\n}\n\nmain();\n`, "utf8");
+    await dataFs.promises.writeFile(path.join(root, "package.json"), JSON.stringify({ name: id, version: "0.1.0", private: true }, null, 2) + "\n", "utf8");
+  }
+  return { id, name };
+}
+
+async function projectForCvRequest(principal, requestId) {
+  const projectsDir = workspacePaths(principal).projects;
+  const entries = await dataFs.promises.readdir(projectsDir, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !validProjectId(entry.name)) continue;
+    try {
+      const metadata = JSON.parse(await dataFs.promises.readFile(path.join(projectsDir, entry.name, ".nova-project.json"), "utf8"));
+      if (metadata.cvRequestId === requestId) return { id: entry.name, name: metadata.name || entry.name };
+    } catch {}
+  }
+  return null;
+}
+
 async function assertProjectParent(target) {
   let rootStat;
   try { rootStat = await dataFs.promises.lstat(target.root); }
@@ -692,6 +825,13 @@ async function publicationFor(principal, project) {
   return pair ? { id: pair[0], ...pair[1] } : null;
 }
 
+async function assertPrincipalActive(principal) {
+  if (principal === "owner") return;
+  const record = (await readAccounts()).users.find(user => user.id === principal);
+  if (!record) throw Object.assign(new Error("Contul nu mai este disponibil."), { status: 401 });
+  if (record.deleting) throw Object.assign(new Error("Ștergerea contului este în curs."), { status: 423 });
+}
+
 async function publishProject(principal, project) {
   try { await readProjectFile(project, "index.html", principal); }
   catch (error) {
@@ -699,6 +839,7 @@ async function publishProject(principal, project) {
     throw error;
   }
   return withPublicationLock(async () => {
+    await assertPrincipalActive(principal);
     const publications = await readPublications();
     const existing = Object.entries(publications.sites).find(([, site]) => site.principal === principal && site.project === project);
     const id = existing?.[0] || crypto.randomBytes(12).toString("hex");
@@ -718,6 +859,19 @@ async function unpublishProject(principal, project) {
       await writePublications(publications);
     }
     return { published: false };
+  });
+}
+
+async function unpublishAllForPrincipal(principal) {
+  return withPublicationLock(async () => {
+    const publications = await readPublications();
+    let changed = false;
+    for (const [id, site] of Object.entries(publications.sites)) {
+      if (site.principal !== principal) continue;
+      delete publications.sites[id];
+      changed = true;
+    }
+    if (changed) await writePublications(publications);
   });
 }
 
@@ -749,7 +903,7 @@ async function servePublishedSite(req, res, id, requestedPath) {
     "cache-control": "no-cache",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
-    "content-security-policy": "sandbox allow-scripts allow-forms allow-popups; default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src https:; form-action https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    "content-security-policy": "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src https:; form-action https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
   };
   res.writeHead(200, headers);
   if (req.method === "HEAD") return res.end();
@@ -936,12 +1090,12 @@ async function handle(req, res) {
     res.writeHead(200, { "content-type": "image/png", "content-length": image.length, "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" });
     return res.end(req.method === "HEAD" ? undefined : image);
   }
-  if (["GET", "HEAD"].includes(req.method) && url.pathname === "/downloads/Nova-AI-Studio-Android-2.3.0.apk") {
-    const apk = await fs.promises.readFile(path.join(__dirname, "site", "downloads", "Nova-AI-Studio-Android-2.3.0.apk"));
+  if (["GET", "HEAD"].includes(req.method) && url.pathname === "/downloads/Nova-AI-Studio-Android-2.3.1.apk") {
+    const apk = await fs.promises.readFile(path.join(__dirname, "site", "downloads", "Nova-AI-Studio-Android-2.3.1.apk"));
     res.writeHead(200, {
       "content-type": "application/vnd.android.package-archive",
       "content-length": apk.length,
-      "content-disposition": 'attachment; filename="Nova-AI-Studio-Android-2.3.0.apk"',
+      "content-disposition": 'attachment; filename="Nova-AI-Studio-Android-2.3.1.apk"',
       "cache-control": "public, max-age=86400, immutable",
       "x-content-type-options": "nosniff"
     });
@@ -1005,6 +1159,53 @@ async function handle(req, res) {
   const account = session || { userId: "owner", role: "owner", username: ACCESS_USER || "local" };
   req.novaAccount = account;
   const principal = account.userId || "owner";
+  const accountDeletionRequest = req.method === "DELETE" && url.pathname === "/api/auth/account";
+  if (account.deleting && !accountDeletionRequest) {
+    if (["GET", "HEAD"].includes(req.method) && url.pathname === "/") return sendPendingDeletionPage(res, account, req.method === "HEAD");
+    return json(res, 423, { error: "Ștergerea contului este în curs. Finalizează ștergerea sau autentifică-te mai târziu." });
+  }
+  if (accountDeletionRequest) {
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de ștergere respinsă." });
+    if (account.role !== "subscriber") return json(res, 403, { error: "Contul owner nu poate fi șters din aplicație." });
+    let body;
+    try { body = await readJson(req); }
+    catch { return json(res, 400, { error: "Confirmarea ștergerii nu este validă." }); }
+    if (body.confirmation !== account.username) return json(res, 400, { error: "Scrie exact numele contului pentru confirmare." });
+    try {
+      await withAccountsLock(async () => {
+        const database = await readAccounts();
+        const record = database.users.find(user => user.id === principal);
+        if (!record) throw Object.assign(new Error("Contul nu mai există."), { status: 404 });
+        if (record.username !== account.username) throw Object.assign(new Error("Confirmarea contului nu mai este validă."), { status: 409 });
+        if (!record.deleting) {
+          record.deleting = true;
+          record.deletion = { ...(record.deletion || {}), startedAt: new Date().toISOString() };
+          await writeAccounts(database);
+        }
+      });
+      await billing.closeAccount(account);
+      await unpublishAllForPrincipal(principal);
+      await dataStore.deleteUserData(principal);
+      await withAccountsLock(async () => {
+        const database = await readAccounts();
+        const index = database.users.findIndex(user => user.id === principal);
+        if (index >= 0) {
+          await dataStore.deleteSessionsForUser(principal);
+          database.users.splice(index, 1);
+          await writeAccounts(database);
+        }
+      });
+      for (const [sessionToken, activeSession] of sessions) {
+        if (activeSession.userId === principal) sessions.delete(sessionToken);
+      }
+      res.setHeader("set-cookie", AUTH_COOKIE + "=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0" + cookieSecurityAttribute());
+      return json(res, 200, { deleted: true });
+    } catch (error) {
+      console.error("Nova account deletion failed:", error);
+      const status = Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ? error.status : 503;
+      return json(res, status, { error: status === 503 ? "Contul nu a putut fi șters în siguranță. Reîncearcă." : error.message });
+    }
+  }
   if (req.method === "GET" && url.pathname === "/api/billing/bank-orders") return json(res, 200, await billing.bankOrders(account));
   if (req.method === "POST" && ["/api/billing/bank-transfer", "/api/billing/bank-confirm", "/api/billing/bank-settings"].includes(url.pathname)) {
     if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de plată respinsă." });
@@ -1170,28 +1371,30 @@ async function handle(req, res) {
     return json(res, 200, { projects: projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.name.localeCompare(b.name)) });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/cv") {
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de creare CV respinsă." });
+    const body = await readJson(req);
+    const requestId = cvField(body?.requestId, 64);
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(requestId)) {
+      return json(res, 400, { error: "Identificatorul cererii CV nu este valid." });
+    }
+    const cv = buildCvFiles(body);
+    const project = await withAccountsLock(async () => {
+      const existing = await projectForCvRequest(principal, requestId);
+      const selected = existing || await createProjectWorkspace(cv.projectName, principal, {
+        empty: true, subscriber: account.role === "subscriber", metadata: { cvRequestId: requestId }
+      });
+      for (const [filePath, content] of Object.entries(cv.files)) await writeProjectFile(selected.id, filePath, content, principal);
+      return selected;
+    });
+    const publication = await publishProject(principal, project.id);
+    return json(res, 201, { project, publication });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/projects") {
     const body = await readJson(req);
-    const originalName = typeof body.name === "string" ? body.name.trim() : "";
-    if (!originalName || originalName.length > 80) return json(res, 400, { error: "Numele proiectului trebuie să aibă între 1 și 80 de caractere." });
-    if (account.role === "subscriber") {
-      const currentProjects = await dataFs.promises.readdir(workspacePaths(principal).projects).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
-      if (currentProjects.length >= 10) return json(res, 403, { error: "Un cont de abonat poate avea cel mult 10 proiecte." });
-    }
-    const slug = originalName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 45) || "proiect";
-    let id = slug;
-    const paths = workspacePaths(principal);
-    await dataFs.promises.mkdir(paths.trash, { recursive: true });
-    while (await pathExists(path.join(paths.projects, id)) || (await dataFs.promises.readdir(paths.trash)).some(name => name.startsWith(`${id}.`))) id = `${slug}-${Math.random().toString(36).slice(2, 6)}`;
-    const root = projectRoot(id, principal);
-    await dataFs.promises.mkdir(path.join(root, "src"), { recursive: true });
-    await dataFs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name: originalName }, null, 2), "utf8");
-    if (body.empty !== true) {
-      await dataFs.promises.writeFile(path.join(root, "README.md"), `# ${originalName}\n\nProiect creat în Nova AI Studio.\n`, "utf8");
-      await dataFs.promises.writeFile(path.join(root, "src", "index.js"), `// Începe să construiești ${originalName}.\n\nfunction main() {\n  console.log("Salut, Nova!");\n}\n\nmain();\n`, "utf8");
-      await dataFs.promises.writeFile(path.join(root, "package.json"), JSON.stringify({ name: id, version: "0.1.0", private: true }, null, 2) + "\n", "utf8");
-    }
-    return json(res, 201, { project: { id, name: originalName } });
+    const project = await withAccountsLock(() => createProjectWorkspace(body.name, principal, { empty: body.empty === true, subscriber: account.role === "subscriber" }));
+    return json(res, 201, { project });
   }
 
   if (req.method === "POST" && url.pathname === "/api/project/rename") {

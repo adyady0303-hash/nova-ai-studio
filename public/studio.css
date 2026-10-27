@@ -723,6 +723,8 @@ body { overflow: hidden; color: #eff5ff; background: radial-gradient(ellipse at 
 .account-label { padding: 6px 8px; color: #8299b3; font-size: 9px; }
 .account-action { display: block; padding: 8px; border: 0; border-radius: 7px; color: #e3edf8; background: transparent; font-size: 10px; text-align: left; text-decoration: none; }
 .account-action:hover { background: #11263b; }
+.account-action.danger-action { color: #ffaaa9; }
+.account-action.danger-action:hover { background: #3a171d; }
 .sidebar { display: none; }
 .chat { position: relative; grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; background: radial-gradient(ellipse at 48% 0, rgb(18 59 89 / 13%), transparent 48%), #040b16; }
 .chat::before { background-image: linear-gradient(rgb(79 132 183 / 3%) 1px, transparent 1px), linear-gradient(90deg, rgb(79 132 183 / 3%) 1px, transparent 1px); background-size: 46px 46px; }
@@ -930,6 +932,10 @@ body { overflow: hidden; color: #eff5ff; background: radial-gradient(ellipse at 
 /* Creation tools remain visible as the available modes grow. */
 .creator-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .card-business { background: linear-gradient(135deg, #09576a, #1c9b88); }
+.card-cv { --card-glow: #e1b65d; background: linear-gradient(135deg, #7b4a16, #d6923d); }
+.cv-dialog { width: min(760px, calc(100% - 28px)); }
+.cv-panel textarea { min-height: 88px; }
+.cv-panel #cvExperience { min-height: 130px; }
 @media (max-width: 720px) { .creator-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 .creator-update { display:flex; flex-wrap:wrap; gap:8px 18px; align-items:center; padding:14px 18px; margin-bottom:20px; border:1px solid #22545f; border-radius:14px; background:linear-gradient(110deg,#102c39,#191c3d); color:#b8d7e6; font-size:13px; line-height:1.6; }

@@ -86,7 +86,8 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
     return bankConfiguration(accounts.bankSettings || env);
   }
   function configuration() {
-    const { STRIPE_SECRET_KEY: key, STRIPE_WEBHOOK_SECRET: webhook, STRIPE_STANDARD_PRICE_ID: priceId, NOVA_PUBLIC_URL: publicUrl } = env;
+    const { STRIPE_WEBHOOK_SECRET: webhook, STRIPE_STANDARD_PRICE_ID: priceId, NOVA_PUBLIC_URL: publicUrl } = env;
+    const key = paymentKey();
     let origin;
     try {
       const parsed = new URL(publicUrl);
@@ -96,26 +97,40 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
     return key && webhook && /^price_[A-Za-z0-9]+$/.test(priceId || "") ? { key, webhook, priceId, origin } : null;
   }
 
-  async function stripe(route, fields, idempotencyKey) {
+  function paymentKey() {
+    return typeof env.STRIPE_SECRET_KEY === "string" ? env.STRIPE_SECRET_KEY.trim() : "";
+  }
+
+  async function stripe(route, fields, idempotencyKey, method, explicitKey, missingIsSuccess = false) {
     const config = configuration();
-    if (!config) throw fail("Plățile nu sunt încă activate. Nu a fost efectuată nicio plată.", 503);
-    const headers = { authorization: `Bearer ${config.key}`, "Stripe-Version": "2024-06-20" };
+    const key = explicitKey || config?.key;
+    if (!key) throw fail("Plățile nu sunt încă activate. Nu a fost efectuată nicio plată.", 503);
+    const headers = { authorization: `Bearer ${key}`, "Stripe-Version": "2024-06-20" };
     if (fields) headers["content-type"] = "application/x-www-form-urlencoded";
     if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
     const response = await request(`https://api.stripe.com/v1${route}`, {
-      method: fields ? "POST" : "GET", headers,
+      method: method || (fields ? "POST" : "GET"), headers,
       ...(fields ? { body: new URLSearchParams(fields).toString() } : {}),
       signal: AbortSignal.timeout(20000)
     });
-    if (!response.ok) throw fail("Serviciul de plată nu a putut finaliza cererea. Reîncearcă sau contactează administratorul.", 503);
+    if (!response.ok) {
+      const details = await response.json().catch(() => ({}));
+      if (missingIsSuccess && response.status === 404 && details?.error?.code === "resource_missing") return { missing: true };
+      throw fail("Serviciul de plată nu a putut finaliza cererea. Reîncearcă sau contactează administratorul.", 503);
+    }
     return response.json();
   }
 
-  async function getRecord(account) {
+  function ensureActive(record) {
+    if (record.deleting) throw fail("Ștergerea contului este în curs.", 423);
+    return record;
+  }
+
+  async function getRecord(account, { allowDeleting = false } = {}) {
     if (account.role !== "subscriber") throw fail("Abonamentele sunt pentru conturile vizitatorilor.", 403);
     const record = (await readAccounts()).users.find(user => user.id === account.userId);
     if (!record) throw fail("Contul nu mai există.", 401);
-    return record;
+    return allowDeleting ? record : ensureActive(record);
   }
 
   async function summary(account, dailyLimit) {
@@ -141,6 +156,7 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
       const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
       if (account.role !== "subscriber" || !record) throw fail("Cont de vizitator necesar.", 403);
+      ensureActive(record);
       if (quotaFor(record).plan === "standard") throw fail("Planul Standard este deja activ.", 409);
       record.billing ||= {};
       // Reuse an open Checkout session; do not create simultaneous subscriptions.
@@ -184,6 +200,25 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
     return { url: session.url };
   }
 
+  async function closeAccount(account) {
+    if (account.role !== "subscriber") throw fail("Abonamentele sunt pentru conturile vizitatorilor.", 403);
+    return withAccountsLock(async () => {
+      const database = await readAccounts();
+      const record = database.users.find(user => user.id === account.userId);
+      if (!record) return { billingClosed: true };
+      if (record.deletion?.billingClosedAt) return { billingClosed: true };
+      const customerId = record.billing?.customerId;
+      if (customerId) {
+        if (!/^cus_[A-Za-z0-9]+$/.test(customerId)) throw fail("Identificatorul contului de plată este invalid.", 503);
+        const deleted = await stripe(`/customers/${encodeURIComponent(customerId)}`, undefined, undefined, "DELETE", paymentKey(), true);
+        if (!deleted?.missing && (deleted?.deleted !== true || deleted.id !== customerId)) throw fail("Contul de plată nu a putut fi închis în siguranță.", 503);
+      }
+      record.deletion = { ...(record.deletion || {}), billingClosedAt: new Date().toISOString() };
+      await writeAccounts(database);
+      return { billingClosed: true };
+    });
+  }
+
   async function bankTransfer(account) {
     const bank = await bankDetails();
     if (!bank) throw fail("Transferul bancar nu este încă activat.", 503);
@@ -192,6 +227,7 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
       const database = await readAccounts();
       const record = database.users.find(user => user.id === account.userId);
       if (!record) throw fail("Contul nu mai există.", 401);
+      ensureActive(record);
       if (quotaFor(record).plan === "standard") throw fail("Planul Standard este deja activ.", 409);
       if (record.billing?.customerId && configuration()) {
         const subscriptions = await stripe(`/subscriptions?customer=${encodeURIComponent(record.billing.customerId)}&status=all&limit=100`);
@@ -234,6 +270,7 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
       const database = await readAccounts();
       const record = database.users.find(user => user.bankOrders?.some(order => order.reference === reference));
       if (!record) throw fail("Transferul nu există.", 404);
+      ensureActive(record);
       const order = record.bankOrders.find(item => item.reference === reference);
       if (order.status === "confirmed") return { confirmed: true, alreadyConfirmed: true };
       if (quotaFor(record).plan === "standard") throw fail("Contul are deja un abonament activ. Verifică plata duplicată înainte de confirmare.", 409);
@@ -261,6 +298,7 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
       const database = await readAccounts();
       const record = database.users.find(user => user.billing?.customerId === idOf(subscription.customer));
       if (!record || subscription.metadata?.nova_account_id !== record.id) return;
+      if (record.deleting) return;
       if (record.billing.subscriptionId && record.billing.subscriptionId !== subscription.id
           && quotaFor(record).plan === "standard") return;
       record.billing = {
@@ -274,7 +312,7 @@ function createBilling({ readAccounts, writeAccounts, withAccountsLock, env = pr
     return { received: true };
   }
 
-  return { summary, checkout, portal, webhook, bankTransfer, bankOrders, confirmBankTransfer, saveBankSettings };
+  return { summary, checkout, portal, closeAccount, webhook, bankTransfer, bankOrders, confirmBankTransfer, saveBankSettings };
 }
 
 module.exports = { createBilling, quotaFor, consumeQuota, verifyWebhook, paidSubscription, bankConfiguration, nextMonthTimestamp };

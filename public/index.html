@@ -399,6 +399,7 @@ body {background:#080b13;}
             <button class="account-action" id="providerSettingsBtn" type="button">Configurare AI</button>
             <a class="account-action" href="/admin.html" id="adminDashboardLink">Administrare</a>
             <a class="account-action" href="/plans.html">Abonamente · 9,99 €/lună</a>
+            <button class="account-action danger-action" id="deleteAccountBtn" type="button" hidden>Șterge definitiv contul</button>
             <button class="account-action" id="logoutBtn" type="button" hidden>Deconectare</button>
           </div>
         </details>
@@ -412,6 +413,7 @@ body {background:#080b13;}
         <button class="create-item active" data-task="auto" aria-label="Chat liber" title="Chat liber"><span class="create-icon">✦</span><span>Chat liber</span></button>
         <button class="create-item" data-task="code" aria-label="Cod și aplicații" title="Cod și aplicații"><span class="create-icon">{ }</span><span>Cod & aplicații</span></button>
         <button class="create-item" data-task="text" type="button"><span class="create-icon">✎</span><span>Texte & articole</span></button>
+        <button class="create-item" id="openCvBuilderBtn" type="button"><span class="create-icon">CV</span><span>CV online</span></button>
         <button class="create-item" data-task="business" type="button"><span class="create-icon">↗</span><span>Afaceri online</span></button>
         <button class="create-item" data-task="lyrics" aria-label="Versuri originale" title="Versuri originale"><span class="create-icon">♫</span><span>Versuri</span></button>
       </nav>
@@ -462,6 +464,7 @@ body {background:#080b13;}
             <div class="creator-grid">
               <button class="creator-card card-chat" type="button" data-home-action="chat"><span class="tool-number">01</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7A8.4 8.4 0 0 1 4 11.5a8.5 8.5 0 0 1 17 0Z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg></span><span class="creator-card-copy"><strong>Chat AI</strong><small>Întrebări, idei și surse web</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-image" type="button" data-home-action="image"><span class="tool-number">02</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></span><span class="creator-card-copy"><strong>Imagine</strong><small>Vizualuri pornind de la cuvinte</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
+              <button class="creator-card card-cv" type="button" data-home-action="cv"><span class="tool-number">03</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l4 4v16H6z"/><path d="M14 2v5h5M9 12h7M9 16h7M9 8h2"/></svg></span><span class="creator-card-copy"><strong>CV online</strong><small>Creează, publică și trimite CV-ul</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-code" type="button" data-home-action="code"><span class="tool-number">05</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-16-2 20"/></svg></span><span class="creator-card-copy"><strong>Cod & aplicații</strong><small>Construiește următorul proiect</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-text" type="button" data-home-action="text"><span class="tool-number">06</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14M12 4v16M8 20h8M3 8V4m18 4V4"/></svg></span><span class="creator-card-copy"><strong>Texte</strong><small>Cuvintele potrivite pentru ideea ta</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
               <button class="creator-card card-lyrics" type="button" data-home-action="lyrics"><span class="tool-number">07</span><span class="creator-art"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6M4 20l4-1 12-12a3 3 0 0 0-4-4L4 15v5ZM14 20h7"/></svg></span><span class="creator-card-copy"><strong>Versuri</strong><small>Strofe, refren și emoție</small></span><span class="orbit-tool-arrow" aria-hidden="true"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></button>
@@ -575,6 +578,22 @@ body {background:#080b13;}
       <input id="newProjectName" maxlength="80" required autocomplete="off" placeholder="ex. Primul meu proiect">
       <div class="provider-note">Nova creează un proiect editabil cu fișiere de pornire.</div>
       <div class="provider-actions"><button class="btn" value="cancel">Anulează</button><button class="btn primary" type="submit">Creează proiectul</button></div>
+    </form>
+  </dialog>
+  <dialog class="provider-dialog cv-dialog" id="cvDialog" aria-labelledby="cvDialogTitle">
+    <form method="dialog" class="provider-panel cv-panel" id="cvForm">
+      <div class="provider-head"><div><div class="eyebrow">CV publicabil · fără cost AI</div><h2 id="cvDialogTitle">Creează un CV online</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <div class="provider-row"><div><label for="cvName">Nume complet *</label><input id="cvName" maxlength="80" required autocomplete="name" placeholder="ex. Andrei Popescu"></div><div><label for="cvRole">Titlu profesional *</label><input id="cvRole" maxlength="100" required autocomplete="organization-title" placeholder="ex. Tehnician electrician"></div></div>
+      <div class="provider-row"><div><label for="cvEmail">E-mail</label><input id="cvEmail" type="email" maxlength="160" autocomplete="email" placeholder="nume@email.ro"></div><div><label for="cvPhone">Telefon</label><input id="cvPhone" maxlength="60" autocomplete="tel" placeholder="+40 7xx xxx xxx"></div></div>
+      <label for="cvLocation">Localitate</label><input id="cvLocation" maxlength="120" autocomplete="address-level2" placeholder="ex. București, România">
+      <label for="cvSummary">Profil profesional</label><textarea id="cvSummary" maxlength="1600" placeholder="Descrie pe scurt experiența, punctele forte și tipul de rol căutat."></textarea>
+      <label for="cvExperience">Experiență</label><textarea id="cvExperience" maxlength="5000" placeholder="Câte o experiență pe rând, de exemplu:&#10;Electrician · Compania X · 2022–prezent — instalare și mentenanță&#10;Tehnician · Compania Y · 2019–2022 — diagnostic și reparații"></textarea>
+      <label for="cvEducation">Educație și certificări</label><textarea id="cvEducation" maxlength="3000" placeholder="Câte un element pe rând"></textarea>
+      <label for="cvSkills">Competențe</label><textarea id="cvSkills" maxlength="1600" placeholder="Separate prin virgulă: comunicare, Excel, instalații electrice, engleză"></textarea>
+      <label for="cvLinks">Linkuri relevante</label><textarea id="cvLinks" maxlength="1600" placeholder="Câte un link pe rând: LinkedIn, portofoliu, GitHub"></textarea>
+      <div class="provider-note">Nova creează un proiect editabil, îl publică și îți oferă un link de trimis. Datele introduse nu sunt trimise unui model AI, dar devin accesibile persoanelor care primesc linkul. Poți retrage CV-ul oricând cu „Oprește publicarea”.</div>
+      <div class="provider-actions"><button class="btn" value="cancel">Anulează</button><button class="btn primary" type="submit" id="createCvBtn">Creează și publică CV-ul</button></div>
+      <div class="provider-note" id="cvStatus" role="status" aria-live="polite" hidden></div>
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
