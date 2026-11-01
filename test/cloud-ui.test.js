@@ -5,8 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../public/app.js'), 'utf8');
 
-test('cloud status never reports a legacy provider as a verified cloud connection', async () => {
-  for (const provider of ['openai', 'ollama']) {
+test('cloud status accepts every configured AI platform and shows its name', async () => {
+  for (const provider of ['openai', 'gemini', 'ollama']) {
     const nodes = new Map();
     function el(id) {
       if (!nodes.has(id)) {
@@ -19,17 +19,21 @@ test('cloud status never reports a legacy provider as a verified cloud connectio
       }
       return nodes.get(id);
     }
-    const context = { el, state: { settings: { provider } },
+    const name = { openai: 'OpenAI', gemini: 'Google Gemini', ollama: 'Ollama' }[provider];
+    const context = { el, state: { settings: { platform: provider, platformName: name } },
+      providerDisplayName: () => name,
+      routeProfile: () => ({ textModel: 'fixture-model' }),
+      fallbackNames: () => [],
+      healthModels: data => data.models,
       Option: class { constructor(text, value) { this.text = text; this.value = value; } },
-      api: async () => ({ connected: true, provider, models: ['fixture-model'], version: 'test' })
+      api: async () => ({ connected: true, provider, providerName: name, models: ['fixture-model'], version: 'test' })
     };
     vm.createContext(context);
     vm.runInContext(source.slice(source.indexOf('async function refreshHealth('), source.indexOf('async function loadProviderSettings(')), context);
     await context.refreshHealth();
-    assert.equal(el('connectionDot').classList.contains('on'), provider === 'openai');
+    assert.equal(el('connectionDot').classList.contains('on'), true);
     assert.equal(el('instanceBadge').textContent, 'ONLINE · CLOUD');
-    assert.doesNotMatch(el('connectionText').textContent + el('sidebarConnectionText').textContent, /ollama|local/i);
-    if (provider === 'ollama') assert.equal(el('modelSelect').value, '');
-    else assert.equal(el('modelSelect').value, 'fixture-model');
+    assert.match(el('connectionText').textContent, new RegExp(name));
+    assert.equal(el('modelSelect').value, 'fixture-model');
   }
 });

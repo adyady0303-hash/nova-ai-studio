@@ -83,7 +83,7 @@
       <article class="card wide">
         <h2>Acces de administrator</h2>
         <p class="muted">Panoul este rezervat administratorului configurat prin <code>NOVA_ACCESS_USER</code> și <code>NOVA_ACCESS_PASSWORD</code>. Vizitatorii au conturi și proiecte separate și nu pot confirma plăți.</p>
-        <div class="notice" id="usageNotice">Starea „cheie configurată” arată doar că serverul are o valoare salvată. Nu confirmă creditul, validitatea cheii sau costul cererilor. Apelurile către OpenAI sunt tarifate separat.</div>
+        <div class="notice" id="usageNotice">Starea „cheie configurată” arată doar că serverul are o valoare salvată. Nu confirmă creditul, validitatea cheii sau costul cererilor. Fiecare furnizor AI poate tarifa separat apelurile sale.</div>
       </article>
     </section>
     <p class="footer" id="updated">Datele sunt încărcate numai la cerere din serviciul tău Nova.</p>
@@ -138,20 +138,19 @@
         byId("serviceState").textContent="Nova AI Studio online";
         byId("serviceDetail").textContent="Panou conectat la instanța ta privată.";
         if(settings){
-          byId("provider").textContent=settings.provider==="openai"?"OpenAI · cloud":"Furnizor cloud neconfigurat";
+          byId("provider").textContent=(settings.platformName||settings.platform||settings.provider||"Motor AI")+" · "+(settings.routes&&settings.routes.autoFallback?"rezervă activă":"principal");
           byId("model").textContent=settings.textModel||"Nespecificat";
           byId("keyState").textContent=settings.apiKeyConfigured?"Configurată · valoarea ascunsă":"Lipsește";
         }else{
           byId("provider").textContent="Indisponibil";byId("model").textContent="Indisponibil";byId("keyState").textContent="Indisponibil";
         }
         if(health){
-          const isOpenAI=health.provider==="openai";
           aiTestModel=(health.models&&health.models[0])||(settings&&settings.textModel)||"";
-          setPill(isOpenAI && health.connected ? "AI cloud · conexiune verificată" : "AI cloud neconectat", Boolean(isOpenAI && health.connected));
-          byId("aiDiagnostic").textContent=!isOpenAI ? "Configurează furnizorul AI cloud din Configurare AI."
-            : health.connected ? "Serverul a validat conexiunea AI cloud și a primit lista modelelor."
-            : (health.error||"Furnizorul AI cloud nu a putut fi verificat.");
-          byId("aiDiagnostic").className="notice"+(isOpenAI && health.connected?"":" error");
+          const providerName=health.providerName||(settings&&settings.platformName)||health.provider||"Motor AI";
+          setPill(health.connected ? providerName+" · conexiune verificată" : providerName+" · neconectat", Boolean(health.connected));
+          byId("aiDiagnostic").textContent=health.connected ? "Serverul a validat conexiunea și a primit lista modelelor."
+            : (health.error||"Motorul AI nu a putut fi verificat.");
+          byId("aiDiagnostic").className="notice"+(health.connected?"":" error");
         }else{
           setPill("Nu s-a putut citi starea AI",false);
           byId("aiDiagnostic").textContent="Nova nu a putut citi starea AI. Reîncarcă datele sau deschide configurarea AI.";

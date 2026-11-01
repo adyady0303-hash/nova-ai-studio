@@ -1,7 +1,19 @@
 const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, publication: null, view: "home" };
 let activeMessageStream = null;
+let providerDraftDirty = false, searchDraftDirty = false, editingProviderId = "", editingSearchProvider = "";
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
+const providerNames = {
+  openai: "OpenAI", gemini: "Gemini", anthropic: "Anthropic Claude", openrouter: "OpenRouter",
+  groq: "Groq", mistral: "Mistral", deepseek: "DeepSeek", xai: "xAI", together: "Together",
+  ollama: "Ollama", compatible: "API compatibilă", custom: "API compatibilă"
+};
+const defaultSearchProviders = [
+  { id: "auto", name: "Auto", keyConfigured: false, requiresKey: false },
+  { id: "bing", name: "Bing", keyConfigured: false, requiresKey: false },
+  { id: "brave", name: "Brave", keyConfigured: false, requiresKey: true },
+  { id: "tavily", name: "Tavily", keyConfigured: false, requiresKey: true }
+];
 
 async function api(url, options = {}) {
   const response = await fetch(url, options);
@@ -55,6 +67,77 @@ async function loadAccount() {
   el("accountAvatarLabel").textContent = account.username.slice(0, 1).toUpperCase();
 }
 
+function providerProfiles(settings = state.settings) {
+  if (Array.isArray(settings?.providers)) return settings.providers.filter(provider => provider && typeof provider.id === "string");
+  const id = settings?.platform || settings?.provider;
+  if (!id) return [];
+  const openAiCompatible = id === "openai";
+  return [{
+    id,
+    name: settings.platformName || providerNames[id] || id,
+    baseUrl: settings.baseUrl || "",
+    textModel: settings.textModel || "",
+    imageModel: settings.imageModel || "",
+    speechModel: settings.speechModel || "",
+    voice: settings.voice || "",
+    apiKeyConfigured: settings.apiKeyConfigured === true,
+    configured: settings.apiKeyConfigured === true || id === "ollama",
+    capabilities: { text: true, image: openAiCompatible, imageEdit: openAiCompatible, speech: openAiCompatible }
+  }];
+}
+
+function providerProfile(providerId, settings = state.settings) {
+  return providerProfiles(settings).find(provider => provider.id === providerId);
+}
+
+function providerLabel(provider) {
+  return providerNames[provider?.id] || provider?.name || provider?.id || "Motor AI";
+}
+
+function providerDisplayName(providerId, settings = state.settings) {
+  const profile = providerProfile(providerId, settings);
+  return profile ? providerLabel(profile) : providerNames[providerId] || providerId || "Motor AI";
+}
+
+function routeProfile(capability) {
+  const routes = state.settings?.routes;
+  const routeKey = capability === "imageEdit" ? "image" : capability;
+  const providerId = routes && Object.prototype.hasOwnProperty.call(routes, routeKey)
+    ? routes[routeKey]
+    : state.settings?.platform || state.settings?.provider;
+  return providerProfile(providerId);
+}
+
+function routeSupports(capability) {
+  const profiles = providerProfiles();
+  if (!profiles.length) return true;
+  const profile = routeProfile(capability);
+  if (!profile) return false;
+  if (profile.ready && profile.ready[capability] === false) return false;
+  if (!profile.ready && profile.configured === false) return false;
+  if (!profile.capabilities) return true;
+  return profile.capabilities[capability] === true;
+}
+
+function healthModels(data) {
+  let models = data.models;
+  if (models && !Array.isArray(models) && typeof models === "object") models = models.text || models.chat || models.available;
+  if (!Array.isArray(models)) models = typeof models === "string" ? [models] : [];
+  if (typeof data.model === "string") models.unshift(data.model);
+  const configuredModel = routeProfile("text")?.textModel;
+  if (configuredModel) models.unshift(configuredModel);
+  return [...new Set(models.map(model => typeof model === "string" ? model : model?.id || model?.name || "").filter(Boolean).map(model => String(model).trim()).filter(Boolean))];
+}
+
+function fallbackNames(fallbacks) {
+  const entries = Array.isArray(fallbacks) ? fallbacks : fallbacks && typeof fallbacks === "object" ? Object.values(fallbacks).flat() : [];
+  return entries.map(fallback => {
+    if (typeof fallback === "string") return providerDisplayName(fallback);
+    const providerId = fallback?.provider || fallback?.providerId;
+    return fallback?.providerName || fallback?.name || (providerId ? providerDisplayName(providerId) : "") || fallback?.model;
+  }).filter(Boolean);
+}
+
 async function refreshHealth() {
   const badge = el("statusBadge"), dot = el("connectionDot"), label = el("connectionText"), select = el("modelSelect");
   const sideDot = el("sidebarConnectionDot"), sideLabel = el("sidebarConnectionText");
@@ -62,51 +145,167 @@ async function refreshHealth() {
   el("projectStorageLabel").textContent = "Fișiere pe serverul cloud";
   try {
     const data = await api("/api/health");
-    if (data.provider !== "openai") throw new Error("Configurează furnizorul AI cloud din Configurare AI.");
+    const providerName = data.providerName || (data.provider ? providerDisplayName(data.provider) : state.settings?.platformName) || "Motor AI";
     if (!data.connected) {
-      const message = data.error || "Conexiunea AI cloud nu este disponibilă";
+      const message = data.error || `Conexiunea cu ${providerName} nu este disponibilă`;
       label.title = message;
       sideLabel.title = message;
       throw new Error(message);
     }
-    label.removeAttribute("title"); sideLabel.removeAttribute("title");
-    dot.classList.add("on"); label.textContent = "AI cloud conectat";
-    sideDot.classList.add("on"); sideLabel.textContent = "AI cloud conectat";
-    badge.textContent = "Cloud · conexiune verificată";
-    badge.style.color = "var(--green)"; badge.style.borderColor = "#364131";
+    const fallbacks = fallbackNames(data.fallbacks);
+    const connectionTitle = fallbacks.length ? `Motoare de rezervă: ${fallbacks.join(", ")}` : `${providerName} este conectat`;
+    label.title = connectionTitle; sideLabel.title = connectionTitle; badge.title = connectionTitle;
+    dot.classList.add("on"); label.textContent = `${providerName} conectat`;
+    sideDot.classList.add("on"); sideLabel.textContent = `${providerName} conectat`;
+    badge.textContent = `${providerName} · verificat`;
+    badge.style.color = "var(--mint)"; badge.style.borderColor = "#364b40";
     const previous = select.value; select.replaceChildren();
-    if (!data.models.length) select.add(new Option("Setează modelul cloud", ""));
-    else { data.models.forEach(model => select.add(new Option(model, model))); if (data.models.includes(previous)) select.value = previous; }
+    const models = healthModels(data);
+    if (!models.length) select.add(new Option(`Setează modelul pentru ${providerName}`, ""));
+    else {
+      models.forEach(model => select.add(new Option(model, model)));
+      const configured = routeProfile("text")?.textModel;
+      select.value = models.includes(previous) ? previous : models.includes(configured) ? configured : models[0];
+    }
   } catch (error) {
-    dot.classList.remove("on"); label.textContent = "AI cloud neconectat"; badge.textContent = "AI neconectat";
+    dot.classList.remove("on"); label.textContent = "Motor AI neconectat"; badge.textContent = "AI neconectat";
     sideDot.classList.remove("on");
-    const reason = error?.message || "Verifică setările furnizorului AI cloud.";
+    const reason = error?.message || "Verifică profilurile și rutele din Motoare AI.";
     sideLabel.textContent = reason;
     label.title = reason; sideLabel.title = reason; badge.title = reason;
     badge.style.color = "#e4a69b"; badge.style.borderColor = "#583b35";
-    select.replaceChildren(new Option("Configurează AI cloud", ""));
+    const configured = routeProfile("text")?.textModel;
+    select.replaceChildren(new Option(configured || "Configurează un motor AI", configured || ""));
   }
+}
+
+function updateCapabilityControls() {
+  const controls = [
+    ["generateImageBtn", "image", "Configurează o rută de imagini în Motoare AI."],
+    ["editImageBtn", "imageEdit", "Configurează un motor compatibil cu editarea imaginilor."],
+    ["voiceComposerBtn", "speech", "Configurează o rută vocală în Motoare AI."],
+    ["homeVoiceBtn", "speech", "Configurează o rută vocală în Motoare AI."]
+  ];
+  controls.forEach(([id, capability, unavailableTitle]) => {
+    const button = el(id);
+    if (!button) return;
+    const available = routeSupports(capability);
+    button.disabled = !available;
+    if (!available) button.title = unavailableTitle;
+  });
+}
+
+function renderProviderOptions(settings) {
+  const select = el("providerSelect"), profiles = providerProfiles(settings);
+  select.replaceChildren();
+  profiles.forEach(provider => select.add(new Option(providerLabel(provider), provider.id)));
+  if (!profiles.length) select.add(new Option("Niciun profil disponibil", ""));
+}
+
+function renderProviderProfile(providerId) {
+  const profile = providerProfile(providerId) || providerProfiles()[0];
+  if (!profile) return;
+  el("providerSelect").value = profile.id;
+  editingProviderId = profile.id;
+  el("apiBaseUrl").value = profile.baseUrl || "";
+  el("apiBaseUrl").readOnly = !["custom", "ollama"].includes(profile.id);
+  el("textModel").value = profile.textModel || "";
+  el("imageModel").value = profile.imageModel || "";
+  el("speechModel").value = profile.speechModel || "";
+  el("voiceSelect").value = profile.voice || "";
+  el("apiKey").value = "";
+  el("apiKey").placeholder = profile.apiKeyConfigured
+    ? "•••••••• · lasă gol pentru a păstra cheia"
+    : "Introdu cheia sau lasă gol dacă nu este necesară";
+  el("clearApiKey").checked = false;
+  el("clearApiKey").disabled = !profile.apiKeyConfigured;
+  el("apiKeyState").textContent = profile.apiKeyConfigured
+    ? "•••••••• · Cheie configurată pe server. Valoarea nu este returnată în browser."
+    : "Nicio cheie salvată pentru acest profil. Valoarea introdusă este trimisă numai la salvare.";
+  el("providerProfileState").textContent = `${profile.configured ? "Configurat" : "Neconfigurat"} · ${providerLabel(profile)}`;
+  const capabilities = profile.capabilities || {};
+  const capabilityList = el("providerCapabilities"); capabilityList.replaceChildren();
+  [["text", "Text"], ["image", "Imagini"], ["imageEdit", "Editare imagini"], ["speech", "Voce"]].forEach(([id, label]) => {
+    const chip = document.createElement("span"); chip.className = `capability-chip${capabilities[id] ? " on" : ""}`;
+    chip.textContent = `${capabilities[id] ? "✓" : "—"} ${label}`; capabilityList.append(chip);
+  });
+  const capabilitiesKnown = Object.keys(capabilities).length > 0;
+  el("textModel").disabled = capabilitiesKnown && capabilities.text !== true;
+  el("imageModel").disabled = capabilitiesKnown && capabilities.image !== true && capabilities.imageEdit !== true;
+  el("speechModel").disabled = capabilitiesKnown && capabilities.speech !== true;
+  el("voiceSelect").disabled = capabilitiesKnown && capabilities.speech !== true;
+  providerDraftDirty = false;
+}
+
+function renderRouteOptions(selectId, capability, selectedProviderId) {
+  const select = el(selectId), profiles = providerProfiles();
+  const capable = profiles.filter(provider => {
+    if (!provider.capabilities || !Object.keys(provider.capabilities).length) return true;
+    return provider.capabilities[capability] === true;
+  });
+  select.replaceChildren();
+  capable.forEach(provider => select.add(new Option(`${providerLabel(provider)}${provider.configured ? "" : " · neconfigurat"}`, provider.id)));
+  if (!capable.length) select.add(new Option("Nicio rută disponibilă", ""));
+  if (capable.some(provider => provider.id === selectedProviderId)) select.value = selectedProviderId;
+}
+
+function renderRoutes(settings) {
+  const routes = settings.routes || {};
+  renderRouteOptions("routeText", "text", routes.text || settings.platform);
+  renderRouteOptions("routeImage", "image", routes.image);
+  renderRouteOptions("routeSpeech", "speech", routes.speech);
+  el("autoFallback").checked = routes.autoFallback === true;
+}
+
+function searchProfiles(settings = state.settings) {
+  const profiles = settings?.search?.providers;
+  return Array.isArray(profiles) && profiles.length ? profiles : defaultSearchProviders;
+}
+
+function renderSearchProfile(providerId) {
+  const profile = searchProfiles().find(provider => provider.id === providerId) || searchProfiles()[0];
+  if (!profile) return;
+  el("searchProvider").value = profile.id;
+  editingSearchProvider = profile.id;
+  el("searchApiKey").value = "";
+  el("clearSearchApiKey").checked = false;
+  const requiresKey = profile.requiresKey !== false;
+  el("searchApiKey").disabled = !requiresKey;
+  el("clearSearchApiKey").disabled = !requiresKey || !profile.keyConfigured;
+  el("searchApiKey").placeholder = profile.keyConfigured
+    ? "•••••••• · lasă gol pentru a păstra cheia"
+    : requiresKey ? `Introdu cheia pentru ${profile.name || profile.id}` : "Nu este necesară o cheie";
+  el("searchKeyState").textContent = !requiresKey
+    ? `${profile.name || profile.id} nu necesită o cheie proprie.`
+    : profile.keyConfigured
+      ? "•••••••• · Cheie configurată pe server. Valoarea nu este returnată în browser."
+      : `Nicio cheie salvată pentru ${profile.name || profile.id}.`;
+  searchDraftDirty = false;
+}
+
+function renderSearchSettings(settings) {
+  const select = el("searchProvider"), profiles = searchProfiles(settings);
+  select.replaceChildren(); profiles.forEach(provider => select.add(new Option(provider.name || provider.id, provider.id)));
+  const selected = profiles.some(provider => provider.id === settings.search?.provider) ? settings.search.provider : profiles[0]?.id;
+  if (selected) renderSearchProfile(selected);
 }
 
 async function loadProviderSettings() {
   const { settings } = await api("/api/settings"); state.settings = settings;
-  el("providerSelect").value = "openai";
-  el("apiBaseUrl").value = settings.baseUrl;
-  el("textModel").value = settings.textModel;
-  el("imageModel").value = settings.imageModel;
-  el("speechModel").value = settings.speechModel;
-  el("voiceSelect").value = settings.voice;
-  el("apiKey").value = "";
-  el("clearApiKey").checked = false;
-  el("apiKeyState").textContent = settings.apiKeyConfigured
-    ? "O cheie este deja configurată și se păstrează criptat pe server. Lasă câmpul gol pentru a o păstra. Cheia nu este returnată în browser."
-    : "Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.";
-  el("openAiFields").hidden = false;
+  renderProviderOptions(settings);
+  renderRoutes(settings);
+  renderSearchSettings(settings);
+  renderProviderProfile(settings.platform || settings.provider || providerProfiles(settings)[0]?.id);
+  updateCapabilityControls();
   await refreshHealth();
 }
 
 async function testWebConnection() {
   const button = el("testWebConnection"), status = el("webConnectionStatus");
+  if (searchDraftDirty || el("searchProvider").value !== state.settings?.search?.provider) {
+    status.textContent = "Salvează mai întâi motorul și cheia de căutare, apoi verifică accesul.";
+    return;
+  }
   button.disabled = true;
   status.textContent = "Se verifică o căutare reală pe internet…";
   try {
@@ -120,19 +319,32 @@ async function testWebConnection() {
 
 async function saveProviderSettings() {
   const settings = {
-    provider: el("providerSelect").value,
+    providerId: el("providerSelect").value,
     baseUrl: el("apiBaseUrl").value.trim(),
     apiKey: el("apiKey").value,
     clearApiKey: el("clearApiKey").checked,
     textModel: el("textModel").value.trim(),
     imageModel: el("imageModel").value.trim(),
     speechModel: el("speechModel").value.trim(),
-    voice: el("voiceSelect").value
+    voice: el("voiceSelect").value.trim(),
+    routes: {
+      text: el("routeText").value,
+      image: el("routeImage").value,
+      speech: el("routeSpeech").value,
+      autoFallback: el("autoFallback").checked
+    },
+    search: {
+      provider: el("searchProvider").value,
+      apiKey: el("searchApiKey").value,
+      clearApiKey: el("clearSearchApiKey").checked
+    }
   };
   const result = await api("/api/settings", jsonBody(settings));
-  state.settings = result.settings; el("apiKey").value = "";
+  state.settings = result.settings; el("apiKey").value = ""; el("searchApiKey").value = "";
+  providerDraftDirty = false; searchDraftDirty = false;
   el("providerDialog").close(); await refreshHealth();
-  toast("Conexiunea AI cloud a fost salvată");
+  updateCapabilityControls();
+  toast(result.notice || "Motoarele AI și rutele au fost salvate");
 }
 
 function renderProjects() {
@@ -294,6 +506,16 @@ function safeMediaName(title, extension) {
   return `${stem}.${extension}`;
 }
 
+function safeImageResultUrl(value) {
+  if (typeof value !== "string" || value.length > 34 * 1024 * 1024) throw new Error("Furnizorul a returnat o imagine invalidă.");
+  if (/^data:image\/(?:png|jpeg|webp);base64,[a-zA-Z0-9+/]+={0,2}$/.test(value)) return value;
+  let url;
+  try { url = new URL(value); }
+  catch { throw new Error("Furnizorul a returnat o adresă de imagine invalidă."); }
+  if (url.protocol !== "https:" || url.username || url.password) throw new Error("Imaginea furnizorului trebuie livrată prin HTTPS.");
+  return url.href;
+}
+
 function selectedSpeechOptions() {
   const voice = el("speechVoice").value;
   return { ...(voice ? { voice } : {}), speed: Number(el("speechSpeed").value) };
@@ -315,13 +537,21 @@ function updateVoiceCost() {
 function openVoiceDialog() {
   const dialog = el("voiceDialog"), voiceText = el("voiceText"), status = el("voiceStatus");
   if (!voiceText.value.trim() && el("prompt").value.trim()) voiceText.value = el("prompt").value.trim();
+  const configuredVoice = routeProfile("speech")?.voice;
+  el("speechVoice").placeholder = configuredVoice ? `Vocea configurată: ${configuredVoice}` : "Vocea configurată";
   status.hidden = true; status.textContent = ""; status.classList.remove("error");
   updateVoiceCost(); dialog.showModal(); voiceText.focus();
 }
 
+function mediaMetadata(label, result, capability) {
+  const profile = routeProfile(capability);
+  const providerName = result.providerName || (result.provider ? providerDisplayName(result.provider) : profile ? providerLabel(profile) : "");
+  return [label, providerName, result.model].filter(Boolean).join(" · ");
+}
+
 function addVoiceCard(text, result) {
   const node = document.createElement("div"); node.className = "message assistant";
-  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = `Voice-over AI · ${result.model}`;
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = mediaMetadata("Voce AI", result, "speech");
   const transcript = document.createElement("div"); transcript.textContent = text;
   const output = document.createElement("div"); output.className = "creative-output";
   const player = document.createElement("audio"); player.controls = true; player.src = result.dataUrl;
@@ -363,11 +593,12 @@ function addSpeechButton(node, text, label = "Ascultă cu voce AI") {
 }
 
 function addImageCard(prompt, result) {
+  const source = safeImageResultUrl(result.dataUrl);
   const node = document.createElement("div"); node.className = "message assistant";
-  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = `${result.edited ? "Imagine modificată" : "Imagine AI"} · ${result.model}`;
+  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = mediaMetadata(result.edited ? "Imagine modificată" : "Imagine AI", result, "image");
   const caption = document.createElement("div"); caption.textContent = prompt;
-  const img = document.createElement("img"); img.className = "creative-image"; img.alt = prompt; img.src = result.dataUrl;
-  const link = document.createElement("a"); link.className = "btn small"; link.textContent = `Descarcă ${(result.format || "png").toUpperCase()}`; link.href = result.dataUrl; link.download = safeMediaName(prompt.slice(0, 48), result.format || "png");
+  const img = document.createElement("img"); img.className = "creative-image"; img.alt = prompt; img.referrerPolicy = "no-referrer"; img.src = source;
+  const link = document.createElement("a"); link.className = "btn small"; link.textContent = `Descarcă ${(result.format || "png").toUpperCase()}`; link.href = source; link.referrerPolicy = "no-referrer"; link.rel = "noopener noreferrer"; link.download = safeMediaName(prompt.slice(0, 48), result.format || "png");
   node.append(meta, caption, img, link); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
@@ -439,22 +670,25 @@ async function generateImageEdit() {
   } finally { button.disabled = false; }
 }
 
- function addBubble(role, content, events = []) {
+function addBubble(role, content, events = [], metadata = null) {
+  const messageText = typeof content === "string" ? content : String(content ?? "");
   const node = document.createElement("div"); node.className = `message ${role}`;
-  const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = role === "user" ? "Tu" : "Nova";
-  const body = document.createElement("div"); body.textContent = content;
+  const meta = document.createElement("div"); meta.className = "message-meta";
+  const provider = metadata?.providerName || (metadata?.provider ? providerDisplayName(metadata.provider) : "");
+  meta.textContent = role === "user" ? "Tu" : ["Nova", provider, metadata?.model].filter(Boolean).join(" · ");
+  const body = document.createElement("div"); body.textContent = messageText;
   node.append(meta, body);
-  if (role === "assistant" && content.trim()) {
+  if (role === "assistant" && messageText.trim()) {
     const download = document.createElement("button"); download.className = "btn small"; download.textContent = "Descarcă TXT";
-    download.addEventListener("click", () => downloadBlob(new Blob([content], { type: "text/plain;charset=utf-8" }), safeMediaName(content.split("\n")[0].slice(0, 70) || "Nova", "txt")));
+    download.addEventListener("click", () => downloadBlob(new Blob([messageText], { type: "text/plain;charset=utf-8" }), safeMediaName(messageText.split("\n")[0].slice(0, 70) || "Nova", "txt")));
     node.append(download);
   }
   if (events?.length) {
     const activity = document.createElement("div"); activity.className = "agent-events";
     activity.textContent = events.map(event => `${event.ok ? "✓" : "!"} ${event.summary}`).join("\n"); node.append(activity);
   }
-  if (role === "assistant" && creative.text.trim() && state.settings?.provider === "openai") {
-    const row = document.createElement("div"); row.className = "apply-row"; addSpeechButton(row, creative.text); node.append(row);
+  if (role === "assistant" && messageText.trim() && routeSupports("speech")) {
+    const row = document.createElement("div"); row.className = "apply-row"; addSpeechButton(row, messageText); node.append(row);
   }
   messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
@@ -792,7 +1026,7 @@ async function send() {
     const assistantContent = result.content;
     state.chat.push({ role: "assistant", content: assistantContent });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
-    addBubble("assistant", assistantContent, result.events);
+    addBubble("assistant", assistantContent, result.events, result);
     const wroteFiles = result.events.some(event => event.ok && event.tool === "write_file");
     if (wroteFiles) {
       await refreshFiles(false);
@@ -838,12 +1072,48 @@ document.addEventListener("keydown", event => {
   if (event.key === "Escape") accountMenu.open = false;
 });
 el("providerSettingsBtn").addEventListener("click", async () => {
+  if (state.account?.role !== "owner") return;
   try { await loadProviderSettings(); el("providerDialog").showModal(); }
   catch (error) { toast(error.message); }
 });
-el("providerSelect").addEventListener("change", event => { el("openAiFields").hidden = event.target.value !== "openai"; });
+el("providerSelect").addEventListener("change", event => {
+  if (providerDraftDirty && !window.confirm("Ai modificări nesalvate pentru acest profil. Le abandonezi?")) {
+    event.target.value = editingProviderId;
+    return;
+  }
+  renderProviderProfile(event.target.value);
+});
+el("searchProvider").addEventListener("change", event => {
+  if (searchDraftDirty && !window.confirm("Ai o cheie de căutare nesalvată. Abandonezi modificarea?")) {
+    event.target.value = editingSearchProvider;
+    return;
+  }
+  renderSearchProfile(event.target.value);
+  searchDraftDirty = event.target.value !== state.settings?.search?.provider;
+});
+el("providerFields").addEventListener("input", () => { providerDraftDirty = true; });
+el("providerFields").addEventListener("change", () => { providerDraftDirty = true; });
+["routeText", "routeImage", "routeSpeech", "autoFallback"].forEach(id => {
+  el(id).addEventListener("change", () => { providerDraftDirty = true; });
+});
+["searchApiKey", "clearSearchApiKey"].forEach(id => {
+  el(id).addEventListener("input", () => { searchDraftDirty = true; });
+  el(id).addEventListener("change", () => { searchDraftDirty = true; });
+});
+el("providerDialog").addEventListener("close", () => {
+  el("apiKey").value = ""; el("searchApiKey").value = "";
+  el("clearApiKey").checked = false; el("clearSearchApiKey").checked = false;
+  providerDraftDirty = false; searchDraftDirty = false;
+});
 el("testWebConnection").addEventListener("click", testWebConnection);
-el("saveProviderSettings").addEventListener("click", () => saveProviderSettings().catch(error => toast(error.message)));
+el("providerForm").addEventListener("submit", event => {
+  event.preventDefault();
+  if (event.submitter?.value === "cancel") {
+    el("providerDialog").close("cancel");
+    return;
+  }
+  saveProviderSettings().catch(error => toast(error.message));
+});
 el("taskSelect").addEventListener("change", event => {
   setTask(event.target.value);
 });

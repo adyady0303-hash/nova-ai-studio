@@ -68,6 +68,97 @@ test('search keeps valid HTTP sources, skips malformed entries and deduplicates 
   assert.deepEqual(results.map(result => result.url), ['http://example.com/news', 'https://example.org/']);
 });
 
+test('Brave search uses its fixed endpoint and token header, then normalizes public results', async () => {
+  const secret = 'brave-secret-value';
+  const entries = [
+    { title:'<b>Prima</b>', url:'https://example.com/a#fragment', description:'Text &amp; context' },
+    { title:'Duplicat', url:'https://example.com/a', description:'Alt text' },
+    { title:'Local', url:'https://localhost/private', description:'Nu' },
+    { title:'IP privat', url:'https://127.0.0.1/private', description:'Nu' },
+    ...['b','c','d','e','f','g'].map(letter => ({ title:letter.toUpperCase(), url:`http://example.org/${letter}`, description:`Rezumat ${letter}` }))
+  ];
+  const result = JSON.parse(await callWebTool('web_search', { query:'Nova & AI' }, async (value, options) => {
+    const url = new URL(value);
+    assert.equal(`${url.origin}${url.pathname}`, 'https://api.search.brave.com/res/v1/web/search');
+    assert.equal(url.searchParams.get('q'), 'Nova & AI');
+    assert.equal(url.searchParams.get('count'), '5');
+    assert.equal(value.includes(secret), false);
+    assert.equal(options.method, 'GET');
+    assert.equal(options.headers['X-Subscription-Token'], secret);
+    assert.deepEqual(options.acceptedTypes, ['application/json']);
+    assert.equal(options.followRedirects, false);
+    return { body:JSON.stringify({ web:{ results:entries } }) };
+  }, { searchConfig:{ provider:'brave', keys:{ brave:secret } } }));
+  assert.equal(result.searchProvider, 'brave');
+  assert.equal(result.sources.length, 5);
+  assert.deepEqual(result.sources[0], { title:'Prima', url:'https://example.com/a', excerpt:'Text & context' });
+  assert.deepEqual(result.sources.slice(1).map(source => source.url), [
+    'http://example.org/b', 'http://example.org/c', 'http://example.org/d', 'http://example.org/e'
+  ]);
+});
+
+test('Tavily search posts JSON with the API key outside the fixed endpoint', async () => {
+  const secret = 'tavily-secret-value';
+  const result = JSON.parse(await callWebTool('web_search', { query:'știri Nova' }, async (value, options) => {
+    assert.equal(value, 'https://api.tavily.com/search');
+    assert.equal(value.includes(secret), false);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers['content-type'], 'application/json');
+    assert.equal(options.followRedirects, false);
+    assert.deepEqual(JSON.parse(options.body), { api_key:secret, query:'știri Nova', max_results:5 });
+    return { body:JSON.stringify({ results:[{ title:'Noutate', url:'https://example.com/news', content:'Rezumat Tavily' }] }) };
+  }, { provider:'tavily', keys:{ tavily:secret } }));
+  assert.deepEqual(result, {
+    query:'știri Nova',
+    sources:[{ title:'Noutate', url:'https://example.com/news', excerpt:'Rezumat Tavily' }],
+    searchProvider:'tavily'
+  });
+});
+
+test('keyed search transport rejects redirects and oversized responses', async () => {
+  const secret = 'fixed-endpoint-secret';
+  let requests = 0;
+  await assert.rejects(callWebTool('web_search', { query:'redirect' }, (url, options) => downloadPage(url, {
+    ...options,
+    lookup,
+    request:transport({ status:302, type:'application/json', location:'https://example.com/steal' }, (_url, requestOptions) => {
+      requests++;
+      assert.equal(requestOptions.headers['X-Subscription-Token'], secret);
+    })
+  }), { provider:'brave', keys:{ brave:secret } }), /redirecționare/);
+  assert.equal(requests, 1);
+  await assert.rejects(callWebTool('web_search', { query:'large' }, async () => ({ body:'x'.repeat(1024 * 1024 + 1) }),
+    { provider:'brave', keys:{ brave:secret } }), /1 MiB/);
+});
+
+test('auto search tries keyed providers in order, falls back to Bing and never leaks secrets', async () => {
+  const brave = 'brave-key-never-log';
+  const tavily = 'tavily-key-never-log';
+  const calls = [];
+  const rss = '<rss><item><title>Bing result</title><link>https://example.com/bing</link><description>Fallback</description></item></rss>';
+  const result = JSON.parse(await callWebTool('web_search', { query:'fallback' }, async (value) => {
+    const host = new URL(value).hostname;
+    calls.push(host);
+    assert.equal(value.includes(brave), false);
+    assert.equal(value.includes(tavily), false);
+    if (host === 'api.search.brave.com') throw new Error(`Brave rejected ${brave}`);
+    if (host === 'api.tavily.com') return { body:'{"results":[]}' };
+    return { body:rss };
+  }, { provider:'auto', keys:{ brave, tavily } }));
+  assert.deepEqual(calls, ['api.search.brave.com', 'api.tavily.com', 'www.bing.com']);
+  assert.equal(result.searchProvider, 'bing');
+  assert.equal(result.sources[0].url, 'https://example.com/bing');
+
+  await assert.rejects(callWebTool('web_search', { query:'secret failure' }, async () => {
+    throw new Error(`Credentiale ${brave} și ${encodeURIComponent(tavily)}`);
+  }, { provider:'auto', keys:{ brave, tavily } }), error => {
+    assert.equal(error.message.includes(brave), false);
+    assert.equal(error.message.includes(tavily), false);
+    assert.match(error.message, /REDACTAT/);
+    return true;
+  });
+});
+
 test('DNS failure and timeout surface useful errors without contacting the destination', async () => {
   await assert.rejects(downloadPage('https://example.com', {
     lookup: async () => { throw Object.assign(new Error('temporary failure'), { code: 'EAI_AGAIN' }); },
@@ -141,6 +232,7 @@ test('web health requires actual sources, caches and shares concurrent checks, t
   resolve({ body:'<rss><item><title>Nova</title><link>https://example.com/</link></item></rss>' });
   assert.deepEqual(await first, await second);
   assert.equal((await check()).connected, true);
+  assert.equal((await check()).searchProvider, 'bing');
   assert.equal(calls,1);
   time += 60001;
   await check();
@@ -151,4 +243,58 @@ test('web health requires actual sources, caches and shares concurrent checks, t
   assert.deepEqual(await failed(), await failed());
   assert.equal((await failed()).connected,false);
   assert.equal((await failed()).error,'DNS indisponibil');
+  assert.equal((await failed()).searchProvider,'bing');
+});
+
+test('web health loads search config dynamically and redacts provider credentials', async () => {
+  const secret = 'health-brave-secret';
+  let configReads = 0;
+  const healthy = createWebHealthChecker(async (_url, options) => {
+    assert.equal(options.headers['X-Subscription-Token'], secret);
+    return { body:'{"web":{"results":[{"title":"Nova","url":"https://example.com/","description":"OK"}]}}' };
+  }, Date.now, async () => {
+    configReads++;
+    return { searchConfig:{ provider:'brave', keys:{ brave:secret } } };
+  });
+  const status = await healthy();
+  assert.equal(configReads, 1);
+  assert.equal(status.connected, true);
+  assert.equal(status.searchProvider, 'brave');
+
+  const failed = createWebHealthChecker(async () => { throw new Error(`Token invalid: ${secret}`); }, Date.now,
+    () => ({ provider:'brave', keys:{ brave:secret } }));
+  const failure = await failed();
+  assert.equal(failure.connected, false);
+  assert.equal(failure.searchProvider, 'brave');
+  assert.equal(failure.error.includes(secret), false);
+  assert.match(failure.error, /REDACTAT/);
+});
+
+test('web health cache is invalidated immediately when provider or credentials change', async () => {
+  let config = { provider:'brave', keys:{ brave:'brave-key-one' } };
+  const requests = [];
+  const check = createWebHealthChecker(async (value, options) => {
+    const url = new URL(value);
+    if (url.hostname === 'api.search.brave.com') {
+      requests.push({ provider:'brave', key:options.headers['X-Subscription-Token'] });
+      return { body:'{"web":{"results":[{"title":"Brave","url":"https://example.com/brave"}]}}' };
+    }
+    requests.push({ provider:'tavily', key:JSON.parse(options.body).api_key });
+    return { body:'{"results":[{"title":"Tavily","url":"https://example.com/tavily"}]}' };
+  }, Date.now, () => config);
+
+  assert.equal((await check()).searchProvider, 'brave');
+  assert.equal((await check()).searchProvider, 'brave');
+  assert.deepEqual(requests, [{ provider:'brave', key:'brave-key-one' }]);
+
+  config = { provider:'tavily', keys:{ tavily:'tavily-key-one' } };
+  assert.equal((await check()).searchProvider, 'tavily');
+  config = { provider:'tavily', keys:{ tavily:'tavily-key-two' } };
+  assert.equal((await check()).searchProvider, 'tavily');
+  assert.equal((await check()).searchProvider, 'tavily');
+  assert.deepEqual(requests, [
+    { provider:'brave', key:'brave-key-one' },
+    { provider:'tavily', key:'tavily-key-one' },
+    { provider:'tavily', key:'tavily-key-two' }
+  ]);
 });

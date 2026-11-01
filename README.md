@@ -4,12 +4,12 @@ Nova AI Studio pune chatul, programarea, imaginile, versurile, voice-over-ul și
 
 ## Ce poate genera
 
-- **Chat și cod:** folosește Ollama local sau un model OpenAI / compatibil. Agentul are unelte limitate la fișierele proiectului.
+- **Chat și cod:** folosește Ollama local sau OpenAI, Gemini, Anthropic, OpenRouter, Groq, Mistral, DeepSeek, xAI ori Together. Agentul are unelte limitate la fișierele proiectului.
 - **Versuri:** scrie texte originale complete, structurate pe strofe, refren și punte.
 - **Imagini:** modelul de imagini configurat poate genera ilustrații PNG și poate modifica fotografii PNG/JPG/WebP încărcate de administrator, fără a suprascrie originalul.
 - **Voice-over:** modelul de vorbire poate genera un MP3 din text.
 
-Apelurile către modele cloud pot fi tarifate de furnizor. Nova nu include chei API și nu le trimite în repository.
+Apelurile către modele cloud și servicii de căutare pot fi tarifate de furnizor. Nova nu include, nu emite și nu generează chei API; obține-le direct de la furnizor și nu le trimite în repository.
 
 ## Publicare online personală
 
@@ -18,8 +18,8 @@ Apelurile către modele cloud pot fi tarifate de furnizor. Nova nu include chei 
 ### Deploy pe Render
 
 1. Deschide [Deploy Nova AI Studio pe Render](https://render.com/deploy?repo=https://github.com/adyady0303-hash/nova-ai-studio) și conectează contul GitHub.
-2. Blueprint-ul `render.yaml` configurează serverul Node, autentificarea cu parolă, un volum persistent pentru proiecte și configurarea API OpenAI.
-3. Introdu cheia API numai în formularul privat Render. Nu o adăuga în GitHub, în pagina publică sau în conversații.
+2. Blueprint-ul `render.yaml` configurează serverul Node, autentificarea cu parolă, un volum persistent pentru proiecte, furnizorii AI și căutarea web.
+3. Introdu numai cheile folosite în câmpurile private Render marcate `sync: false`; cele nefolosite pot rămâne goale. Nu adăuga cheile în GitHub, în pagina publică, în browser sau în conversații.
 4. După deploy, administratorul intră cu utilizatorul și parola din dashboard. Vizitatorii pot apăsa „Creează un cont de abonat” pentru un spațiu privat separat.
 
 Pagina de autentificare permite vizitatorilor să-și creeze conturi separate de abonat. Proiectele lor sunt private, iar administratorul păstrează spațiul și setările AI existente. Un cont de abonat are implicit 5 cereri AI pe zi și cel mult 10 proiecte; apelurile folosesc furnizorul AI configurat de administrator și pot avea costuri.
@@ -27,7 +27,7 @@ Pagina de autentificare permite vizitatorilor să-și creeze conturi separate de
 ### Deploy cu Docker
 
 1. Instalează Docker cu suport pentru Compose.
-2. Copiază `.env.example` în `.env` și setează o parolă aleatoare de cel puțin 20 de caractere. Adaugă cheia furnizorului AI în `.env` sau lasă cheia necompletată și configureaz-o din fereastra Nova.
+2. Copiază `.env.example` în `.env` și setează o parolă aleatoare de cel puțin 20 de caractere. Adaugă numai cheile furnizorilor folosiți sau lasă-le necompletate și configurează furnizorul din fereastra Nova.
 3. Din directorul proiectului rulează `docker compose up -d --build`.
 4. Deschide `http://localhost:4173`. Pentru expunere pe internet, pune containerul în spatele unui proxy HTTPS (de exemplu Caddy) și păstrează autentificarea pornită.
 
@@ -51,12 +51,26 @@ Volumul Docker `nova-data` păstrează proiectele și copiile de rezervă la rep
 | `NOVA_DATA_DIR` | Rădăcina proiectelor, backup-urilor și coșului de gunoi. Montează aici storage persistent. |
 | `NOVA_MAX_ACCOUNTS` | Numărul maxim de conturi de abonat; implicit `100`. |
 | `NOVA_SUBSCRIBER_DAILY_AI_LIMIT` | Cereri AI gratuite zilnice; implicit `5`, cel mult `5`. Planul Standard are o cotă separată de 300 pe perioadă lunară plătită. |
-| `AI_PROVIDER` | `ollama` sau `openai`. |
+| `AI_PROVIDER` | Ruta principală pentru text/chat: `ollama`, `openai`, `gemini`, `anthropic`, `openrouter`, `groq`, `mistral`, `deepseek`, `xai` sau `together`. |
+| `AI_FALLBACK_PROVIDERS` | Listă ordonată, separată prin virgule, de furnizori de rezervă pentru text/chat. Este opt-in: valoarea goală dezactivează fallback-ul. |
 | `OLLAMA_URL` | Endpoint-ul Ollama accesibil serverului; implicit `http://127.0.0.1:11434`. |
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` | Endpoint și cheie API pentru serviciu OpenAI compatibil. |
-| `OPENAI_MODEL` / `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` | Modelele pentru chat, generare de imagini și voce. |
+| `OPENAI_MODEL` | Modelul OpenAI pentru text/chat. |
+| `GEMINI_API_KEY` / `GEMINI_MODEL` | Cheia și modelul text Gemini, opționale. |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Cheia și modelul text Anthropic, opționale. |
+| `OPENROUTER_API_KEY` / `OPENROUTER_MODEL` | Cheia și modelul text OpenRouter, opționale. |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Cheia și modelul text Groq, opționale. |
+| `MISTRAL_API_KEY` / `MISTRAL_MODEL` | Cheia și modelul text Mistral, opționale. |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL` | Cheia și modelul text DeepSeek, opționale. |
+| `XAI_API_KEY` / `XAI_MODEL` | Cheia și modelul text xAI, opționale. |
+| `TOGETHER_API_KEY` / `TOGETHER_MODEL` | Cheia și modelul text Together, opționale. |
+| `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` | Modelele rutelor media dedicate pentru generarea imaginilor și a vocii. |
+| `WEB_SEARCH_PROVIDER` | Motorul de căutare: `auto`, `bing`, `brave` sau `tavily`. |
+| `BRAVE_SEARCH_API_KEY` / `TAVILY_API_KEY` | Cheile server-side necesare când este folosit Brave, respectiv Tavily. Bing nu necesită cheie. |
 
-Cheia și furnizorul salvate din interfața Nova se păstrează criptat: în PostgreSQL când este configurat sau în `NOVA_DATA_DIR/data/ai-settings.json` în modul cu disc. Se reîncarcă automat la repornire. Păstrează discul/baza de date și cheia `NOVA_DATA_ENCRYPTION_KEY` stabile între deploy-uri. Dacă nu există o cheie explicită, criptarea folosește parola administratorului; în modul local fără autentificare este creat automat fișierul privat `NOVA_DATA_DIR/data/ai-settings.key`. Nu șterge acest fișier și nu îl publica. Schimbarea secretului de criptare necesită reconfigurarea credențialei. Poți utiliza în continuare secretele furnizorului de hosting pentru cheia API.
+Cheile din variabilele de mediu și secretele Render rămân pe server și nu trebuie expuse în browser. Cheile și furnizorii salvați din interfața Nova se păstrează criptat: în PostgreSQL când este configurat sau în `NOVA_DATA_DIR/data/ai-settings.json` în modul cu disc. Se reîncarcă automat la repornire. Păstrează discul/baza de date și cheia `NOVA_DATA_ENCRYPTION_KEY` stabile între deploy-uri. Dacă nu există o cheie explicită, criptarea folosește parola administratorului; în modul local fără autentificare este creat automat fișierul privat `NOVA_DATA_DIR/data/ai-settings.key`. Nu șterge acest fișier și nu îl publica. Schimbarea secretului de criptare necesită reconfigurarea credențialelor. Poți utiliza în continuare secretele furnizorului de hosting pentru cheile API. Furnizorii pot solicita cont, credit sau plată; Nova nu creează chei în numele lor.
+
+`AI_PROVIDER` și `AI_FALLBACK_PROVIDERS` controlează rutarea textului, chatului și codului. Imaginile și vocea folosesc rute și modele media OpenAI-compatible separate și nu sunt mutate automat pe lista de fallback; configurează separat credențialele și `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` dacă folosești aceste funcții.
 
 Conturile sunt salvate în `NOVA_DATA_DIR/data/subscriber-accounts.json`, cu parole protejate prin scrypt. Datele fiecărui abonat sunt păstrate în `NOVA_DATA_DIR/users/<account-id>/`; păstrează `NOVA_DATA_DIR` pe un volum persistent.
 
@@ -88,7 +102,7 @@ Contul bancar este destinația încasărilor. Pentru plata online cu Visa/Master
 
 ### Activarea plăților prin Stripe (opțional, necesită cont de comerciant)
 
-Fără configurare Stripe, aplicația, planul Gratuit și transferul bancar configurat funcționează, dar butonul de plată cu cardul este dezactivat. Nicio încasare sau activare Standard nu este simulată. Cheia OpenAI existentă nu se modifică.
+Fără configurare Stripe, aplicația, planul Gratuit și transferul bancar configurat funcționează, dar butonul de plată cu cardul este dezactivat. Nicio încasare sau activare Standard nu este simulată. Cheile AI existente nu se modifică.
 
 1. În Stripe creează produsul Standard cu un preț recurent lunar de exact **9,99 EUR** (fără perioadă de probă, cupoane sau modificări ale cantității în această integrare). Folosește inițial modul de testare.
 2. În setările securizate ale serverului Render, configurează:
@@ -107,13 +121,15 @@ Validare locală: `npm ci` și `npm test`. Testele Stripe folosesc răspunsuri s
 
 ## Acces la internet în conversații
 
-Chatul și agentul pot folosi `web_search` pentru căutări Bing (RSS, fără cheie API suplimentară) și `read_web_page` pentru citirea textului unei pagini HTTPS publice. Cere, de exemplu: „Caută ultimele noutăți despre Node.js și include sursele” sau „Citește https://nodejs.org/en și rezumă pagina”. Este necesar un model cu suport pentru apelarea uneltelor și un furnizor AI configurat. Răspunsurile trebuie să citeze URL-urile consultate; o eroare de căutare nu este prezentată drept conectare reușită.
+Chatul și agentul pot folosi `web_search` prin motorul ales cu `WEB_SEARCH_PROVIDER`: `bing` folosește fluxul RSS fără cheie API, `brave` necesită `BRAVE_SEARCH_API_KEY`, iar `tavily` necesită `TAVILY_API_KEY`. În modul `auto`, Nova încearcă Brave dacă are cheia configurată, apoi Tavily dacă are cheia configurată și, la final, Bing fără cheie. O cheie absentă este sărită în modul `auto`; alegerea explicită a Brave sau Tavily fără cheia sa returnează o eroare de configurare. Dacă un motor din ruta automată eșuează sau nu furnizează surse publice utilizabile, este încercat următorul.
 
-Serverul necesită acces DNS și HTTPS direct către `www.bing.com` și site-urile consultate. În medii care permit numai trafic prin proxy, acest transport direct poate fi blocat. Verifică accesul din mediul de producție înainte de a declara funcția disponibilă. Nu este necesară nicio cheie de căutare; disponibilitatea și formatul RSS depind de Bing.
+Unealta `read_web_page` citește textul unei pagini HTTPS publice. Cere, de exemplu: „Caută ultimele noutăți despre Node.js și include sursele” sau „Citește https://nodejs.org/en și rezumă pagina”. Este necesar un model cu suport pentru apelarea uneltelor și un furnizor AI configurat. Răspunsurile trebuie să citeze URL-urile consultate; o eroare de căutare nu este prezentată drept conectare reușită.
+
+Serverul necesită acces DNS și HTTPS direct către motorul ales (`www.bing.com`, `api.search.brave.com` sau `api.tavily.com`) și site-urile consultate. În medii care permit numai trafic prin proxy, acest transport direct poate fi blocat. Verifică accesul din mediul de producție înainte de a declara funcția disponibilă. Numai Bing funcționează fără cheie; disponibilitatea, tarifele și formatul rezultatelor depind de serviciul extern.
 
 Citirea nu execută JavaScript, nu se autentifică în site-uri și nu citește PDF-uri. Accesul este limitat la HTTPS pe portul 443 și la adrese IPv4 publice; rețelele private, adresele rezervate și redirecționările către ele sunt blocate. Fiecare descărcare are o limită de 1 MiB, 15 secunde și trei redirecționări. Conținutul web este tratat ca informație externă, nu ca instrucțiuni pentru agent. Nu include date private în căutări. Publicarea versiunii actualizate a serverului este necesară pentru activarea funcției pe site-ul online.
 
-Pentru verificare din aplicația publicată, administratorul deschide **Configurare AI → Verifică accesul la internet**. Butonul execută o căutare reală fără apel la model și fără consumarea cotei AI, afișează versiunea serverului și separă accesul web de conexiunea OpenAI/Ollama. Rezultatele sunt păstrate maximum un minut; o căutare fără surse nu este declarată reușită. Răspunsurile XML/HTML/text pot fi comprimate gzip, Brotli sau deflate, cu aceeași limită de 1 MiB după decomprimare.
+Pentru verificare din aplicația publicată, administratorul deschide **Motoare AI → Verifică accesul la internet**. Butonul execută o căutare reală fără apel la model și fără consumarea cotei AI, afișează versiunea serverului și separă accesul web de conexiunea la furnizorul AI. Rezultatele sunt păstrate maximum un minut; o căutare fără surse nu este declarată reușită. Răspunsurile XML/HTML/text pot fi comprimate gzip, Brotli sau deflate, cu aceeași limită de 1 MiB după decomprimare.
 
 
 ## Chat cu verificarea surselor și voce personalizată
@@ -146,7 +162,7 @@ Versiunea 2.2.0 transformă Nova într-o Progressive Web App instalabilă pe And
 
 Versiunea 2.3.0 adaugă proiecte native Capacitor pentru Android și iOS, iconuri și ecrane de pornire proprii și configurare HTTPS exclusivă către `www.nova-ai-studio.eu`. Android poate fi construit cu `npm run mobile:sync`, apoi `cd android && ./gradlew assembleDebug`. Publicarea în magazine necesită conturile și certificatele de semnare ale proprietarului.
 
-Versiunea 2.3.1 publică APK-ul Android semnat direct pe site, prezintă corect instalarea PWA pe iPhone/iPad, adaugă un creator de CV online publicabil fără consum AI și permite abonaților să își șteargă definitiv contul, proiectele, publicațiile și sesiunile. Contul owner rămâne protejat.
+Versiunea web/server 2.4.0 adaugă profiluri separate pentru OpenAI, Gemini, Anthropic Claude, OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, Ollama și API-uri OpenAI-compatible, plus Bing, Brave și Tavily pentru căutare. APK-ul Android semnat rămâne la versiunea 2.3.1 și deschide platforma web actualizată; instalarea PWA pe iPhone/iPad rămâne disponibilă. Creatorul de CV online și regulile abonaților sunt păstrate, iar contul owner rămâne protejat.
 
 ### Înregistrare simplă și Google (1.4.1)
 

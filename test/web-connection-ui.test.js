@@ -6,9 +6,14 @@ const source = fs.readFileSync(require('node:path').join(__dirname, '../public/a
 const functionSource = source.slice(source.indexOf('async function testWebConnection()'), source.indexOf('async function saveProviderSettings()'));
 
 test('web check UI waits for a real result and restores the button on success or failure', async () => {
-  const nodes = { testWebConnection: { disabled:false }, webConnectionStatus: { textContent:'' } };
+  const nodes = { testWebConnection: { disabled:false }, webConnectionStatus: { textContent:'' }, searchProvider: { value:'bing' } };
   let resolve;
-  const context = vm.createContext({ el: id => nodes[id], api: async route => { assert.equal(route,'/api/web/health'); return new Promise(done => { resolve = done; }); } });
+  const context = vm.createContext({
+    el: id => nodes[id],
+    state: { settings: { search: { provider: 'bing' } } },
+    searchDraftDirty: false,
+    api: async route => { assert.equal(route,'/api/web/health'); return new Promise(done => { resolve = done; }); }
+  });
   vm.runInContext(functionSource,context);
   const pending = context.testWebConnection();
   assert.equal(nodes.testWebConnection.disabled,true);

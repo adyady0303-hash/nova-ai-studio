@@ -54,7 +54,7 @@ for (const authenticated of [true, false]) {
       return login.headers.get('set-cookie').split(';')[0];
     }
     let cookie = await start();
-    const request = (route, body) => fetch(base + route, { headers: { cookie, 'content-type': 'application/json' }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
+    const request = (route, body) => fetch(base + route, { headers: { cookie, origin: base, 'content-type': 'application/json' }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
     const saved = await request('/api/settings', { provider: 'openai', apiKey, baseUrl: endpoint, textModel: 'fixture-model' });
     assert.equal(saved.status, 200);
     assert.doesNotMatch(await saved.text(), new RegExp(apiKey));

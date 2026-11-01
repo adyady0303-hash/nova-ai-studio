@@ -24,9 +24,27 @@ services:
         generateValue: true
       - key: AI_PROVIDER
         value: openai
+      - key: AI_FALLBACK_PROVIDERS
+        value: ""
       - key: OPENAI_BASE_URL
         value: https://api.openai.com/v1
       - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
         sync: false
       - key: OPENAI_MODEL
         value: gpt-5.4
@@ -34,6 +52,12 @@ services:
         value: gpt-image-1
       - key: OPENAI_SPEECH_MODEL
         value: gpt-4o-mini-tts
+      - key: WEB_SEARCH_PROVIDER
+        value: auto
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
       - key: NOVA_MAX_ACCOUNTS
         value: 100
       - key: NOVA_SUBSCRIBER_DAILY_AI_LIMIT

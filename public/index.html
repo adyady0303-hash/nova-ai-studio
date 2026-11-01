@@ -166,7 +166,7 @@
     .creative-output a { width: max-content; text-decoration: none; }
     .creative-image { display: block; max-width: min(100%, 620px); max-height: 460px; border: 1px solid var(--line); border-radius: 12px; object-fit: contain; }
     .apply-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
-    .provider-dialog { width: min(600px, calc(100% - 28px)); max-height: min(88vh, 820px); padding: 0; overflow: auto; border: 1px solid #343949; border-radius: 18px; background: #151820; color: var(--text); box-shadow: 0 30px 100px #000b; }
+    .provider-dialog { width: min(720px, calc(100% - 28px)); max-height: min(88vh, 900px); padding: 0; overflow: auto; border: 1px solid #343949; border-radius: 18px; background: #151820; color: var(--text); box-shadow: 0 30px 100px #000b; }
     .provider-dialog::backdrop { background: rgba(4,5,9,.72); backdrop-filter: blur(6px); }
     .provider-panel { display: grid; gap: 11px; padding: 22px; }
     .provider-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
@@ -177,6 +177,14 @@
     .provider-panel textarea { min-height: 180px; resize: vertical; line-height: 1.6; }
     .provider-fields { display: grid; gap: 9px; }
     .provider-fields[hidden] { display: none; }
+    .provider-section { display: grid; gap: 10px; padding: 13px; border: 1px solid #2b3040; border-radius: 12px; background: rgba(16,19,26,.68); }
+    .provider-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .provider-section-head h3 { margin: 0; color: #ececf4; font-size: 13px; }
+    .provider-section-head p { margin: 2px 0 0; color: var(--muted); font-size: 10px; font-weight: 400; }
+    .capability-list { display: flex; flex-wrap: wrap; gap: 5px; }
+    .capability-chip { border: 1px solid #353b49; border-radius: 999px; padding: 3px 7px; color: #8f96a8; background: #12151c; font-size: 9px; font-weight: 650; }
+    .capability-chip.on { border-color: rgba(168,232,195,.28); color: var(--mint); background: rgba(168,232,195,.06); }
+    .provider-panel input:disabled, .provider-panel select:disabled { opacity: .52; cursor: not-allowed; }
     .provider-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .provider-row > div { display: grid; gap: 7px; }
     .provider-clear { display: flex; align-items: center; gap: 8px; }
@@ -235,6 +243,7 @@
       .composer-actions .btn.primary { padding: 8px 10px; }
       .hint { display: none; }
       .workspace-open .workspace { top: 112px; left: 0; right: 0; bottom: 0; width: 100%; border-left: 0; box-shadow: 0 -20px 60px #0008; }
+      .provider-row { grid-template-columns: 1fr; }
       .workspace-open .chat { grid-row: 3; }
     }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }
@@ -396,7 +405,7 @@ body {background:#080b13;}
             <span class="account-label" id="accountLabel">Nova AI Studio</span>
             <button class="account-action" id="newChatTop" type="button">＋ Conversație nouă</button>
             <button class="account-action" id="homeVoiceBtn" type="button">Voce AI…</button>
-            <button class="account-action" id="providerSettingsBtn" type="button">Configurare AI</button>
+            <button class="account-action" id="providerSettingsBtn" type="button">Motoare AI</button>
             <a class="account-action" href="/admin.html" id="adminDashboardLink">Administrare</a>
             <a class="account-action" href="/plans.html">Abonamente · 9,99 €/lună</a>
             <button class="account-action danger-action" id="deleteAccountBtn" type="button" hidden>Șterge definitiv contul</button>
@@ -506,7 +515,7 @@ body {background:#080b13;}
             <div class="composer-settings">
               <div class="model-row"><label class="sr-only" for="modelSelect">Model AI</label><select id="modelSelect" aria-label="Model AI"><option value="">Se caută modele…</option></select><button class="btn subtle iconbtn" id="refreshModels" title="Reîncarcă modelele">↻</button></div>
               <div class="mode-row"><label class="sr-only" for="modeSelect">Mod agent</label><select id="modeSelect" aria-label="Mod agent"><option value="build">Construiește</option><option value="plan">Planifică</option><option value="review">Revizuiește</option></select></div>
-              <label class="allow-row" title="Chatul caută automat când are nevoie de informații. Bifează pentru a cere verificarea web explicit la acest mesaj; nu include date private."><input type="checkbox" id="verifyWeb"><span>Cere verificare web la acest mesaj</span></label>
+              <label class="allow-row" title="Chatul caută automat când are nevoie de informații. Termenii de căutare sunt trimiși motorului web; evită datele private."><input type="checkbox" id="verifyWeb"><span>Cere verificare web la acest mesaj</span></label>
               <label class="allow-row" id="allowChangesRow" title="Permite-i agentului să creeze sau să modifice fișiere în proiectul selectat"><input type="checkbox" id="allowChanges"><span id="allowChangesLabel">Editează proiectul</span></label>
             </div>
             <div class="composer-actions"><button class="btn primary" id="sendBtn">Trimite <svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button></div>
@@ -528,22 +537,55 @@ body {background:#080b13;}
 
   <dialog class="provider-dialog" id="providerDialog" aria-labelledby="providerDialogTitle">
     <form method="dialog" class="provider-panel" id="providerForm">
-      <div class="provider-head"><div><div class="eyebrow">Internet și cloud</div><h2 id="providerDialogTitle">Configurare AI</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
-      <label for="providerSelect">Furnizor AI</label><select id="providerSelect"><option value="openai">OpenAI · cloud/API compatibilă</option></select>
-      <div id="openAiFields" class="provider-fields">
-        <label for="apiBaseUrl">Adresă API compatibilă</label><input id="apiBaseUrl" value="https://api.openai.com/v1" autocomplete="url">
-        <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" placeholder="Lasă gol pentru a păstra cheia existentă">
-        <div class="provider-note" id="apiKeyState">Cheia nu este afișată sau salvată în proiect. Pentru găzduire, configureaz-o în secretele serverului.</div>
-        <label for="textModel">Model text / programare</label><input id="textModel" value="gpt-5.4" autocomplete="off">
-        <label for="imageModel">Model imagini</label><input id="imageModel" value="gpt-image-1" autocomplete="off">
-        <div class="provider-row"><div><label for="speechModel">Model voce</label><input id="speechModel" value="gpt-4o-mini-tts" autocomplete="off"></div><div><label for="voiceSelect">Voce</label><select id="voiceSelect"><option>nova</option><option>alloy</option><option>coral</option><option>echo</option><option>fable</option><option>onyx</option><option>shimmer</option><option>verse</option><option>sage</option><option>ash</option><option>ballad</option><option>marin</option><option>cedar</option></select></div></div>
-        <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API salvată</label>
-      </div>
-      <div class="provider-note">Nova AI Studio este disponibilă pe internet. Mesajele și conținutul selectat din proiect sunt trimise furnizorului AI cloud configurat. Cheia este păstrată criptat pe server. Apelurile API pot costa.</div>
+      <div class="provider-head"><div><div class="eyebrow">Platforme, rute și căutare</div><h2 id="providerDialogTitle">Motoare AI</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <section class="provider-section" aria-labelledby="providerProfileTitle">
+        <div class="provider-section-head"><div><h3 id="providerProfileTitle">Profil motor</h3><p>Alege motorul pe care vrei să îl configurezi. Salvează profilul înainte să treci la altul.</p></div></div>
+        <label for="providerSelect">Platformă AI</label>
+        <select id="providerSelect">
+          <option value="openai">OpenAI</option>
+          <option value="gemini">Gemini</option>
+          <option value="anthropic">Anthropic Claude</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="groq">Groq</option>
+          <option value="mistral">Mistral</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="xai">xAI</option>
+          <option value="together">Together</option>
+          <option value="ollama">Ollama</option>
+          <option value="custom">API compatibilă</option>
+        </select>
+        <div id="providerFields" class="provider-fields">
+          <div class="provider-note" id="providerProfileState">Selectează un profil pentru configurare.</div>
+          <div class="capability-list" id="providerCapabilities" aria-label="Capabilitățile motorului"></div>
+          <label for="apiBaseUrl">Adresă API</label><input id="apiBaseUrl" autocomplete="url" spellcheck="false" placeholder="https://api.exemplu.ro/v1">
+          <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Lasă gol pentru a păstra cheia de pe server">
+          <div class="provider-note" id="apiKeyState">Cheile sunt mascate și nu sunt returnate în browser.</div>
+          <label for="textModel">Model text / programare</label><input id="textModel" autocomplete="off" spellcheck="false">
+          <label for="imageModel">Model imagini</label><input id="imageModel" autocomplete="off" spellcheck="false">
+          <div class="provider-row"><div><label for="speechModel">Model voce</label><input id="speechModel" autocomplete="off" spellcheck="false"></div><div><label for="voiceSelect">Voce implicită</label><input id="voiceSelect" autocomplete="off" spellcheck="false" placeholder="Vocea acceptată de motor"></div></div>
+          <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API salvată pentru acest profil</label>
+        </div>
+      </section>
+      <section class="provider-section" aria-labelledby="routesTitle">
+        <div class="provider-section-head"><div><h3 id="routesTitle">Rute pe capabilități</h3><p>Poți folosi motoare diferite pentru text, imagini și voce.</p></div></div>
+        <div class="provider-row"><div><label for="routeText">Text și programare</label><select id="routeText"></select></div><div><label for="routeImage">Imagini</label><select id="routeImage"></select></div></div>
+        <div class="provider-row"><div><label for="routeSpeech">Voce</label><select id="routeSpeech"></select></div><div></div></div>
+        <label class="provider-clear"><input type="checkbox" id="autoFallback"> Folosește automat un motor de rezervă compatibil când ruta principală nu este disponibilă</label>
+        <div class="provider-note">Fallback-ul poate retrimite aceeași cerere și fișierul activ unui singur alt furnizor și poate genera un cost separat. Furnizorul folosit este afișat în răspuns.</div>
+      </section>
+      <section class="provider-section" aria-labelledby="searchTitle">
+        <div class="provider-section-head"><div><h3 id="searchTitle">Căutare pe internet</h3><p>Alege motorul folosit pentru verificarea informațiilor actuale.</p></div></div>
+        <label for="searchProvider">Motor de căutare</label>
+        <select id="searchProvider"><option value="auto">Auto</option><option value="bing">Bing</option><option value="brave">Brave</option><option value="tavily">Tavily</option></select>
+        <label for="searchApiKey">Cheie API pentru căutare</label><input id="searchApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Lasă gol pentru a păstra cheia de pe server">
+        <div class="provider-note" id="searchKeyState">Cheile sunt mascate și nu sunt returnate în browser.</div>
+        <label class="provider-clear"><input type="checkbox" id="clearSearchApiKey"> Șterge cheia salvată pentru motorul de căutare selectat</label>
+      </section>
+      <div class="provider-note">Mesajele și conținutul selectat din proiect sunt trimise motorului ales pentru fiecare rută. Termenii de căutare sunt trimiși motorului web; evită datele private. Cheile sunt păstrate criptat pe server și nu sunt returnate în interfață. Apelurile externe pot costa.</div>
       <div class="provider-note">Conexiunea AI și căutarea pe internet sunt verificate separat. Verificarea web nu consumă unități AI. Rezultatul se păstrează cel mult un minut.</div>
       <button class="btn" type="button" id="testWebConnection">Verifică accesul la internet</button>
       <div class="provider-note" id="webConnectionStatus" role="status" aria-live="polite">Acces web neverificat.</div>
-      <div class="provider-actions"><button class="btn" value="cancel">Anulează</button><button class="btn primary" type="button" id="saveProviderSettings">Salvează conexiunea</button></div>
+      <div class="provider-actions"><button class="btn" value="cancel">Anulează</button><button class="btn primary" type="submit" id="saveProviderSettings">Salvează motoarele</button></div>
     </form>
   </dialog>
   <dialog class="provider-dialog" id="imageEditDialog" aria-labelledby="imageEditDialogTitle">
@@ -555,19 +597,19 @@ body {background:#080b13;}
       <label for="imageEditPrompt">Ce dorești să modifici?</label>
       <textarea id="imageEditPrompt" maxlength="4000" placeholder="Ex.: Schimbă fundalul cu o plajă la apus, păstrează persoana și lumina naturală."></textarea>
       <div class="provider-note">Imaginea este trimisă furnizorului AI configurat. Fișierul poate avea cel mult 8 MiB. Rezultatul este o imagine nouă; originalul nu este suprascris.</div>
-      <div class="provider-actions"><button class="btn" type="button" id="imageEditSettingsBtn">Configurare AI</button><button class="btn" value="cancel">Închide</button><button class="btn primary" type="button" id="generateImageEditBtn">Modifică imaginea</button></div>
+      <div class="provider-actions"><button class="btn" type="button" id="imageEditSettingsBtn">Motoare AI</button><button class="btn" value="cancel">Închide</button><button class="btn primary" type="button" id="generateImageEditBtn">Modifică imaginea</button></div>
       <div class="provider-note" id="imageEditStatus" role="status" aria-live="polite" hidden></div>
     </form>
   </dialog>
   <dialog class="provider-dialog" id="voiceDialog" aria-labelledby="voiceDialogTitle">
     <form method="dialog" class="provider-panel">
       <div class="provider-head"><div><div class="eyebrow">Instrument audio · MP3</div><h2 id="voiceDialogTitle">Creează un voice-over</h2></div><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
-      <div class="provider-row"><div><label for="speechVoice">Voce</label><select id="speechVoice"><option value="">Vocea configurată</option><option value="nova">Nova</option><option value="coral">Coral</option><option value="alloy">Alloy</option><option value="shimmer">Shimmer</option><option value="onyx">Onyx</option></select></div><div><label for="speechSpeed">Ritm de citire</label><select id="speechSpeed"><option value="0.85">Mai lent</option><option value="1" selected>Normal</option><option value="1.15">Mai rapid</option></select></div></div>
+      <div class="provider-row"><div><label for="speechVoice">Voce</label><input id="speechVoice" autocomplete="off" spellcheck="false" placeholder="Vocea configurată"></div><div><label for="speechSpeed">Ritm de citire</label><select id="speechSpeed"><option value="0.85">Mai lent</option><option value="1" selected>Normal</option><option value="1.15">Mai rapid</option></select></div></div>
       <label for="voiceText">Textul rostit</label>
       <textarea id="voiceText" maxlength="4096" placeholder="Scrie sau lipește textul pe care vrei să-l rostească Nova…"></textarea>
       <p class="provider-note" id="voiceCost" aria-live="polite">Voce rostită, nu cântată. Pentru vizitatori: 1 unitate AI pentru fiecare 500 de caractere.</p>
-      <div class="provider-note">Folosește modelul vocal OpenAI configurat. Cererea poate fi tarifată de furnizor. Dacă nu ai configurat conexiunea, deschide setările AI.</div>
-      <div class="provider-actions"><button class="btn" type="button" id="voiceSettingsBtn">Configurare AI</button><button class="btn" value="cancel">Închide</button><button class="btn primary" type="button" id="generateVoiceBtn">Generează MP3</button></div>
+      <div class="provider-note">Folosește ruta și modelul vocal configurate în Motoare AI. Cererea poate fi tarifată de furnizorul ales.</div>
+      <div class="provider-actions"><button class="btn" type="button" id="voiceSettingsBtn">Motoare AI</button><button class="btn" value="cancel">Închide</button><button class="btn primary" type="button" id="generateVoiceBtn">Generează MP3</button></div>
       <div class="provider-note" id="voiceStatus" role="status" aria-live="polite" hidden></div>
     </form>
   </dialog>

@@ -24,7 +24,10 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(html, /id="generateVoiceBtn"/);
   assert.match(html, /id="voiceComposerBtn"/);
   assert.match(html, /id="editImageBtn"[^>]*>＋ Adaugă foto<\/button>/);
-  assert.match(html, /id="textModel" value="gpt-5\.4"/);
+  assert.match(html, /id="textModel"/);
+  assert.match(html, /id="providerSelect"/);
+  assert.match(html, /id="routeText"/);
+  assert.match(html, /id="searchProvider"/);
   assert.match(html, /id="imageEditDialog"/);
   assert.match(html, /id="imageEditFile"/);
   assert.match(html, /id="adminDashboardLink"/);
@@ -78,8 +81,11 @@ test('Orbit dashboard routes creation tools to implemented actions', () => {
 
 test('server uses environment-provided credentials and does not ship secrets', () => {
   const server = fs.readFileSync(path.join(root, 'server.js'), 'utf8');
+  const providers = fs.readFileSync(path.join(root, 'ai-providers.js'), 'utf8');
   assert.match(server, /process\.env\.NOVA_ACCESS_PASSWORD/);
-  assert.match(server, /process\.env\.OPENAI_API_KEY/);
+  assert.match(providers, /OPENAI_API_KEY/);
+  assert.match(providers, /GEMINI_API_KEY/);
+  assert.match(providers, /ANTHROPIC_API_KEY/);
   assert.match(server, /HttpOnly/);
   assert.match(server, /SameSite=Strict/);
   assert.doesNotMatch(fs.readFileSync(path.join(root, '.env.example'), 'utf8'), /sk-[A-Za-z0-9]{20,}/);
@@ -128,6 +134,7 @@ test('production defaults to OpenAI and reports a missing API key clearly', asyn
   assert.deepEqual(await health.json(), {
     connected: false,
     provider: 'openai',
+    providerName: 'OpenAI',
     error: 'Cheia API OpenAI lipsește din configurarea serverului.',
     models: []
   });
@@ -213,7 +220,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
         }
         mockChatModel = body.model;
         mockChatPrompt = body.messages?.at(-1)?.content || '';
-        mockChatLimit = body.max_completion_tokens || null;
+        mockChatLimit = body.max_completion_tokens || body.max_tokens || null;
         mockToolChoice = body.tool_choice || null;
         mockSystemPrompt = body.messages.find(message => message.role === 'system')?.content || '';
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -436,7 +443,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     headers: { cookie, ...(options.headers || {}) }
   });
   const post = (route, value) => request(route, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value)
+    method: 'POST', headers: { 'content-type': 'application/json', origin: baseUrl }, body: JSON.stringify(value)
   });
 
   const appPage = await request('/');
@@ -464,14 +471,14 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   }
   const aiHealth = await request('/api/health');
   assert.deepEqual(await aiHealth.json(), {
-    connected: true, provider: 'openai', version: 'Conexiune verificată', models: ['gpt-6.1', 'gpt-6.1-mini', 'gpt-4.1-mini']
+    connected: true, provider: 'openai', providerName: 'OpenAI-compatible custom', version: 'Conexiune verificată', models: ['gpt-4.1-mini', 'gpt-6.1-mini', 'gpt-6.1', 'gpt-6.1-2026-10-01']
   });
   const aiChat = await post('/api/chat', {
     model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut Nova' }]
   });
   assert.equal(aiChat.status, 200);
   assert.deepEqual(await aiChat.json(), {
-    content: 'Răspuns verificat de test.', model: 'gpt-4.1-mini', done: true
+    content: 'Răspuns verificat de test.', model: 'gpt-4.1-mini', provider: 'custom', providerName: 'OpenAI-compatible custom', done: true
   });
   assert.equal(mockChatModel, 'gpt-4.1-mini');
   assert.equal(mockChatPrompt, 'Salut Nova');
@@ -845,7 +852,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.ok(!ownerProjects.projects.some(item => item.id === privateProject.id));
 
   const ownerPost = (route, value) => fetch(`${baseUrl}${route}`, {
-    method: 'POST', headers: { cookie: ownerCookie, 'content-type': 'application/json' }, body: JSON.stringify(value)
+    method: 'POST', headers: { cookie: ownerCookie, origin: baseUrl, 'content-type': 'application/json' }, body: JSON.stringify(value)
   });
   assert.equal((await ownerPost('/api/settings', {
     provider: 'openai', baseUrl: `http://127.0.0.1:${providerPort}/v1`, apiKey: 'valid-test-key'

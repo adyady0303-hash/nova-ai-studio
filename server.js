@@ -7,6 +7,18 @@ const { creationPrompts } = require("./creation-prompts");
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 const { createGoogleAuth } = require("./google-auth");
+const {
+  PLATFORM_PRESETS,
+  createProfilesFromEnv,
+  sanitizeProfileUpdate,
+  isProfileConfigured,
+  listProfileModels,
+  chatWithProfile,
+  openAiCompatibleJson,
+  openAiCompatibleBytes,
+  openAiCompatibleImageEdit,
+  isTransientProviderError
+} = require("./ai-providers");
 let dataFs = fs;
 
 const HOST = process.env.HOST || "127.0.0.1";
@@ -15,22 +27,60 @@ const OLLAMA = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
 const DATA_DIR = process.env.NOVA_DATA_DIR || __dirname;
 const ACCESS_USER = process.env.NOVA_ACCESS_USER || "";
 const ACCESS_PASSWORD = process.env.NOVA_ACCESS_PASSWORD || "";
-const DEFAULT_TEXT_MODEL = "gpt-5.4";
-const DEFAULT_IMAGE_MODEL = "gpt-image-1";
-const AI_SETTINGS_SCHEMA_VERSION = 3;
+const DEFAULT_TEXT_MODEL = PLATFORM_PRESETS.openai.textModel;
+const DEFAULT_IMAGE_MODEL = PLATFORM_PRESETS.openai.imageModel;
+const AI_SETTINGS_SCHEMA_VERSION = 4;
 const configuredAiProvider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
-const aiProvider = {
-  provider: configuredAiProvider === "ollama"
-    ? "ollama"
-    : configuredAiProvider === "openai" || Boolean(process.env.OPENAI_API_KEY) || process.env.NODE_ENV === "production"
-      ? "openai"
-      : "ollama",
-  baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-  apiKey: process.env.OPENAI_API_KEY || "",
-  textModel: process.env.OPENAI_MODEL || DEFAULT_TEXT_MODEL,
-  imageModel: process.env.OPENAI_IMAGE_MODEL || DEFAULT_IMAGE_MODEL,
-  speechModel: process.env.OPENAI_SPEECH_MODEL || "gpt-4o-mini-tts",
-  voice: "nova"
+const environmentProfiles = createProfilesFromEnv({ ...process.env, OLLAMA_URL: process.env.OLLAMA_URL || OLLAMA });
+const environmentProfileMap = Object.fromEntries(environmentProfiles.map(profile => [profile.id, profile]));
+
+function canonicalConfiguredPlatform(value) {
+  const aliases = { google: "gemini", claude: "anthropic", compatible: "custom", "openai-compatible": "custom" };
+  const requested = aliases[value] || value;
+  if (requested === "openai" && environmentProfileMap.custom?.baseUrl && process.env.OPENAI_BASE_URL) return "custom";
+  return environmentProfileMap[requested] ? requested : "";
+}
+
+function initialTextPlatform() {
+  const requested = canonicalConfiguredPlatform(configuredAiProvider);
+  if (requested) return requested;
+  const configured = environmentProfiles.find(profile => profile.id !== "ollama" && isProfileConfigured(profile));
+  if (configured) return configured.id;
+  return process.env.NODE_ENV === "production" ? "openai" : "ollama";
+}
+
+function parseFallbackPlatforms(value) {
+  return [...new Set(String(value || "").split(",").map(item => canonicalConfiguredPlatform(item.trim().toLowerCase())).filter(Boolean))];
+}
+
+function firstMediaPlatform(capability, preferred) {
+  for (const id of [preferred, "openai", "custom"]) {
+    const profile = environmentProfileMap[id];
+    if (profile?.capabilities?.[capability] && isProfileConfigured(profile)) return id;
+  }
+  return "openai";
+}
+
+const initialPlatform = initialTextPlatform();
+let aiConfig = {
+  schemaVersion: AI_SETTINGS_SCHEMA_VERSION,
+  profiles: environmentProfileMap,
+  routes: {
+    text: initialPlatform,
+    image: firstMediaPlatform("image", initialPlatform),
+    speech: firstMediaPlatform("speech", initialPlatform),
+    autoFallback: parseFallbackPlatforms(process.env.AI_FALLBACK_PROVIDERS).length > 0,
+    fallbacks: parseFallbackPlatforms(process.env.AI_FALLBACK_PROVIDERS)
+  },
+  search: {
+    provider: ["auto", "bing", "brave", "tavily"].includes(String(process.env.WEB_SEARCH_PROVIDER || "auto").toLowerCase())
+      ? String(process.env.WEB_SEARCH_PROVIDER || "auto").toLowerCase()
+      : "auto",
+    keys: {
+      brave: String(process.env.BRAVE_SEARCH_API_KEY || "").trim(),
+      tavily: String(process.env.TAVILY_API_KEY || "").trim()
+    }
+  }
 };
 const PUBLIC_DIR = path.join(__dirname, "public");
 const PROJECTS_DIR = path.join(DATA_DIR, "projects");
@@ -55,6 +105,8 @@ const sessions = new Map();
 let accountQueue = Promise.resolve();
 let publicationQueue = Promise.resolve();
 let aiSettingsCacheExpiresAt = 0;
+let aiHealthCache = null;
+let aiHealthPending = null;
 const googleAuth = createGoogleAuth({
   clientId: process.env.GOOGLE_CLIENT_ID || "",
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -393,37 +445,104 @@ async function readJson(req, maximum = MAX_BODY) {
 
 const billing = createBilling({ readAccounts, writeAccounts, withAccountsLock });
 
-async function ollamaJson(route, options = {}) {
-  const response = await fetch(`${OLLAMA}${route}`, {
-    ...options,
-    signal: AbortSignal.timeout(120000),
-    headers: { "content-type": "application/json", ...(options.headers || {}) }
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error || `Ollama a răspuns cu HTTP ${response.status}.`);
-  }
-  return data;
+function cloneAiConfig(value = aiConfig) {
+  return JSON.parse(JSON.stringify(value));
 }
 
-function publicProviderSettings() {
+function activeTextProfile(config = aiConfig) {
+  return config.profiles[config.routes.text] || config.profiles.openai || Object.values(config.profiles)[0];
+}
+
+function routeProfile(capability, config = aiConfig) {
+  const id = capability === "text" ? config.routes.text : config.routes[capability];
+  return config.profiles[id];
+}
+
+function localProviderUrl(profile) {
+  try { return ["127.0.0.1", "localhost", "::1"].includes(new URL(profile?.baseUrl || "").hostname); }
+  catch { return false; }
+}
+
+function routeProfileConfigured(profile, capability) {
+  if (!profile?.baseUrl || !profile.capabilities?.[capability]) return false;
+  if ((profile.requiresKey || profile.id === "custom" && !localProviderUrl(profile)) && !profile.apiKey) return false;
+  if (capability === "text") return Boolean(profile.textModel);
+  if (capability === "image") return Boolean(profile.imageModel);
+  if (capability === "speech") return Boolean(profile.speechModel && profile.voice);
+  return false;
+}
+
+function legacyProvider(profile) {
+  return profile?.protocol === "ollama" ? "ollama" : "openai";
+}
+
+function publicProviderId(profile) {
+  return profile?.id === "custom" ? "openai" : profile?.id || "openai";
+}
+
+function safePublicProfile(profile, detailed) {
   return {
-    provider: aiProvider.provider,
-    baseUrl: aiProvider.baseUrl,
-    textModel: aiProvider.textModel,
-    imageModel: aiProvider.imageModel,
-    speechModel: aiProvider.speechModel,
-    voice: aiProvider.voice,
-    apiKeyConfigured: Boolean(aiProvider.apiKey)
+    id: profile.id,
+    name: profile.name,
+    protocol: profile.protocol,
+    baseUrl: detailed ? profile.baseUrl : "",
+    textModel: profile.textModel,
+    imageModel: profile.imageModel,
+    speechModel: profile.speechModel,
+    voice: profile.voice,
+    capabilities: { ...profile.capabilities },
+    ready: {
+      text: routeProfileConfigured(profile, "text"),
+      image: routeProfileConfigured(profile, "image"),
+      imageEdit: routeProfileConfigured(profile, "image") && profile.capabilities.imageEdit === true,
+      speech: routeProfileConfigured(profile, "speech")
+    },
+    requiresKey: profile.requiresKey,
+    apiKeyConfigured: Boolean(profile.apiKey),
+    configured: isProfileConfigured(profile)
+  };
+}
+
+function publicProviderSettings(role = "owner") {
+  const active = activeTextProfile();
+  const visibleIds = role === "owner"
+    ? Object.keys(aiConfig.profiles)
+    : [...new Set([aiConfig.routes.text, aiConfig.routes.image, aiConfig.routes.speech])];
+  return {
+    // Legacy fields remain available for older Nova clients.
+    provider: legacyProvider(active),
+    platform: active.id,
+    platformName: active.name,
+    baseUrl: role === "owner" ? active.baseUrl : "",
+    textModel: active.textModel,
+    imageModel: routeProfile("image")?.imageModel || "",
+    speechModel: routeProfile("speech")?.speechModel || "",
+    voice: routeProfile("speech")?.voice || "",
+    apiKeyConfigured: Boolean(active.apiKey),
+    providers: visibleIds.map(id => aiConfig.profiles[id]).filter(Boolean).map(profile => safePublicProfile(profile, role === "owner")),
+    routes: {
+      text: aiConfig.routes.text,
+      image: aiConfig.routes.image,
+      speech: aiConfig.routes.speech,
+      autoFallback: aiConfig.routes.autoFallback === true
+    },
+    search: {
+      provider: aiConfig.search.provider,
+      providers: [
+        { id: "auto", name: "Automat · recomandat", keyConfigured: Boolean(aiConfig.search.keys.brave || aiConfig.search.keys.tavily), requiresKey: false },
+        { id: "bing", name: "Bing · fără cheie", keyConfigured: true, requiresKey: false },
+        { id: "brave", name: "Brave Search", keyConfigured: Boolean(aiConfig.search.keys.brave), requiresKey: true },
+        { id: "tavily", name: "Tavily", keyConfigured: Boolean(aiConfig.search.keys.tavily), requiresKey: true }
+      ]
+    }
   };
 }
 
 function availableOpenAiChatModels(catalog, fallback) {
-  const candidates = Array.isArray(catalog?.data)
-    ? catalog.data
-      .map(item => String(item?.id || "").trim())
-      .filter(id => /^gpt-\d+(?:\.\d+){0,2}(?:-(?:mini|nano))?$/i.test(id))
-    : [];
+  const values = Array.isArray(catalog) ? catalog : Array.isArray(catalog?.data) ? catalog.data.map(item => item?.id) : [];
+  const candidates = values
+      .map(item => String(item || "").trim())
+      .filter(id => /^gpt-\d+(?:\.\d+){0,2}(?:-(?:mini|nano))?$/i.test(id));
   if (!candidates.length) return fallback ? [fallback] : [];
   const tier = id => id.endsWith("-mini") ? 1 : id.endsWith("-nano") ? 0 : 2;
   const version = id => (id.match(/^gpt-(\d+(?:\.\d+){0,2})/i)?.[1] || "0").split(".").map(Number);
@@ -443,50 +562,103 @@ function aiSettingsCipherKey() {
   return crypto.createHash("sha256").update(secret).digest();
 }
 
-function storedAiSettings(settings = aiProvider) {
+function storedAiSettings(settings = aiConfig) {
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", aiSettingsCipherKey(), iv);
-  const encryptedKey = Buffer.concat([cipher.update(settings.apiKey || "", "utf8"), cipher.final()]);
+  const encryptedConfig = Buffer.concat([cipher.update(JSON.stringify(settings), "utf8"), cipher.final()]);
+  const encoded = encryptedConfig.toString("base64");
+  const encodedIv = iv.toString("base64");
+  const encodedTag = cipher.getAuthTag().toString("base64");
   return {
     schemaVersion: AI_SETTINGS_SCHEMA_VERSION,
-    provider: settings.provider,
-    baseUrl: settings.baseUrl,
-    textModel: settings.textModel,
-    imageModel: settings.imageModel,
-    speechModel: settings.speechModel,
-    voice: settings.voice,
-    apiKeyCipher: encryptedKey.toString("base64"),
-    apiKeyIv: iv.toString("base64"),
-    apiKeyTag: cipher.getAuthTag().toString("base64")
+    configCipher: encoded,
+    configIv: encodedIv,
+    configTag: encodedTag,
+    // Kept as encrypted aliases so older backup checks never expect a plaintext credential.
+    apiKeyCipher: encoded,
+    apiKeyIv: encodedIv,
+    apiKeyTag: encodedTag
   };
 }
 
+function decryptStoredValue(value, cipherField, ivField, tagField) {
+  const decipher = crypto.createDecipheriv("aes-256-gcm", aiSettingsCipherKey(), Buffer.from(value[ivField], "base64"));
+  decipher.setAuthTag(Buffer.from(value[tagField], "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(value[cipherField] || "", "base64")),
+    decipher.final()
+  ]).toString("utf8");
+}
+
+function cleanSearchKey(value) {
+  return typeof value === "string" ? value.trim().slice(0, 4000) : "";
+}
+
+function normalizedAiConfig(value) {
+  const next = {
+    schemaVersion: AI_SETTINGS_SCHEMA_VERSION,
+    profiles: Object.fromEntries(environmentProfiles.map(profile => [profile.id, { ...profile, capabilities: { ...profile.capabilities } }])),
+    routes: { ...aiConfig.routes, fallbacks: [...(aiConfig.routes.fallbacks || [])] },
+    search: { provider: aiConfig.search.provider, keys: { ...aiConfig.search.keys } }
+  };
+  const profiles = Array.isArray(value?.profiles) ? value.profiles : Object.values(value?.profiles || {});
+  for (const candidate of profiles) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const alias = { google: "gemini", claude: "anthropic", compatible: "custom" }[candidate.id] || candidate.id;
+    const current = next.profiles[alias];
+    if (!current) continue;
+    try { next.profiles[alias] = sanitizeProfileUpdate({ ...candidate, id: alias }, current); }
+    catch { /* Ignore a damaged profile and retain the environment configuration. */ }
+  }
+  const requestedText = String(value?.routes?.text || "");
+  if (next.profiles[requestedText]?.capabilities?.text) next.routes.text = requestedText;
+  for (const capability of ["image", "speech"]) {
+    const requested = String(value?.routes?.[capability] || "");
+    if (next.profiles[requested]?.capabilities?.[capability]) next.routes[capability] = requested;
+  }
+  next.routes.autoFallback = value?.routes?.autoFallback === true;
+  next.routes.fallbacks = [...new Set((Array.isArray(value?.routes?.fallbacks) ? value.routes.fallbacks : [])
+    .map(id => String(id || "")).filter(id => next.profiles[id]?.capabilities?.text && id !== next.routes.text))];
+  const searchProvider = String(value?.search?.provider || "").toLowerCase();
+  if (["auto", "bing", "brave", "tavily"].includes(searchProvider)) next.search.provider = searchProvider;
+  next.search.keys = {
+    brave: cleanSearchKey(value?.search?.keys?.brave) || next.search.keys.brave,
+    tavily: cleanSearchKey(value?.search?.keys?.tavily) || next.search.keys.tavily
+  };
+  return next;
+}
+
 function applyStoredAiSettings(value) {
-  if (!value || !["openai", "ollama"].includes(value.provider)) return;
+  if (!value || typeof value !== "object") return;
   try {
-    const decipher = crypto.createDecipheriv("aes-256-gcm", aiSettingsCipherKey(), Buffer.from(value.apiKeyIv, "base64"));
-    decipher.setAuthTag(Buffer.from(value.apiKeyTag, "base64"));
-    const apiKey = Buffer.concat([
-      decipher.update(Buffer.from(value.apiKeyCipher || "", "base64")),
-      decipher.final()
-    ]).toString("utf8");
-    const storedTextModel = String(value.textModel || aiProvider.textModel);
+    if (Number(value.schemaVersion) >= AI_SETTINGS_SCHEMA_VERSION && (value.configCipher || value.apiKeyCipher)) {
+      const decrypted = decryptStoredValue(value, value.configCipher ? "configCipher" : "apiKeyCipher", value.configIv ? "configIv" : "apiKeyIv", value.configTag ? "configTag" : "apiKeyTag");
+      aiConfig = normalizedAiConfig(JSON.parse(decrypted));
+      return;
+    }
+    if (!["openai", "ollama"].includes(value.provider)) return;
+    const apiKey = decryptStoredValue(value, "apiKeyCipher", "apiKeyIv", "apiKeyTag");
+    const storedTextModel = String(value.textModel || DEFAULT_TEXT_MODEL);
     const textModel = Number(value.schemaVersion || 1) < 2 && storedTextModel === "gpt-4.1-mini"
       ? DEFAULT_TEXT_MODEL
       : storedTextModel;
-    const storedImageModel = String(value.imageModel || aiProvider.imageModel);
+    const storedImageModel = String(value.imageModel || DEFAULT_IMAGE_MODEL);
     const imageModel = Number(value.schemaVersion || 1) < AI_SETTINGS_SCHEMA_VERSION && storedImageModel === "gpt-image-1-mini"
       ? DEFAULT_IMAGE_MODEL
       : storedImageModel;
-    Object.assign(aiProvider, {
-      provider: value.provider,
-      baseUrl: String(value.baseUrl || aiProvider.baseUrl),
-      textModel,
-      imageModel,
-      speechModel: String(value.speechModel || aiProvider.speechModel),
-      voice: String(value.voice || aiProvider.voice),
-      apiKey: apiKey || aiProvider.apiKey
-    });
+    const officialOpenAi = PLATFORM_PRESETS.openai.baseUrl.replace(/\/+$/, "");
+    const baseUrl = String(value.baseUrl || officialOpenAi).replace(/\/+$/, "");
+    const id = value.provider === "ollama" ? "ollama" : baseUrl === officialOpenAi ? "openai" : "custom";
+    const migrated = cloneAiConfig();
+    migrated.profiles[id] = sanitizeProfileUpdate({
+      id, baseUrl, textModel, imageModel,
+      speechModel: String(value.speechModel || PLATFORM_PRESETS.openai.speechModel),
+      voice: String(value.voice || "nova"), apiKey: apiKey || migrated.profiles[id]?.apiKey || ""
+    }, migrated.profiles[id]);
+    migrated.routes.text = id;
+    if (migrated.profiles[id].capabilities.image) migrated.routes.image = id;
+    if (migrated.profiles[id].capabilities.speech) migrated.routes.speech = id;
+    aiConfig = normalizedAiConfig(migrated);
   } catch (error) {
     console.error("Nova AI settings could not be decrypted; using environment configuration.");
   }
@@ -519,7 +691,7 @@ async function refreshAiSettings(force = false) {
   aiSettingsCacheExpiresAt = Date.now() + 1000;
 }
 
-async function persistAiSettings(settings = aiProvider) {
+async function persistAiSettings(settings = aiConfig) {
   const encrypted = storedAiSettings(settings);
   if (dataStore.enabled) await dataStore.setSetting("ai-provider", encrypted);
   else {
@@ -533,47 +705,71 @@ async function persistAiSettings(settings = aiProvider) {
   aiSettingsCacheExpiresAt = 0;
 }
 
-function configuredAiUrl(route) {
-  return `${aiProvider.baseUrl.replace(/\/+$/, "")}${route}`;
+function configuredFallbackProfiles(primary) {
+  if (!aiConfig.routes.autoFallback) return [];
+  const explicit = aiConfig.routes.fallbacks || [];
+  const automatic = Object.values(aiConfig.profiles)
+    .filter(profile => profile.id !== "ollama" && profile.id !== primary.id && profile.capabilities.text && isProfileConfigured(profile))
+    .map(profile => profile.id);
+  return [...new Set([...explicit, ...automatic])]
+    .map(id => aiConfig.profiles[id])
+    .filter(profile => profile && profile.id !== primary.id && profile.capabilities.text && isProfileConfigured(profile));
 }
 
-async function openAiJson(route, options = {}, timeout = 180000) {
-  if (!aiProvider.apiKey) throw new Error("Adaugă cheia API în Configurare AI înainte să folosești acest furnizor.");
-  const response = await fetch(configuredAiUrl(route), {
-    ...options,
-    signal: AbortSignal.timeout(timeout),
-    headers: {
-      authorization: `Bearer ${aiProvider.apiKey}`,
-      ...(options.body ? { "content-type": "application/json" } : {}),
-      ...(options.headers || {})
+async function cachedProfileModels(profile) {
+  const signature = crypto.createHash("sha256").update(JSON.stringify([
+    profile.id, profile.baseUrl, profile.textModel, profile.apiKey
+  ])).digest("hex");
+  const now = Date.now();
+  if (aiHealthCache?.signature === signature && now - aiHealthCache.time < 30000) {
+    if (aiHealthCache.error) throw Object.assign(new Error(aiHealthCache.error.message), { status: aiHealthCache.error.status });
+    return [...aiHealthCache.models];
+  }
+  if (aiHealthPending?.signature === signature) return [...await aiHealthPending.promise];
+  const promise = listProfileModels(profile, { timeout: 10000 })
+    .then(models => {
+      const normalized = [...models];
+      aiHealthCache = { signature, time: Date.now(), models: normalized };
+      return normalized;
+    })
+    .catch(error => {
+      aiHealthCache = { signature, time: Date.now(), error: { status: Number(error.status) || 502, message: String(error.message || "Verificarea a eșuat.").slice(0, 500) } };
+      throw error;
+    })
+    .finally(() => { if (aiHealthPending?.promise === promise) aiHealthPending = null; });
+  aiHealthPending = { signature, promise };
+  return [...await promise];
+}
+
+function requireRouteProfile(capability) {
+  const profile = routeProfile(capability);
+  if (!profile?.capabilities?.[capability]) throw Object.assign(new Error(`Nu este configurat un motor pentru ${capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text"}.`), { status: 503 });
+  if (!routeProfileConfigured(profile, capability)) throw Object.assign(new Error(`Motorul ${profile.name} nu este configurat complet pentru ${capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text"}.`), { status: 503 });
+  return profile;
+}
+
+function providerImageDataUrl(image) {
+  const rawFormat = String(image?.output_format || "png").trim().toLowerCase();
+  const format = rawFormat === "jpg" ? "jpeg" : rawFormat;
+  if (!["png", "jpeg", "webp"].includes(format)) throw Object.assign(new Error("Serviciul a returnat un format de imagine neacceptat."), { status: 502 });
+  if (image?.b64_json) {
+    const base64 = String(image.b64_json);
+    if (!/^[a-zA-Z0-9+/]+={0,2}$/.test(base64) || base64.length > 32 * 1024 * 1024) {
+      throw Object.assign(new Error("Serviciul a returnat date de imagine invalide."), { status: 502 });
     }
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`);
-    error.status = response.status;
-    throw error;
+    return { dataUrl: `data:image/${format};base64,${base64}`, format: format === "jpeg" ? "jpg" : format };
   }
-  return data;
+  let remote;
+  try { remote = new URL(String(image?.url || "")); }
+  catch { throw Object.assign(new Error("Serviciul a returnat o adresă de imagine invalidă."), { status: 502 }); }
+  if (remote.protocol !== "https:" || remote.username || remote.password) {
+    throw Object.assign(new Error("Serviciul trebuie să returneze imaginea prin HTTPS."), { status: 502 });
+  }
+  return { dataUrl: remote.href, format: format === "jpeg" ? "jpg" : format };
 }
 
-async function openAiBytes(route, body, timeout = 180000) {
-  if (!aiProvider.apiKey) throw new Error("Adaugă cheia API în Configurare AI înainte să folosești acest furnizor.");
-  const response = await fetch(configuredAiUrl(route), {
-    method: "POST",
-    headers: { authorization: `Bearer ${aiProvider.apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeout)
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw Object.assign(new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`), { status: response.status });
-  }
-  const mime = (response.headers.get("content-type") || "audio/mpeg").split(";")[0].trim().toLowerCase();
-  if (!mime.startsWith("audio/") && mime !== "application/octet-stream") throw new Error("Furnizorul vocal nu a returnat un fișier audio.");
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (!bytes.length) throw new Error("Furnizorul vocal a returnat un fișier gol.");
-  return { mime: mime === "application/octet-stream" ? "audio/mpeg" : mime, base64: bytes.toString("base64") };
+function searchConfiguration() {
+  return { provider: aiConfig.search.provider, keys: { ...aiConfig.search.keys } };
 }
 
 function uploadedImage(value) {
@@ -592,39 +788,26 @@ function uploadedImage(value) {
   return { bytes, mime, extension: mime === "image/jpeg" ? "jpg" : mime.slice(6) };
 }
 
-async function openAiImageEdit(image, prompt) {
-  if (!aiProvider.apiKey) throw new Error("Adaugă cheia API în Configurare AI înainte să modifici imagini.");
-  const body = new FormData();
-  body.set("model", aiProvider.imageModel);
-  body.set("prompt", prompt);
-  body.set("image", new Blob([image.bytes], { type: image.mime }), `nova-input.${image.extension}`);
-  body.set("size", "1024x1024");
-  body.set("quality", "high");
-  body.set("n", "1");
-  const response = await fetch(configuredAiUrl("/images/edits"), {
-    method: "POST",
-    headers: { authorization: `Bearer ${aiProvider.apiKey}` },
-    body,
-    signal: AbortSignal.timeout(300000)
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(data.error?.message || data.error || `Furnizorul AI a răspuns cu HTTP ${response.status}.`), { status: response.status });
-  return data;
-}
-
 async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false) {
-  if (aiProvider.provider === "ollama") {
-    const result = await ollamaJson("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ model, stream: false, messages, ...(tools?.length ? { tools } : {}), options: { temperature: 0.2, ...(maxOutputTokens ? { num_predict: maxOutputTokens } : {}) } })
-    });
-    return { message: result.message || {}, model: result.model || model };
+  const primary = requireRouteProfile("text");
+  const candidates = [primary, ...configuredFallbackProfiles(primary).slice(0, 1)];
+  let lastError;
+  for (let index = 0; index < candidates.length; index++) {
+    const profile = candidates[index];
+    try {
+      return await chatWithProfile(profile, {
+        model: index === 0 ? model : profile.textModel,
+        messages,
+        tools,
+        maxOutputTokens,
+        forceWebTool: verifyWeb && tools?.some(tool => tool.function?.name === "web_search")
+      });
+    } catch (error) {
+      lastError = error;
+      if (index === candidates.length - 1 || !isTransientProviderError(error)) throw error;
+    }
   }
-  const result = await openAiJson("/chat/completions", {
-    method: "POST",
-    body: JSON.stringify({ model, messages, ...(tools?.length ? { tools } : {}), ...(verifyWeb && tools?.some(tool => tool.function?.name === "web_search") ? { tool_choice: { type: "function", function: { name: "web_search" } } } : {}), ...(maxOutputTokens ? { max_completion_tokens: maxOutputTokens } : {}) })
-  });
-  return { message: result.choices?.[0]?.message || {}, model: result.model || model };
+  throw lastError || new Error("Niciun motor AI nu este disponibil.");
 }
 
 function validProjectId(value) {
@@ -969,7 +1152,7 @@ async function writeProjectFile(project, name, content, principal = "owner") {
 
 const { webTools, webPrompt, callWebTool, createWebHealthChecker } = require("./web-tools");
 
-const checkWebHealth = createWebHealthChecker();
+const checkWebHealth = createWebHealthChecker(undefined, Date.now, async () => ({ searchConfig: searchConfiguration() }));
 
 const agentTools = [
   ...webTools,
@@ -980,7 +1163,7 @@ const agentTools = [
 
 async function callAgentTool(name, args, project, allowChanges, principal = "owner") {
   if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Argumente de unealtă invalide.");
-  if (webTools.some(tool => tool.function.name === name)) return await callWebTool(name, args);
+  if (webTools.some(tool => tool.function.name === name)) return await callWebTool(name, args, undefined, { searchConfig: searchConfiguration() });
   if (name === "list_files") return JSON.stringify(await listProjectFiles(projectRoot(project, principal)));
   if (name === "read_file") return await readProjectFile(project, args.path, principal);
   if (name === "write_file") {
@@ -1027,7 +1210,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       messages.push({ role: "system", content: "Înainte de răspuns, caută informațiile publice lipsă cu web_search. Nu include date private în căutare. Răspunde folosind rezultatele relevante și explică limitele dacă nu găsești dovezi." });
       continue;
     }
-    if (!calls.length) return { content: answerWithSources(message.content || "Agentul a terminat fără un răspuns text.", sources, verifyWeb), events, model: response.model || model };
+    if (!calls.length) return { content: answerWithSources(message.content || "Agentul a terminat fără un răspuns text.", sources, verifyWeb), events, model: response.model || model, provider: response.provider, providerName: response.providerName };
     let toolCount = 0;
     for (const call of calls) {
       const name = call.function?.name;
@@ -1042,20 +1225,16 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       if (webTools.some(tool => tool.function.name === name)) collectSources(result, sources);
         if (!isWebTool) events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
         const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : principal === "owner" ? 30000 : 10000;
-        messages.push(aiProvider.provider === "openai"
-          ? { role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) }
-          : { role: "tool", tool_name: name, content: String(result).slice(0, toolResultLimit) });
+        messages.push({ role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) });
       } catch (error) {
         if (!isWebTool) events.push({ tool: name || "unknown", ok: false, summary: error.message });
-        messages.push(aiProvider.provider === "openai"
-          ? { role: "tool", tool_call_id: call.id, content: `Eroare: ${error.message}` }
-          : { role: "tool", tool_name: name || "unknown", content: `Eroare: ${error.message}` });
+        messages.push({ role: "tool", tool_call_id: call.id, content: `Eroare: ${error.message}` });
       }
     }
   }
   messages.push({ role: "system", content: "Oprește folosirea uneltelor și oferă acum răspunsul final, clar și complet. Folosește informațiile deja obținute, citează numai sursele valide și menționează concis ce nu a putut fi verificat." });
   const finalResponse = await providerChat(model, messages, [], principal === "owner" ? null : 1500, false);
-  return { content: answerWithSources(finalResponse.message?.content || "Nu am putut formula răspunsul final din sursele disponibile.", sources, verifyWeb), events, model: finalResponse.model || model };
+  return { content: answerWithSources(finalResponse.message?.content || "Nu am putut formula răspunsul final din sursele disponibile.", sources, verifyWeb), events, model: finalResponse.model || model, provider: finalResponse.provider, providerName: finalResponse.providerName };
 }
 
 async function handle(req, res) {
@@ -1229,7 +1408,7 @@ async function handle(req, res) {
     return json(res, 200, { username: account.username, ...(record.displayName ? { displayName: record.displayName } : {}), role: account.role, id: account.userId, authEnabled: Boolean(ACCESS_PASSWORD), plan: quota.plan, quotaLimit: quota.limit, quotaRemaining: quota.remaining, quotaInterval: quota.interval, dailyLimit: quota.interval === "day" ? quota.limit : null, remainingToday: quota.interval === "day" ? quota.remaining : null });
   }
   if (req.method === "GET" && url.pathname === "/api/settings") {
-    return json(res, 200, { settings: publicProviderSettings() });
+    return json(res, 200, { settings: publicProviderSettings(account.role) });
   }
 
   if (req.method === "GET" && url.pathname === "/api/web/health") {
@@ -1239,120 +1418,155 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/settings") {
     if (account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate schimba furnizorul AI al platformei." });
-    const body = await readJson(req);
-    if (!["ollama", "openai"].includes(body.provider)) return json(res, 400, { error: "Alege Ollama sau OpenAI / compatibil." });
-    const nextProvider = { ...aiProvider };
-    if (body.clearApiKey === true) nextProvider.apiKey = "";
-    else if (typeof body.apiKey === "string" && body.apiKey.trim()) nextProvider.apiKey = body.apiKey.trim().slice(0, 500);
-    if (body.provider === "openai") {
-      let endpoint;
-      try { endpoint = new URL(String(body.baseUrl || "")); }
-      catch { return json(res, 400, { error: "Adresa API nu este validă." }); }
-      if (!["https:", "http:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
-        return json(res, 400, { error: "Adresa API trebuie să fie HTTP(S), fără autentificare în URL." });
-      }
-      nextProvider.baseUrl = endpoint.toString().replace(/\/+$/, "");
-      nextProvider.textModel = String(body.textModel || DEFAULT_TEXT_MODEL).trim().slice(0, 120);
-      nextProvider.imageModel = String(body.imageModel || DEFAULT_IMAGE_MODEL).trim().slice(0, 120);
-      nextProvider.speechModel = String(body.speechModel || "gpt-4o-mini-tts").trim().slice(0, 120);
-      nextProvider.voice = ["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse", "marin", "cedar"].includes(body.voice) ? body.voice : "nova";
-      if (!nextProvider.apiKey) return json(res, 400, { error: "Cheia API lipsește. Introdu o cheie sau configureaz-o în secretele serverului." });
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de configurare AI respinsă." });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) {
+      return json(res, 415, { error: "Configurarea AI acceptă numai cereri JSON." });
     }
-    nextProvider.provider = body.provider;
-    await persistAiSettings(nextProvider);
-    Object.assign(aiProvider, nextProvider);
-    return json(res, 200, { settings: publicProviderSettings(), notice: "Configurarea AI este sincronizată între instanțe; cheia este criptată și nu este returnată în interfață." });
+    const body = await readJson(req);
+    const aliases = { google: "gemini", claude: "anthropic", compatible: "custom" };
+    const explicitProviderId = aliases[String(body.providerId || "").trim().toLowerCase()] || String(body.providerId || "").trim().toLowerCase();
+    let providerId = aliases[String(body.providerId || body.provider || "").trim().toLowerCase()] || String(body.providerId || body.provider || "").trim().toLowerCase();
+    if (providerId === "openai" && typeof body.baseUrl === "string" && body.baseUrl.trim()) {
+      try {
+        if (new URL(body.baseUrl).origin !== new URL(PLATFORM_PRESETS.openai.baseUrl).origin) {
+          if (explicitProviderId === "openai") return json(res, 400, { error: "Pentru o adresă API diferită, alege profilul API compatibilă / custom." });
+          providerId = "custom";
+        }
+      } catch { return json(res, 400, { error: "Adresa API nu este validă." }); }
+    }
+    if (!aiConfig.profiles[providerId]) return json(res, 400, { error: "Alege o platformă AI disponibilă." });
+    const next = cloneAiConfig();
+    let updatedProfile;
+    try {
+      updatedProfile = sanitizeProfileUpdate({ ...body, id: providerId }, next.profiles[providerId]);
+    } catch (error) { return json(res, error.status || 400, { error: error.message }); }
+    next.profiles[providerId] = updatedProfile;
+
+    const requestedRoutes = body.routes && typeof body.routes === "object" && !Array.isArray(body.routes) ? body.routes : null;
+    if (requestedRoutes) {
+      for (const capability of ["text", "image", "speech"]) {
+        const id = aliases[String(requestedRoutes[capability] || "").trim().toLowerCase()] || String(requestedRoutes[capability] || "").trim().toLowerCase();
+        if (!next.profiles[id]?.capabilities?.[capability]) return json(res, 400, { error: `Ruta pentru ${capability} nu este compatibilă cu motorul ales.` });
+        if (!routeProfileConfigured(next.profiles[id], capability)) {
+          const label = capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text";
+          return json(res, 400, { error: `Motorul ${next.profiles[id].name} nu este configurat complet pentru ${label}.` });
+        }
+        next.routes[capability] = id;
+      }
+      next.routes.autoFallback = requestedRoutes.autoFallback === true;
+    } else {
+      next.routes.text = providerId;
+      if (routeProfileConfigured(updatedProfile, "image")) next.routes.image = providerId;
+      if (routeProfileConfigured(updatedProfile, "speech")) next.routes.speech = providerId;
+    }
+    const activeAfterSave = next.profiles[next.routes.text];
+    if (!routeProfileConfigured(activeAfterSave, "text")) {
+      if (routeProfileConfigured(updatedProfile, "text")) next.routes.text = providerId;
+      else return json(res, 400, { error: `Motorul ${activeAfterSave?.name || "AI"} nu este configurat complet. Adaugă cheia și modelul.` });
+    }
+    if (body.search && typeof body.search === "object" && !Array.isArray(body.search)) {
+      const searchProvider = String(body.search.provider || "").trim().toLowerCase();
+      if (!["auto", "bing", "brave", "tavily"].includes(searchProvider)) return json(res, 400, { error: "Motorul de căutare nu este valid." });
+      next.search.provider = searchProvider;
+      if (["brave", "tavily"].includes(searchProvider)) {
+        if (body.search.clearApiKey === true) next.search.keys[searchProvider] = "";
+        else if (typeof body.search.apiKey === "string" && body.search.apiKey.trim()) next.search.keys[searchProvider] = body.search.apiKey.trim().slice(0, 4000);
+      }
+    }
+    await persistAiSettings(next);
+    aiConfig = next;
+    return json(res, 200, { settings: publicProviderSettings(account.role), notice: "Profilurile și cheile AI sunt sincronizate între instanțe; secretele sunt criptate și nu sunt returnate în interfață." });
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/image") {
     try {
-      if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru generarea imaginilor.");
+      const profile = requireRouteProfile("image");
+      if (profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă generare de imagini compatibilă.`), { status: 503 });
       const body = await readJson(req);
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
       if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
       if (!await consumeAiQuota(req, res)) return;
-      const result = await openAiJson("/images/generations", {
-        method: "POST",
-        body: JSON.stringify({ model: aiProvider.imageModel, prompt, size: "1024x1024", quality: "high", n: 1 })
+      const result = await openAiCompatibleJson(profile, "/images/generations", {
+        method: "POST", json: { model: profile.imageModel, prompt, size: "1024x1024", quality: "high", n: 1 }
       }, 300000);
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
-      const format = image.output_format || "png";
-      return json(res, 200, { dataUrl: image.b64_json ? `data:image/${format};base64,${image.b64_json}` : image.url, format, model: aiProvider.imageModel });
+      const output = providerImageDataUrl(image);
+      return json(res, 200, { ...output, model: profile.imageModel, provider: profile.id, providerName: profile.name });
     } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea imaginii a eșuat.", providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/image/edit") {
     try {
-      if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru modificarea imaginilor.");
+      const profile = requireRouteProfile("image");
+      if (!profile.capabilities.imageEdit || profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă editare de imagini compatibilă.`), { status: 503 });
       const body = await readJson(req, MAX_IMAGE_EDIT_BODY);
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
       if (!prompt) return json(res, 400, { error: "Descrie schimbarea pe care o dorești în fotografie." });
       const source = uploadedImage(body.image);
       if (!await consumeAiQuota(req, res)) return;
-      const result = await openAiImageEdit(source, prompt);
+      const result = await openAiCompatibleImageEdit(profile, source, prompt, { model: profile.imageModel, timeout: 300000 });
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat imaginea modificată.");
-      const format = image.output_format || "png";
-      return json(res, 200, { dataUrl: image.b64_json ? `data:image/${format};base64,${image.b64_json}` : image.url, format, model: aiProvider.imageModel, edited: true });
+      const output = providerImageDataUrl(image);
+      return json(res, 200, { ...output, model: profile.imageModel, provider: profile.id, providerName: profile.name, edited: true });
     } catch (error) { return json(res, error.status || 502, { error: error.message || "Modificarea imaginii a eșuat.", providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/speech") {
     try {
-      if (aiProvider.provider !== "openai") throw new Error("Selectează furnizorul OpenAI în Configurare AI pentru sinteza vocală.");
+      const profile = requireRouteProfile("speech");
+      if (profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă sinteză vocală compatibilă.`), { status: 503 });
       const body = await readJson(req);
       const input = typeof body.text === "string" ? body.text.trim() : "";
       if (!input) return json(res, 400, { error: "Adaugă text pentru voice-over." });
       if (input.length > 4096) return json(res, 400, { error: "Vocea acceptă cel mult 4096 de caractere. Împarte textul în fragmente." });
       const voiceOptions = speechOptions(body);
       if (!await consumeAiQuota(req, res, Math.ceil(input.length / 500))) return;
-      const speech = await openAiBytes("/audio/speech", {
-        model: aiProvider.speechModel,
-        voice: aiProvider.voice,
+      const speech = await openAiCompatibleBytes(profile, "/audio/speech", {
+        model: profile.speechModel,
+        voice: profile.voice,
         ...voiceOptions,
         input,
         response_format: "mp3",
-        ...(aiProvider.speechModel.startsWith("gpt-4o-mini-tts") ? { instructions: "Vorbește clar, natural și expresiv în limba textului." + " Păstrează sensul și cuvintele textului. Când textul este în română, pronunță corect diacriticele și folosește pauze firești la punctuație. Recită textul; nu adăuga explicații și nu cânta." } : {})
-      }, 300000);
-      return json(res, 200, { dataUrl: `data:${speech.mime};base64,${speech.base64}`, model: aiProvider.speechModel });
+        ...(profile.speechModel.startsWith("gpt-4o-mini-tts") ? { instructions: "Vorbește clar, natural și expresiv în limba textului." + " Păstrează sensul și cuvintele textului. Când textul este în română, pronunță corect diacriticele și folosește pauze firești la punctuație. Recită textul; nu adăuga explicații și nu cânta." } : {})
+      }, { timeout: 300000 });
+      return json(res, 200, { dataUrl: `data:${speech.mime};base64,${speech.base64}`, model: profile.speechModel, provider: profile.id, providerName: profile.name });
     } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea vocii a eșuat.", providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/ai/test") {
     const body = await readJson(req);
-    const model = String(body.model || aiProvider.textModel || "").trim().slice(0, 120);
+    const profile = activeTextProfile();
+    const requestedModel = account.role === "owner" ? body.model : profile.textModel;
+    const model = String(requestedModel || profile.textModel || "").trim().slice(0, 240);
     if (!model) return json(res, 400, { connected: false, error: "Alege un model AI înainte de test." });
-    if (aiProvider.provider === "openai" && !aiProvider.apiKey) {
-      return json(res, 503, { connected: false, provider: "openai", error: "Cheia API OpenAI lipsește din configurarea serverului." });
+    if (!isProfileConfigured(profile)) {
+      const error = profile.id === "openai"
+        ? "Cheia API OpenAI lipsește din configurarea serverului."
+        : `Motorul ${profile.name} nu este configurat complet.`;
+      return json(res, 503, { connected: false, provider: publicProviderId(profile), error });
     }
     if (!await consumeAiQuota(req, res)) return;
     try {
       const messages = [{ role: "user", content: "Răspunde doar cu: Nova este conectată." }];
-      const response = aiProvider.provider === "openai"
-        ? await openAiJson("/chat/completions", {
-          method: "POST",
-          body: JSON.stringify({ model, messages, max_completion_tokens: 24 })
-        }, 30000)
-        : await ollamaJson("/api/chat", {
-          method: "POST",
-          body: JSON.stringify({ model, stream: false, messages, options: { num_predict: 24 } })
-        });
-      const message = aiProvider.provider === "openai" ? response.choices?.[0]?.message : response.message;
-      const reply = String(message?.content || "").trim();
+      const response = await chatWithProfile(profile, { model, messages, maxOutputTokens: 24, timeout: 30000 });
+      const reply = String(response.message?.content || "").trim();
       if (!reply) throw new Error("Modelul nu a returnat text.");
-      return json(res, 200, { connected: true, provider: aiProvider.provider, model: response.model || model, reply: reply.slice(0, 240) });
+      return json(res, 200, { connected: true, provider: publicProviderId(profile), model: response.model || model, reply: reply.slice(0, 240) });
     } catch (error) {
-      console.error("Nova AI connection test failed:", error);
+      console.error("Nova AI connection test failed:", { provider: profile.id, status: error.status || 502 });
       const status = error.status;
-      const message = aiProvider.provider === "openai"
+      const message = profile.id === "openai" || profile.id === "custom"
         ? status === 401 || status === 403
           ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
           : status === 429
             ? "OpenAI a limitat cererea de test. Verifică limitele și facturarea API."
             : "Modelul OpenAI nu a putut răspunde. Verifică modelul, accesul API și limitele contului."
-        : "Modelul Ollama nu a putut răspunde. Verifică dacă serviciul și modelul sunt pornite.";
-      return json(res, 502, { connected: false, provider: aiProvider.provider, error: message });
+        : profile.id === "ollama"
+          ? "Modelul Ollama nu a putut răspunde. Verifică dacă serviciul și modelul sunt pornite."
+          : `${profile.name} nu a putut răspunde. Verifică cheia, modelul și limitele contului furnizorului.`;
+      return json(res, 502, { connected: false, provider: publicProviderId(profile), error: message });
     }
   }
   if (req.method === "GET" && url.pathname === "/api/projects") {
@@ -1563,67 +1777,69 @@ async function handle(req, res) {
     });
     const task = Object.hasOwn(creationPrompts, body.task) ? body.task : "auto";
     const allowAgentChanges = mode === "build" && (account.role === "owner" || body.allowChanges === true);
+    const model = account.role === "owner" ? body.model.trim() : activeTextProfile().textModel;
     if (!await consumeAiQuota(req, res)) return;
     try {
-      const result = await runAgent(body.model.trim(), safeMessages, body.project, mode, allowAgentChanges, task, principal, body.verifyWeb === true);
+      const result = await runAgent(model, safeMessages, body.project, mode, allowAgentChanges, task, principal, body.verifyWeb === true);
       return json(res, 200, result);
     } catch (error) {
-      console.error("Nova AI agent provider failed:", error);
-      const unavailable = aiProvider.provider === "ollama"
-        ? "Modelul AI local (Ollama) nu este disponibil pe server. Configurează furnizorul OpenAI în setările Nova."
-        : !aiProvider.apiKey
-          ? "Cheia API OpenAI lipsește. Configurează furnizorul AI în setările Nova."
-          : "Furnizorul AI nu a putut procesa cererea. Verifică modelul și configurarea API.";
+      const profile = activeTextProfile();
+      console.error("Nova AI agent provider failed:", { provider: profile.id, status: error.status || 503 });
+      const unavailable = !isProfileConfigured(profile)
+        ? `Motorul ${profile.name} nu este configurat complet. Deschide Motoare AI în setările Nova.`
+        : "Furnizorul AI nu a putut procesa cererea. Verifică modelul, cheia și limitele API.";
       return json(res, 503, { error: unavailable });
     }
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
-    if (aiProvider.provider === "openai") {
-      if (!aiProvider.apiKey) {
-        return json(res, 200, {
-          connected: false,
-          provider: "openai",
-          error: "Cheia API OpenAI lipsește din configurarea serverului.",
-          models: []
-        });
-      }
-      let availableModels;
-      try {
-        // Validate the server-side credential without generating content or using model tokens.
-        const catalog = await openAiJson("/models", {}, 10000);
-        availableModels = availableOpenAiChatModels(catalog, aiProvider.textModel);
-      } catch (error) {
-        const status = error.status;
-        const message = status === 401 || status === 403
-          ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
-          : status === 429
-            ? "OpenAI a limitat verificarea. Verifică limitele și facturarea API, apoi reîncearcă."
-            : status === 404
-              ? "Adresa API nu oferă ruta /models. Verifică OPENAI_BASE_URL."
-              : "Serverul nu a putut valida conexiunea OpenAI. Verifică rețeaua și configurarea API.";
-        return json(res, 200, { connected: false, provider: "openai", error: message, models: [] });
-      }
-      return json(res, 200, {
-        connected: true,
-        provider: "openai",
-        version: "Conexiune verificată",
-        models: account.role === "owner" ? availableModels : aiProvider.textModel ? [aiProvider.textModel] : []
-      });
+    const profile = activeTextProfile();
+    const provider = publicProviderId(profile);
+    if (!isProfileConfigured(profile)) {
+      const message = profile.id === "openai"
+        ? "Cheia API OpenAI lipsește din configurarea serverului."
+        : `Motorul ${profile.name} nu este configurat complet.`;
+      return json(res, 200, { connected: false, provider, providerName: profile.name, error: message, models: [] });
     }
     try {
-      const [version, tags] = await Promise.all([
-        ollamaJson("/api/version"),
-        ollamaJson("/api/tags")
-      ]);
+      let availableModels = await cachedProfileModels(profile);
+      if (profile.id === "openai") availableModels = availableOpenAiChatModels(availableModels, profile.textModel);
+      else {
+        const nonChat = /(embed|embedding|image|dall|tts|speech|whisper|moderation|rerank|realtime|audio)/i;
+        availableModels = availableModels.filter(model => !nonChat.test(model));
+        if (!availableModels.length && profile.textModel) availableModels = [profile.textModel];
+      }
+      const fallbacks = configuredFallbackProfiles(profile).slice(0, 1).map(item => ({ provider: item.id, providerName: item.name, model: item.textModel }));
       return json(res, 200, {
         connected: true,
-        provider: "ollama",
-        version: version.version || "local",
-        models: (tags.models || []).map(item => item.name)
+        provider,
+        providerName: profile.name,
+        version: "Conexiune verificată",
+        models: account.role === "owner" ? availableModels : profile.textModel ? [profile.textModel] : [],
+        ...(fallbacks.length ? { fallbacks } : {})
       });
     } catch (error) {
-      return json(res, 200, { connected: false, error: error.message, models: [] });
+      const status = error.status;
+      if (profile.id === "custom" && [404, 405, 501].includes(status)) {
+        const fallbacks = configuredFallbackProfiles(profile).slice(0, 1).map(item => ({ provider: item.id, providerName: item.name, model: item.textModel }));
+        return json(res, 200, {
+          connected: true,
+          provider,
+          providerName: profile.name,
+          version: "Profil configurat · catalog /models indisponibil",
+          models: profile.textModel ? [profile.textModel] : [],
+          ...(fallbacks.length ? { fallbacks } : {})
+        });
+      }
+      const openAiCompatible = profile.id === "openai" || profile.id === "custom";
+      const message = openAiCompatible && (status === 401 || status === 403)
+        ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
+        : status === 429
+          ? `${profile.name} a limitat verificarea. Verifică limitele și facturarea API.`
+          : status === 404
+            ? `${profile.name} nu oferă ruta de catalog /models. Verifică adresa API și modelul.`
+            : `Serverul nu a putut valida conexiunea ${profile.name}. Verifică rețeaua și configurarea API.`;
+      return json(res, 200, { connected: false, provider, providerName: profile.name, error: message, models: [] });
     }
   }
 
@@ -1647,6 +1863,7 @@ async function handle(req, res) {
         inputBudget -= content.length;
         return { role: message.role, content };
       });
+      const model = account.role === "owner" ? body.model.trim() : activeTextProfile().textModel;
       if (!await consumeAiQuota(req, res)) return;
 
       const chatMessages = [
@@ -1666,7 +1883,7 @@ async function handle(req, res) {
           chatMessages.push({ role: "system", content: "Limita de căutări a fost atinsă. Nu mai cere unelte web. Răspunde acum folosind rezultatele și sursele valide deja disponibile." });
           webLimitNotified = true;
         }
-        result = await providerChat(body.model.trim(), chatMessages, webCalls >= maxWebCalls ? [] : webTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
+        result = await providerChat(model, chatMessages, webCalls >= maxWebCalls ? [] : webTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
         retryWeb = false;
         const message = result.message || {};
         if (!message.tool_calls?.length && !webAttempted && !verifyWeb && round < 3 && needsWebRetry(message.content)) {
@@ -1687,26 +1904,30 @@ async function handle(req, res) {
             const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments;
             if (!args || typeof args !== "object") throw new Error("Argumente invalide.");
             webAttempted = true;
-            content = await callWebTool(call.function.name, args);
+            content = await callWebTool(call.function.name, args, undefined, { searchConfig: searchConfiguration() });
             collectSources(content, sources);
           } catch (error) { content = `Eroare: ${error.message}`; }
-          chatMessages.push(aiProvider.provider === "openai"
-            ? { role: "tool", tool_call_id: call.id, content }
-            : { role: "tool", tool_name: call.function?.name, content });
+          chatMessages.push({ role: "tool", tool_call_id: call.id, content });
         }
         result = { message: { content: "Am atins limita de căutări web. Trimite o cerere de continuare." } };
       }
       if (result?.message?.tool_calls?.length || result?.message?.content === "Am atins limita de căutări web. Trimite o cerere de continuare.") {
         chatMessages.push({ role: "system", content: "Oprește căutarea și oferă acum răspunsul final, clar și complet, din informațiile deja obținute. Citează numai sursele valide." });
-        result = await providerChat(body.model.trim(), chatMessages, [], account.role === "subscriber" ? 1500 : null, false);
+        result = await providerChat(model, chatMessages, [], account.role === "subscriber" ? 1500 : null, false);
       }
       return json(res, 200, {
         content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, verifyWeb),
-        model: result.model || body.model,
+        model: result.model || model,
+        provider: result.provider,
+        providerName: result.providerName,
         done: true
       });
     } catch (error) {
-      return json(res, error.status || 502, { error: error.message || "Nu am putut contacta furnizorul AI." });
+      const providerAuthFailure = error.status === 401 || error.status === 403;
+      return json(res, providerAuthFailure ? 502 : (error.status || 502), {
+        error: providerAuthFailure ? "Furnizorul AI a respins cheia configurată. Verifică profilul din Motoare AI." : (error.message || "Nu am putut contacta furnizorul AI."),
+        providerError: true
+      });
     }
   }
 
