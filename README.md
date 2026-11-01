@@ -174,6 +174,8 @@ Versiunea web/server 2.5.0 introduce interfața Nova Command Center: navigare la
 
 Versiunea 2.5.1 face resursele Command Center relative și fixează versiunea direct în pagina distribuită, astfel încât interfața se încarcă integral atât prin serverul Nova, cât și în previzualizări statice sau pachete mobile, fără textul brut `__NOVA_VERSION__`.
 
+Versiunea 2.6.0 actualizează selecția motoarelor: Nova consultă la conectare catalogul live al furnizorului configurat și recomandă automat primul model curent returnat de acesta. Ownerul poate alege în continuare orice model disponibil, iar abonații primesc automat modelul recomandat fără acces la chei sau configurarea administrativă. Căutarea rămâne pe ruta `auto`, cu Brave/Tavily când sunt configurate și Bing fără cheie ca rezervă.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

@@ -484,7 +484,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   }
   const aiHealth = await request('/api/health');
   assert.deepEqual(await aiHealth.json(), {
-    connected: true, provider: 'openai', providerName: 'OpenAI-compatible custom', version: 'Conexiune verificată', models: ['gpt-4.1-mini', 'gpt-6.1-mini', 'gpt-6.1', 'gpt-6.1-2026-10-01']
+    connected: true, provider: 'openai', providerName: 'OpenAI-compatible custom', version: 'Conexiune verificată',
+    recommendedModel: 'gpt-6.1', models: ['gpt-4.1-mini', 'gpt-6.1-mini', 'gpt-6.1', 'gpt-6.1-2026-10-01']
   });
   const aiChat = await post('/api/chat', {
     model: 'gpt-4.1-mini', messages: [{ role: 'user', content: 'Salut Nova' }]

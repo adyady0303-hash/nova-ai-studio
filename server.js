@@ -568,6 +568,13 @@ function availableOpenAiChatModels(catalog, fallback) {
   });
 }
 
+function recommendedChatModel(profile, models) {
+  const available = Array.isArray(models) ? models : [];
+  const rankedGpt = availableOpenAiChatModels(available, "");
+  if (rankedGpt.length) return rankedGpt[0];
+  return available[0] || profile?.textModel || "";
+}
+
 function aiSettingsCipherKey() {
   const secret = process.env.NOVA_DATA_ENCRYPTION_KEY || ACCESS_PASSWORD || process.env.DATABASE_URL || localAiEncryptionSecret;
   if (!secret) throw new Error("Lipsește cheia pentru criptarea configurării AI persistente.");
@@ -1828,12 +1835,14 @@ async function handle(req, res) {
         if (!availableModels.length && profile.textModel) availableModels = [profile.textModel];
       }
       const fallbacks = configuredFallbackProfiles(profile).slice(0, 1).map(item => ({ provider: item.id, providerName: item.name, model: item.textModel }));
+      const recommendedModel = recommendedChatModel(profile, availableModels);
       return json(res, 200, {
         connected: true,
         provider,
         providerName: profile.name,
         version: "Conexiune verificată",
-        models: account.role === "owner" ? availableModels : profile.textModel ? [profile.textModel] : [],
+        recommendedModel,
+        models: account.role === "owner" ? availableModels : recommendedModel ? [recommendedModel] : [],
         ...(fallbacks.length ? { fallbacks } : {})
       });
     } catch (error) {

@@ -125,6 +125,7 @@ function healthModels(data) {
   if (models && !Array.isArray(models) && typeof models === "object") models = models.text || models.chat || models.available;
   if (!Array.isArray(models)) models = typeof models === "string" ? [models] : [];
   if (typeof data.model === "string") models.unshift(data.model);
+  if (typeof data.recommendedModel === "string") models.unshift(data.recommendedModel);
   const configuredModel = routeProfile("text")?.textModel;
   if (configuredModel) models.unshift(configuredModel);
   return [...new Set(models.map(model => typeof model === "string" ? model : model?.id || model?.name || "").filter(Boolean).map(model => String(model).trim()).filter(Boolean))];
@@ -166,7 +167,8 @@ async function refreshHealth() {
     else {
       models.forEach(model => select.add(new Option(model, model)));
       const configured = routeProfile("text")?.textModel;
-      select.value = models.includes(previous) ? previous : models.includes(configured) ? configured : models[0];
+      const recommended = typeof data.recommendedModel === "string" ? data.recommendedModel : "";
+      select.value = models.includes(previous) ? previous : models.includes(recommended) ? recommended : models.includes(configured) ? configured : models[0];
     }
   } catch (error) {
     dot.classList.remove("on"); label.textContent = "Motor AI neconectat"; badge.textContent = "AI neconectat";
