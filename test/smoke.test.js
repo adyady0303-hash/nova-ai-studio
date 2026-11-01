@@ -194,6 +194,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let mockImageBody = null;
   let mockImageEditBody = Buffer.alloc(0);
   let mockImageAttempts = 0, mockImageEditAttempts = 0;
+  let mockBusinessWriteSent = false;
   const providerServer = http.createServer((req, res) => {
     if (req.headers.authorization !== expectedAuthorization) {
       res.writeHead(401, { 'content-type': 'application/json' });
@@ -211,6 +212,23 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const businessRequest = body.messages.some(message => message.role === 'user' && String(message.content).includes('BUILD_BUSINESS_SITE'));
+        if (businessRequest) {
+          const files = {
+            'index.html': '<!doctype html><html><head><link rel="stylesheet" href="styles.css"></head><body><h1>Afacere online</h1><form><input required><button>Trimite</button></form><script src="app.js"></script></body></html>',
+            'styles.css': 'body{font-family:sans-serif;max-width:960px;margin:auto;padding:2rem}',
+            'app.js': 'document.querySelector("form").addEventListener("submit",event=>{event.preventDefault();alert("Cerere trimisă")});'
+          };
+          let message;
+          if (mockBusinessWriteSent) message = { role: 'assistant', content: 'Site-ul afacerii a fost creat complet.' };
+          else if (body.messages.some(message => message.role === 'system' && String(message.content).includes('Creează acum fișierele lipsă'))) {
+            mockBusinessWriteSent = true;
+            message = { role: 'assistant', content: null, tool_calls: Object.entries(files).map(([filePath, content], index) => ({ id: `business-write-${index}`, type: 'function', function: { name: 'write_file', arguments: JSON.stringify({ path: filePath, content }) } })) };
+          } else message = { role: 'assistant', content: 'Iată câteva idei pentru afacerea ta.' };
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ choices: [{ message }], model: body.model }));
+          return;
+        }
         const scriptRequest = [...body.messages].reverse().find(message =>
           message.role === 'user' && ['OWNER_SCRIPT_WRITE', 'SUBSCRIBER_SCRIPT_WRITE'].includes(message.content)
         );
@@ -681,6 +699,18 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     assert.equal(response.status, 200);
     await response.json();
     assert.match(mockSystemPrompt, expected);
+  }
+  const businessProjectResponse = await post('/api/projects', { name: 'Business build test' });
+  assert.equal(businessProjectResponse.status, 201);
+  const businessProject = (await businessProjectResponse.json()).project;
+  const builtBusiness = await post('/api/agent', { project: businessProject.id, model: 'gpt-4.1-mini', task: 'business', mode: 'build', allowChanges: true, messages: [{ role: 'user', content: 'BUILD_BUSINESS_SITE' }] });
+  assert.equal(builtBusiness.status, 200);
+  const builtBusinessResult = await builtBusiness.json();
+  assert.ok(builtBusinessResult.events.filter(event => event.tool === 'write_file' && event.ok).length >= 3);
+  for (const filePath of ['index.html', 'styles.css', 'app.js']) {
+    const createdFile = await request(`/api/file?project=${encodeURIComponent(businessProject.id)}&path=${encodeURIComponent(filePath)}`);
+    assert.equal(createdFile.status, 200);
+    assert.ok((await createdFile.json()).content.length > 20);
   }
   for (const [task, expected] of [['text', /Scrie textul final/], ['lyrics', /versuri originale complete/]]) {
     const response = await post('/api/chat', { model: 'gpt-4.1-mini', task, messages: [{ role: 'user', content: 'Creează rezultatul complet' }] });

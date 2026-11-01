@@ -1304,6 +1304,10 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
   const tools = allowChanges ? agentTools : agentTools.filter(tool => tool.function.name !== "write_file");
   const events = [];
   const sources = [];
+  const requiredBusinessFiles = task === "business" && mode === "build" && allowChanges
+    ? new Set(["index.html", "styles.css", "app.js"])
+    : null;
+  const writtenBusinessFiles = new Set();
   const maxRounds = principal === "owner" ? 8 : 4;
   const maxWebCalls = principal === "owner" ? 6 : 4;
   for (let round = 0; round < maxRounds; round++) {
@@ -1324,6 +1328,14 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       messages.push({ role: "system", content: "Înainte de răspuns, caută informațiile publice lipsă cu web_search. Nu include date private în căutare. Răspunde folosind rezultatele relevante și explică limitele dacă nu găsești dovezi." });
       continue;
     }
+    if (!calls.length && requiredBusinessFiles) {
+      const missing = [...requiredBusinessFiles].filter(file => !writtenBusinessFiles.has(file));
+      if (missing.length && round < maxRounds - 1) {
+        messages.push({ role: "system", content: `Cererea nu este finalizată. Creează acum fișierele lipsă ${missing.join(", ")} folosind write_file, cu conținut complet și funcțional. Nu răspunde doar cu idei sau cod în mesaj.` });
+        continue;
+      }
+      if (missing.length) throw Object.assign(new Error(`Motorul AI nu a creat fișierele obligatorii: ${missing.join(", ")}. Încearcă din nou sau alege alt model text.`), { status: 502 });
+    }
     if (!calls.length) return { content: answerWithSources(message.content || "Agentul a terminat fără un răspuns text.", sources, verifyWeb), events, model: response.model || model, provider: response.provider, providerName: response.providerName };
     let toolCount = 0;
     for (const call of calls) {
@@ -1337,6 +1349,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges, principal);
       if (webTools.some(tool => tool.function.name === name)) collectSources(result, sources);
+        if (name === "write_file" && requiredBusinessFiles?.has(args.path)) writtenBusinessFiles.add(args.path);
         if (!isWebTool) events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
         const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : principal === "owner" ? 30000 : 10000;
         messages.push({ role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) });
@@ -1345,6 +1358,10 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
         messages.push({ role: "tool", tool_call_id: call.id, content: `Eroare: ${error.message}` });
       }
     }
+  }
+  if (requiredBusinessFiles) {
+    const missing = [...requiredBusinessFiles].filter(file => !writtenBusinessFiles.has(file));
+    if (missing.length) throw Object.assign(new Error(`Motorul AI nu a creat fișierele obligatorii: ${missing.join(", ")}. Încearcă din nou sau alege alt model text.`), { status: 502 });
   }
   messages.push({ role: "system", content: "Oprește folosirea uneltelor și oferă acum răspunsul final, clar și complet. Folosește informațiile deja obținute, citează numai sursele valide și menționează concis ce nu a putut fi verificat." });
   const finalResponse = await providerChat(model, messages, [], principal === "owner" ? null : 1500, false);

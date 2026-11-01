@@ -1188,7 +1188,8 @@ async function send() {
   const directCreation = ["text", "lyrics"].includes(task);
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = directCreation
     ? (task === "lyrics" ? "Nova compune versurile complete…" : "Nova redactează textul complet…")
-    : mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
+    : task === "business" && mode === "build" ? "Nova construiește site-ul afacerii și îl pregătește pentru publicare…"
+      : mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
   messageContainer().append(pending); el("messages").scrollTop = el("messages").scrollHeight;
   state.busy = true; el("sendBtn").disabled = true;
   try {
