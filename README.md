@@ -200,6 +200,8 @@ Versiunea 2.7.1 înlocuiește mesajul generic al motoarelor text cu erori sigure
 
 Versiunea 2.7.2 normalizează automat identificatorii Gemini primiți din catalog: `models/gemini-...` devine `gemini-...` înainte de salvare, afișare și trimiterea conversației. Setările Gemini existente sunt migrate la încărcare, fără intervenție manuală.
 
+Versiunea 2.7.3 recuperează automat cererile Gemini când modelul configurat a fost retras sau nu este disponibil pentru cheia curentă. Nova citește catalogul live, filtrează modelele conversaționale, încearcă în ordine modelele Flash stabile și versiunile mai noi, apoi salvează primul model care răspunde. O singură acțiune consumă în continuare o singură unitate din cota Nova.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

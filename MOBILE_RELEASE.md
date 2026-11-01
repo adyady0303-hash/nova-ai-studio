@@ -1,6 +1,6 @@
 # Publicare Android și iOS
 
-Nova AI Studio 2.7.2 folosește Capacitor și deschide exclusiv platforma HTTPS de la `https://www.nova-ai-studio.eu`. Identificatorul ambelor aplicații este `eu.nova.ai.studio`.
+Nova AI Studio 2.7.3 folosește Capacitor și deschide exclusiv platforma HTTPS de la `https://www.nova-ai-studio.eu`. Identificatorul ambelor aplicații este `eu.nova.ai.studio`.
 
 ## Verificare locală
 

@@ -58,7 +58,8 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
       fs.appendFileSync(callsPath, JSON.stringify({ provider, path: parsed.pathname, model: requestBody?.model || '', messages: requestBody?.messages || [] }) + '\\n');
       if (parsed.pathname.endsWith('/models')) {
         if (parsed.pathname.includes('/catalogless/')) return reply(404, { error: { message: 'catalog absent' } });
-        const models = provider === 'custom' ? ['llama-3.3-70b', 'custom-primary'] : [provider === 'openai' ? 'openai-fallback' : 'gemini-primary'];
+        const models = provider === 'custom' ? ['llama-3.3-70b', 'custom-primary']
+          : provider === 'openai' ? ['openai-fallback'] : ['models/gemini-3-flash', 'models/gemini-primary'];
         return reply(200, { data: models.map(id => ({ id })) });
       }
       if (parsed.pathname.endsWith('/images/generations')) {
@@ -68,6 +69,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
         const prompt = requestBody?.messages?.filter(message => message.role === 'user').at(-1)?.content || '';
         if (provider === 'custom' && prompt.includes('TRANSIENT')) return reply(429, { error: { message: 'temporar limitat' } });
         if (provider === 'custom' && prompt.includes('AUTH')) return reply(401, { error: { message: 'cheie respinsă' } });
+        if (provider === 'gemini' && prompt.includes('MODEL_RETRY') && requestBody.model === 'gemini-primary') return reply(404, { error: { message: 'model not found' } });
         return reply(200, { choices: [{ message: { role: 'assistant', content: 'Răspuns ' + provider } }], model: requestBody.model });
       }
       return reply(404, { error: { message: 'rută absentă' } });
@@ -225,4 +227,17 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
     poolProviders.push((await response.json()).provider);
   }
   assert.deepEqual(poolProviders, ['custom', 'openai', 'gemini'], 'modul automat folosește pe rând toate profilurile configurate');
+
+  const geminiSettings = await ownerRequest('/api/settings', {
+    providerId: 'gemini', textModel: 'gemini-primary',
+    routes: { text: 'gemini', image: 'openai', speech: 'openai', autoSelect: false, autoFallback: false },
+    search: { provider: 'bing' }
+  });
+  assert.equal(geminiSettings.status, 200, await geminiSettings.text());
+  const recoveredGemini = await ownerRequest('/api/chat', { model: 'gemini-primary', messages: [{ role: 'user', content: 'MODEL_RETRY' }] });
+  const recoveredGeminiText = await recoveredGemini.text();
+  assert.equal(recoveredGemini.status, 200, recoveredGeminiText);
+  assert.equal(JSON.parse(recoveredGeminiText).model, 'gemini-3-flash');
+  calls = fs.readFileSync(callsPath, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+  assert.deepEqual(calls.filter(call => call.path.endsWith('/chat/completions')).slice(-2).map(call => call.model), ['gemini-primary', 'gemini-3-flash']);
 });

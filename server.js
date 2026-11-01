@@ -913,6 +913,56 @@ function uploadedImage(value) {
   return { bytes, mime, extension: mime === "image/jpeg" ? "jpg" : mime.slice(6) };
 }
 
+function missingTextModel(error) {
+  return Number(error?.status) === 404 || /model.*(?:not found|does not exist|unknown|invalid|unavailable)|(?:not found|does not exist|unknown).*model/i.test(String(error?.message || ""));
+}
+
+function rankedGeminiChatModels(models) {
+  const candidates = [...new Set((Array.isArray(models) ? models : [])
+    .map(model => String(model || "").trim().replace(/^models\/+/, ""))
+    .filter(model => /^gemini-/i.test(model) && !/(embedding|imagen|image|tts|audio|live|robotics|aqa)/i.test(model)))];
+  const score = model => {
+    const value = model.toLowerCase();
+    const stable = /(preview|experimental|exp(?:-|$))/.test(value) ? 0 : 1;
+    const accessible = value.includes("flash") ? 2 : value.includes("pro") ? 1 : 0;
+    const versions = [...value.matchAll(/\d+(?:\.\d+)?/g)].map(match => Number(match[0]));
+    return [stable, accessible, ...versions.slice(0, 2)];
+  };
+  return candidates.sort((left, right) => {
+    const a = score(left), b = score(right);
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const difference = (b[index] || 0) - (a[index] || 0);
+      if (difference) return difference;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+async function chatWithResolvedTextModel(profile, preferredModel, options) {
+  try { return await chatWithProfile(profile, { ...options, model: preferredModel }); }
+  catch (firstError) {
+    if (profile.id !== "gemini" || !missingTextModel(firstError)) throw firstError;
+    let catalog = [];
+    try { catalog = await cachedProfileModels(profile); }
+    catch { throw firstError; }
+    let lastError = firstError;
+    for (const candidate of rankedGeminiChatModels(catalog).filter(candidate => candidate !== preferredModel).slice(0, 6)) {
+      try {
+        const result = await chatWithProfile(profile, { ...options, model: candidate });
+        profile.textModel = candidate;
+        aiHealthCache = null;
+        try { await persistAiSettings(aiConfig); }
+        catch (error) { console.error("Nova AI could not persist the resolved Gemini model:", { status: error.status || 500 }); }
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (!missingTextModel(error)) throw error;
+      }
+    }
+    throw lastError;
+  }
+}
+
 async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false) {
   const automatic = aiConfig.routes.autoSelect === true ? automaticTextProfiles() : [];
   const primary = automatic[0] || requireRouteProfile("text");
@@ -924,8 +974,7 @@ async function providerChat(model, messages, tools, maxOutputTokens = null, veri
   for (let index = 0; index < candidates.length; index++) {
     const profile = candidates[index];
     try {
-      return await chatWithProfile(profile, {
-        model: profile.id === primary.id ? model : profile.textModel,
+      return await chatWithResolvedTextModel(profile, profile.id === primary.id ? model : profile.textModel, {
         messages,
         tools,
         maxOutputTokens,
