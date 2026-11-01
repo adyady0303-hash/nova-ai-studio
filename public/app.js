@@ -2,6 +2,7 @@ const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, publication: null, view: "home" };
 let activeMessageStream = null;
 let providerDraftDirty = false, searchDraftDirty = false, editingProviderId = "", editingSearchProvider = "";
+let voiceRecognition = null, speakNextAssistant = false;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 const providerNames = {
   openai: "OpenAI", gemini: "Gemini", anthropic: "Anthropic Claude", openrouter: "OpenRouter",
@@ -34,6 +35,67 @@ async function api(url, options = {}) {
 }
 function jsonBody(value) { return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) }; }
 function toast(text) { const node = el("toast"); node.textContent = text; node.classList.add("show"); setTimeout(() => node.classList.remove("show"), 2200); }
+
+function updateVoiceChatButtons(listening) {
+  for (const id of ["voiceChatBtn", "homeVoiceChatBtn"]) {
+    const button = el(id); if (!button) continue;
+    button.classList.toggle("listening", listening);
+    button.setAttribute("aria-pressed", String(listening));
+    button.title = listening ? "Oprește ascultarea" : "Vorbește cu Nova";
+    button.setAttribute("aria-label", button.title);
+  }
+}
+
+function speakChatReply(text) {
+  if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance !== "function") return;
+  const clean = String(text || "").replace(/```[\s\S]*?```/g, " fragment de cod ").replace(/[*_#`>~-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 12000);
+  if (!clean) return;
+  speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(clean);
+  utterance.lang = "ro-RO"; utterance.rate = 1; utterance.pitch = 1;
+  const romanianVoice = speechSynthesis.getVoices().find(voice => /^ro(?:-|_)/i.test(voice.lang));
+  if (romanianVoice) utterance.voice = romanianVoice;
+  speechSynthesis.speak(utterance);
+}
+
+function startVoiceChat(targetId) {
+  if (voiceRecognition) { voiceRecognition.stop(); return; }
+  if (state.busy) { toast("Așteaptă răspunsul Nova înainte de un mesaj vocal nou."); return; }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (typeof Recognition !== "function") { toast("Recunoașterea vocală nu este disponibilă în acest browser. Folosește Chrome, Edge sau Safari actualizat."); return; }
+  const target = el(targetId), original = target.value.trim();
+  const recognition = new Recognition();
+  let finalTranscript = "", recognitionError = "";
+  recognition.lang = "ro-RO"; recognition.continuous = false; recognition.interimResults = true; recognition.maxAlternatives = 1;
+  recognition.onstart = () => { voiceRecognition = recognition; updateVoiceChatButtons(true); toast("Ascult… vorbește acum."); };
+  recognition.onresult = event => {
+    let finalText = "", interimText = "";
+    for (let index = 0; index < event.results.length; index++) {
+      const transcript = String(event.results[index][0]?.transcript || "").trim();
+      if (event.results[index].isFinal) finalText += `${transcript} `; else interimText += `${transcript} `;
+    }
+    finalTranscript = finalText.trim();
+    target.value = [original, finalText.trim(), interimText.trim()].filter(Boolean).join(" ");
+    if (targetId === "prompt") resizePrompt();
+  };
+  recognition.onerror = event => {
+    recognitionError = event.error || "unknown";
+    if (recognitionError === "not-allowed" || recognitionError === "service-not-allowed") toast("Permite accesul la microfon pentru a vorbi cu Nova.");
+    else if (recognitionError !== "aborted" && recognitionError !== "no-speech") toast("Nu am putut recunoaște vocea. Încearcă din nou.");
+  };
+  recognition.onend = () => {
+    if (voiceRecognition === recognition) voiceRecognition = null;
+    updateVoiceChatButtons(false);
+    if (!finalTranscript || recognitionError) return;
+    if (targetId === "homePrompt") {
+      el("prompt").value = target.value.trim(); target.value = ""; resizePrompt(); setView("chat");
+    }
+    speakNextAssistant = !looksLikeCvCreationRequest(el("prompt").value.trim());
+    send();
+  };
+  try { recognition.start(); }
+  catch { voiceRecognition = null; updateVoiceChatButtons(false); toast("Microfonul nu a putut fi pornit."); }
+}
 function iconFor(name) { return fileIcons[name.split(".").pop().toLowerCase()] || "·"; }
 function storageKey(key) { return state.account?.role === "subscriber" ? `${key}-${state.account.id}` : key; }
 function activeKey(project = state.project) { return storageKey(`nova-active-file-${project}`); }
@@ -767,6 +829,10 @@ function addBubble(role, content, events = [], metadata = null) {
     const row = document.createElement("div"); row.className = "apply-row"; addSpeechButton(row, messageText); node.append(row);
   }
   messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
+  if (role === "assistant" && messageText.trim() && speakNextAssistant) {
+    speakNextAssistant = false;
+    speakChatReply(messageText);
+  }
 }
 
 async function saveFile(showToast = false) {
@@ -1071,7 +1137,7 @@ async function send() {
   const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
   if (!promptText) return;
   if (el("taskSelect").value === "auto" && looksLikeCvCreationRequest(promptText)) {
-    el("prompt").value = ""; resizePrompt(); openCvBuilder(); return;
+    speakNextAssistant = false; el("prompt").value = ""; resizePrompt(); openCvBuilder(); return;
   }
   if (el("taskSelect").value === "image") {
     state.busy = true; el("sendBtn").disabled = true;
@@ -1079,7 +1145,7 @@ async function send() {
     finally { state.busy = false; el("sendBtn").disabled = false; }
     return;
   }
-  if (!model) { toast("Configurează furnizorul AI și alege un model."); return; }
+  if (!model) { speakNextAssistant = false; toast("Configurează furnizorul AI și alege un model."); return; }
   const workspaceWasOpen = el("app").classList.contains("workspace-open");
   setView("chat");
   const mode = el("modeSelect").value;
@@ -1134,6 +1200,8 @@ el("imageEditDialog").addEventListener("close", () => {
   imageEditPreviewUrl = ""; el("imageEditPreview").hidden = true; el("imageEditPreview").removeAttribute("src"); el("imageEditFile").value = "";
 });
 el("voiceComposerBtn").addEventListener("click", openVoiceDialog);
+el("voiceChatBtn").addEventListener("click", () => startVoiceChat("prompt"));
+el("homeVoiceChatBtn").addEventListener("click", () => startVoiceChat("homePrompt"));
 el("sideVoiceBtn").addEventListener("click", () => { setView("chat"); openVoiceDialog(); });
 el("generateVoiceBtn").addEventListener("click", generateVoiceFromDialog);
 el("voiceText").addEventListener("input", updateVoiceCost);

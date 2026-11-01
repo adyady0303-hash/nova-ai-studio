@@ -51,6 +51,11 @@ test('Nova dashboard routes creation tools to implemented actions', () => {
   assert.match(html, /id="dashboardSearch"/);
   assert.match(html, /id="dashboardModelTabs"/);
   assert.match(html, /id="providerRail"/);
+  assert.match(html, /id="voiceChatBtn"/);
+  assert.match(html, /id="homeVoiceChatBtn"/);
+  assert.match(app, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
+  assert.match(app, /new SpeechSynthesisUtterance/);
+  assert.match(app, /recognition\.lang = "ro-RO"/);
   assert.match(css, /nova-dashboard-hero\.webp/);
   assert.doesNotMatch(html, /__NOVA_VERSION__/);
   for (const asset of ['studio.css', 'orbit.css', 'dashboard.css', 'app.js']) {

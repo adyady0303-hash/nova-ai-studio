@@ -176,6 +176,8 @@ Versiunea 2.5.1 face resursele Command Center relative și fixează versiunea di
 
 Versiunea 2.6.0 actualizează selecția motoarelor: Nova consultă la conectare catalogul live al furnizorului configurat și recomandă automat primul model curent returnat de acesta. Ownerul poate alege în continuare orice model disponibil, iar abonații primesc automat modelul recomandat fără acces la chei sau configurarea administrativă. Căutarea rămâne pe ruta `auto`, cu Brave/Tavily când sunt configurate și Bing fără cheie ca rezervă.
 
+Versiunea 2.6.1 adaugă conversația vocală directă în browser. Butonul cu microfon transcrie vocea în limba română, trimite mesajul în chat și citește răspunsul Nova folosind vocea disponibilă pe dispozitiv, fără o cheie API vocală. Funcția necesită HTTPS, permisiunea pentru microfon și suportul Web Speech din browser.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.
