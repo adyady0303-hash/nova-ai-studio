@@ -937,6 +937,10 @@ function looksLikeCvCreationRequest(value) {
   return /\b(cv|curriculum vitae|resume)\b/.test(text) && /\b(cree|crea|fac|generez|trimit|public|online)/.test(text);
 }
 
+function usesDirectChat(task) {
+  return ["auto", "text", "lyrics"].includes(task);
+}
+
 function openCvBuilder() {
   const dialog = el("cvDialog"), form = el("cvForm");
   try {
@@ -1172,31 +1176,30 @@ async function send() {
     return;
   }
   if (!model) { speakNextAssistant = false; toast("Configurează furnizorul AI și alege un model."); return; }
-  const workspaceWasOpen = el("app").classList.contains("workspace-open");
   setView("chat");
   const mode = el("modeSelect").value;
   const task = el("taskSelect").value;
   const allowChanges = mode === "build" && (state.account?.role === "owner" || el("allowChanges").checked);
   const currentProject = state.projects.find(project => project.id === state.project);
   const activeContent = state.activePath ? el("editor").value : "";
-  const contextualPrompt = ["code", "business"].includes(task) || workspaceWasOpen
+  const contextualPrompt = ["code", "business"].includes(task)
     ? `${promptText}\n\nProiect: ${currentProject?.name || state.project}\nFișier activ: ${state.activePath || "niciunul"}\nConținutul fișierului activ:\n\`\`\`${state.activePath?.split(".").pop() || "text"}\n${activeContent}\n\`\`\``
     : promptText;
   state.chat.push({ role: "user", content: contextualPrompt, displayContent: promptText });
   localStorage.setItem(chatKey(), JSON.stringify(state.chat));
   addBubble("user", promptText); el("prompt").value = "";
-  const directCreation = ["text", "lyrics"].includes(task);
-  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = directCreation
-    ? (task === "lyrics" ? "Nova compune versurile complete…" : "Nova redactează textul complet…")
+  const directChat = usesDirectChat(task);
+  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = directChat
+    ? (task === "lyrics" ? "Nova compune versurile complete…" : task === "text" ? "Nova redactează textul complet…" : "Nova pregătește răspunsul…")
     : task === "business" && mode === "build" ? "Nova construiește site-ul afacerii și îl pregătește pentru publicare…"
       : mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
   messageContainer().append(pending); el("messages").scrollTop = el("messages").scrollHeight;
   state.busy = true; el("sendBtn").disabled = true;
   try {
-    if (!directCreation && state.dirty) await saveFile(false);
+    if (!directChat && state.dirty) await saveFile(false);
     const messages = state.chat.map(({ role, content }) => ({ role, content }));
-    const result = directCreation
-      ? await api("/api/chat", jsonBody({ model, task, verifyWeb: false, messages }))
+    const result = directChat
+      ? await api("/api/chat", jsonBody({ model, task, verifyWeb: task === "auto" && el("verifyWeb").checked, messages }))
       : await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages }));
     const assistantContent = result.content;
     state.chat.push({ role: "assistant", content: assistantContent });

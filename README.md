@@ -200,7 +200,7 @@ Versiunea 2.7.1 înlocuiește mesajul generic al motoarelor text cu erori sigure
 
 Versiunea 2.7.2 normalizează automat identificatorii Gemini primiți din catalog: `models/gemini-...` devine `gemini-...` înainte de salvare, afișare și trimiterea conversației. Setările Gemini existente sunt migrate la încărcare, fără intervenție manuală.
 
-Versiunea 2.7.3 recuperează automat cererile Gemini când modelul configurat a fost retras sau nu este disponibil pentru cheia curentă. Nova citește catalogul live, filtrează modelele conversaționale, încearcă în ordine modelele Flash stabile și versiunile mai noi, apoi salvează primul model care răspunde. O singură acțiune consumă în continuare o singură unitate din cota Nova.
+Versiunea 2.7.4 separă chatul liber de agentul de proiect: un mesaj obișnuit precum „salut” primește răspuns direct și nu mai pornește explorarea fișierelor. Codul și Afacerile folosesc în continuare agentul, iar Texte și Versuri livrează direct rezultatul cerut. Versiunea păstrează recuperarea automată Gemini introdusă în 2.7.3: Nova citește catalogul live când modelul configurat nu mai este disponibil și salvează primul model conversațional funcțional. O singură acțiune consumă în continuare o singură unitate din cota Nova.
 
 ### Înregistrare simplă și Google (1.4.1)
 

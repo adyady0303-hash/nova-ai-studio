@@ -1,4 +1,4 @@
-const CACHE = "nova-mobile-shell-v2.7.3";
+const CACHE = "nova-mobile-shell-v2.7.4";
 const SHELL = ["/offline.html", "/icon.svg", "/icon-192.png", "/icon-512.png", "/manifest.webmanifest"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));

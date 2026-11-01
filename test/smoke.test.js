@@ -98,7 +98,8 @@ test('Nova dashboard routes creation tools to implemented actions', () => {
   assert.match(app, /api\("\/api\/cv"/);
   assert.match(app, /looksLikeCvCreationRequest/);
   assert.match(app, /api\("\/api\/agent"/);
-  assert.match(app, /directCreation/);
+  assert.match(app, /function usesDirectChat\(task\)/);
+  assert.match(app, /const directChat = usesDirectChat\(task\)/);
   assert.match(app, /api\("\/api\/chat"/);
   assert.match(app, /generateImageFromPrompt\(\)/);
   assert.match(app, /generateImageEdit\(\)/);
