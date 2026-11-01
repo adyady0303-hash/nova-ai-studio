@@ -108,6 +108,7 @@ let publicationQueue = Promise.resolve();
 let aiSettingsCacheExpiresAt = 0;
 let aiHealthCache = null;
 let aiHealthPending = null;
+let automaticProviderCursor = 0;
 const googleAuth = createGoogleAuth({
   clientId: process.env.GOOGLE_CLIENT_ID || "",
   clientSecret: process.env.GOOGLE_CLIENT_SECRET || "",
@@ -450,13 +451,17 @@ function cloneAiConfig(value = aiConfig) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function automaticTextProfiles(config = aiConfig) {
+  const selected = config.profiles[config.routes.text];
+  return [selected, ...Object.values(config.profiles)]
+    .filter((profile, index, profiles) => profile && profiles.findIndex(item => item.id === profile.id) === index)
+    .filter(profile => routeProfileConfigured(profile, "text") && (profile.id === selected?.id || Boolean(profile.apiKey)));
+}
+
 function activeTextProfile(config = aiConfig) {
   const selected = config.profiles[config.routes.text];
   if (config.routes.autoSelect !== true) return selected || config.profiles.openai || Object.values(config.profiles)[0];
-  return [selected, ...Object.values(config.profiles)]
-    .filter((profile, index, profiles) => profile && profiles.findIndex(item => item.id === profile.id) === index)
-    .find(profile => routeProfileConfigured(profile, "text") && (profile.id === selected?.id || Boolean(profile.apiKey)))
-    || selected || config.profiles.openai || Object.values(config.profiles)[0];
+  return automaticTextProfiles(config)[0] || selected || config.profiles.openai || Object.values(config.profiles)[0];
 }
 
 function routeProfile(capability, config = aiConfig) {
@@ -797,14 +802,18 @@ function uploadedImage(value) {
 }
 
 async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false) {
-  const primary = requireRouteProfile("text");
-  const candidates = [primary, ...configuredFallbackProfiles(primary).slice(0, 1)];
+  const automatic = aiConfig.routes.autoSelect === true ? automaticTextProfiles() : [];
+  const primary = automatic[0] || requireRouteProfile("text");
+  const chosen = automatic.length
+    ? automatic[automaticProviderCursor++ % automatic.length]
+    : primary;
+  const candidates = [chosen, ...configuredFallbackProfiles(chosen).slice(0, 1)];
   let lastError;
   for (let index = 0; index < candidates.length; index++) {
     const profile = candidates[index];
     try {
       return await chatWithProfile(profile, {
-        model: index === 0 ? model : profile.textModel,
+        model: profile.id === primary.id ? model : profile.textModel,
         messages,
         tools,
         maxOutputTokens,

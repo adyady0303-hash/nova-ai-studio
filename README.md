@@ -72,7 +72,7 @@ Cheile din variabilele de mediu și secretele Render rămân pe server și nu tr
 
 `AI_PROVIDER` și `AI_FALLBACK_PROVIDERS` controlează rutarea textului, chatului și codului. Imaginile și vocea folosesc rute și modele media OpenAI-compatible separate și nu sunt mutate automat pe lista de fallback; configurează separat credențialele și `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` dacă folosești aceste funcții.
 
-În **Motoare AI → Rute pe capabilități**, opțiunea de selectare automată este activă implicit: dacă ruta de text aleasă nu are cheia sau modelul necesar, Nova folosește primul profil de text configurat. Fallback-ul între furnizori după o eroare temporară rămâne o opțiune separată, deoarece poate retrimite cererea și poate genera un cost suplimentar.
+În **Motoare AI → Rute pe capabilități**, modul automat este activ implicit: Nova distribuie cererile, pe rând, între toate profilurile cloud care au cheia și modelul configurate. Ruta selectată rămâne inclusă în pool și poate fi un serviciu local ales explicit. Fallback-ul după o eroare temporară rămâne o opțiune separată, deoarece poate retrimite aceeași cerere și poate genera un cost suplimentar.
 
 Conturile sunt salvate în `NOVA_DATA_DIR/data/subscriber-accounts.json`, cu parole protejate prin scrypt. Datele fiecărui abonat sunt păstrate în `NOVA_DATA_DIR/users/<account-id>/`; păstrează `NOVA_DATA_DIR` pe un volum persistent.
 
@@ -167,6 +167,8 @@ Versiunea 2.3.0 adaugă proiecte native Capacitor pentru Android și iOS, iconur
 Versiunea web/server 2.4.0 adaugă profiluri separate pentru OpenAI, Gemini, Anthropic Claude, OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, Ollama și API-uri OpenAI-compatible, plus Bing, Brave și Tavily pentru căutare. APK-ul Android semnat rămâne la versiunea 2.3.1 și deschide platforma web actualizată; instalarea PWA pe iPhone/iPad rămâne disponibilă. Creatorul de CV online și regulile abonaților sunt păstrate, iar contul owner rămâne protejat.
 
 Versiunea web/server 2.4.1 activează selectarea automată sigură: dacă ruta de text aleasă nu este configurată, Nova folosește primul profil cloud care are o cheie salvată. Serviciile locale fără cheie, precum Ollama, sunt alese automat numai când sunt selectate explicit, ca să nu fie raportate drept disponibile înainte să ruleze.
+
+Versiunea web/server 2.4.2 extinde modul automat la un pool: cererile sunt distribuite succesiv între toți furnizorii de text configurați, nu doar către modelul OpenAI implicit. Fiecare răspuns păstrează numele furnizorului și modelului folosite.
 
 ### Înregistrare simplă și Google (1.4.1)
 

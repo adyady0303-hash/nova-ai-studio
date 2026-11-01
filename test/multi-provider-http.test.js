@@ -117,7 +117,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   const configured = await ownerRequest('/api/settings', {
     providerId: 'custom', baseUrl: 'https://custom.example/v1', apiKey: 'custom-secret-not-real',
     textModel: 'custom-primary', imageModel: 'custom-image', speechModel: 'custom-speech', voice: 'nova',
-    routes: { text: 'custom', image: 'openai', speech: 'openai', autoSelect: true, autoFallback: true },
+    routes: { text: 'custom', image: 'openai', speech: 'openai', autoSelect: false, autoFallback: true },
     search: { provider: 'bing', apiKey: '', clearApiKey: false }
   });
   const configuredText = await configured.text();
@@ -129,7 +129,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   for (const secret of ['custom-secret-not-real', 'openai-secret-not-real', 'gemini-secret-not-real']) {
     assert.doesNotMatch(serializedSettings, new RegExp(secret));
   }
-  assert.deepEqual(ownerSettings.settings.routes, { text: 'custom', image: 'openai', speech: 'openai', autoSelect: true, autoFallback: true });
+  assert.deepEqual(ownerSettings.settings.routes, { text: 'custom', image: 'openai', speech: 'openai', autoSelect: false, autoFallback: true });
   assert.equal(ownerSettings.settings.providers.find(provider => provider.id === 'custom').apiKeyConfigured, true);
 
   const ownerHealth = await (await fetch(base + '/api/health', { headers: { cookie: ownerCookie } })).json();
@@ -139,7 +139,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
 
   const explicitOpenAiCustomUrl = await ownerRequest('/api/settings', {
     providerId: 'openai', baseUrl: 'https://custom.example/v1', textModel: 'should-not-save',
-    routes: { text: 'custom', image: 'openai', speech: 'openai', autoFallback: true },
+    routes: { text: 'custom', image: 'openai', speech: 'openai', autoSelect: true, autoFallback: true },
     search: { provider: 'bing' }
   });
   assert.equal(explicitOpenAiCustomUrl.status, 400);
@@ -215,4 +215,12 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   assert.equal(cataloglessHealth.connected, true);
   assert.deepEqual(cataloglessHealth.models, ['custom-no-catalog']);
   assert.match(cataloglessHealth.version, /catalog \/models indisponibil/);
+
+  const poolProviders = [];
+  for (let index = 0; index < 3; index++) {
+    const response = await ownerRequest('/api/chat', { model: 'custom-no-catalog', messages: [{ role: 'user', content: `POOL ${index}` }] });
+    assert.equal(response.status, 200);
+    poolProviders.push((await response.json()).provider);
+  }
+  assert.deepEqual(poolProviders, ['custom', 'openai', 'gemini'], 'modul automat folosește pe rând toate profilurile configurate');
 });

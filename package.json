@@ -1,6 +1,6 @@
 {
   "name": "nova-ai-studio",
-  "version": "2.4.1",
+  "version": "2.4.2",
   "private": true,
   "description": "Studio AI pentru chat, programare, imagini, voice-over și afaceri online",
   "scripts": {
