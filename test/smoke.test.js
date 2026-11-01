@@ -84,6 +84,11 @@ test('Nova dashboard routes creation tools to implemented actions', () => {
   assert.match(app, /async function saveNewProject\(name\)/);
   assert.match(app, /project-cover/);
   assert.match(app, /function submitHomePrompt\(\)/);
+  assert.match(app, /function setSidebarActive\(target\)/);
+  assert.match(app, /if \(\["home", "chat"\]\.includes\(view\)\) setTask\("auto"\)/);
+  assert.match(html, /data-quick-task="image"/);
+  assert.match(html, /data-quick-task="code"/);
+  assert.match(html, /data-quick-task="business"/);
   assert.match(html, /id="cvDialog"/);
   assert.match(html, /id="openCvBuilderBtn"/);
   assert.match(app, /api\("\/api\/cv"/);
@@ -492,6 +497,9 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.ok(appHtml.includes(`v${version}</span>`));
   assert.doesNotMatch(appHtml, /__NOVA_VERSION__/);
   assert.equal(appPage.headers.get('cache-control'), 'no-cache');
+  const versionedApp = await request(`/app.js?v=${version}`);
+  assert.equal(versionedApp.status, 200);
+  assert.match(versionedApp.headers.get('cache-control'), /max-age=31536000, immutable/);
   const settings = await request('/api/settings');
   assert.equal(settings.status, 200);
   const settingsText = await settings.text();

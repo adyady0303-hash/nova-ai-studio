@@ -553,18 +553,25 @@ function updateHomeHistory() {
   }
 }
 
+function setSidebarActive(target) {
+  document.querySelectorAll(".create-menu .create-item").forEach(button => {
+    const active = button === target;
+    button.classList.toggle("active", active);
+    if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
+  });
+}
+
 function setView(view) {
   state.view = view === "chat" ? "chat" : "home";
   if (state.view === "home" && el("prompt").value.trim() && !el("homePrompt").value.trim()) el("homePrompt").value = el("prompt").value;
   el("chat").classList.toggle("home-active", state.view === "home");
   if (state.view === "chat") setWorkspaceOpen(false);
   setProjectsOpen(false);
-  const activeView = ["create", "explore"].includes(view) ? view : state.view;
-  document.querySelectorAll(".global-nav-link[data-view]").forEach(button => {
-    const active = button.dataset.view === activeView;
-    button.classList.toggle("active", active);
-    if (active) button.setAttribute("aria-current", "page"); else button.removeAttribute("aria-current");
-  });
+  const selectedTask = el("taskSelect").value;
+  const activeButton = state.view === "home"
+    ? document.querySelector('.create-item[data-view="home"]')
+    : document.querySelector(selectedTask === "auto" ? '.create-item[data-view="chat"]' : `.create-item[data-task="${selectedTask}"]`);
+  setSidebarActive(activeButton);
   updateHomeHistory();
 }
 
@@ -573,7 +580,13 @@ function setProjectsOpen(open) {
   app?.classList.toggle("projects-open", open);
   if (drawer) drawer.open = open;
   if (button) button.setAttribute("aria-expanded", String(open));
-  button?.classList.toggle("active", open);
+  if (open) setSidebarActive(button);
+  else {
+    const task = el("taskSelect")?.value || "auto";
+    setSidebarActive(state.view === "home"
+      ? document.querySelector('.create-item[data-view="home"]')
+      : document.querySelector(task === "auto" ? '.create-item[data-view="chat"]' : `.create-item[data-task="${task}"]`));
+  }
 }
 
 function renderFiles() {
@@ -622,7 +635,8 @@ function setTask(task) {
   const supported = ["auto", "image", "code", "text", "lyrics", "business"];
   const selected = supported.includes(task) ? task : "auto";
   el("taskSelect").value = selected;
-  document.querySelectorAll(".create-item[data-task], .mode-chip[data-task]").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
+  document.querySelectorAll(".mode-chip[data-task]").forEach(button => button.classList.toggle("active", button.dataset.task === selected));
+  if (state.view === "chat") setSidebarActive(document.querySelector(selected === "auto" ? '.create-item[data-view="chat"]' : `.create-item[data-task="${selected}"]`));
   const prompts = {
     auto: "Descrie ce vrei să creezi… (Enter trimite, Shift+Enter pentru rând nou)",
     image: "Descrie imaginea pe care vrei s-o creezi…",
@@ -690,7 +704,7 @@ function openVoiceDialog() {
   const configuredVoice = routeProfile("speech")?.voice;
   el("speechVoice").placeholder = configuredVoice ? `Vocea configurată: ${configuredVoice}` : "Vocea configurată";
   status.hidden = true; status.textContent = ""; status.classList.remove("error");
-  updateVoiceCost(); dialog.showModal(); voiceText.focus();
+  updateVoiceCost(); setSidebarActive(el("sideVoiceBtn")); dialog.showModal(); voiceText.focus();
 }
 
 function mediaMetadata(label, result, capability) {
@@ -935,7 +949,7 @@ function openCvBuilder() {
       }
     }
   } catch { sessionStorage.removeItem(storageKey("nova-cv-draft")); }
-  el("cvStatus").hidden = true;
+  el("cvStatus").hidden = true; setSidebarActive(el("openCvBuilderBtn"));
   dialog.showModal();
   requestAnimationFrame(() => el("cvName").focus());
 }
@@ -1292,6 +1306,7 @@ document.querySelectorAll(".create-item[data-task], .mode-chip[data-task]").forE
 }));
 document.querySelectorAll(".global-nav-link[data-view]").forEach(button => button.addEventListener("click", () => {
   const view = button.dataset.view;
+  if (["home", "chat"].includes(view)) setTask("auto");
   if (view === "create") {
     setView("create");
     requestAnimationFrame(() => el("homeTools").scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -1311,7 +1326,13 @@ el("projectDrawer").addEventListener("toggle", event => {
   const open = event.currentTarget.open;
   el("app").classList.toggle("projects-open", open);
   el("projectsNavBtn").setAttribute("aria-expanded", String(open));
-  el("projectsNavBtn").classList.toggle("active", open);
+  if (open) setSidebarActive(el("projectsNavBtn"));
+  else {
+    const task = el("taskSelect").value;
+    setSidebarActive(state.view === "home"
+      ? document.querySelector('.create-item[data-view="home"]')
+      : document.querySelector(task === "auto" ? '.create-item[data-view="chat"]' : `.create-item[data-task="${task}"]`));
+  }
 });
 el("app").addEventListener("click", event => {
   if (event.target === el("app") && el("app").classList.contains("projects-open")) setProjectsOpen(false);
@@ -1354,6 +1375,7 @@ document.addEventListener("keydown", event => {
   }
 });
 document.querySelectorAll("[data-quick-prompt]").forEach(button => button.addEventListener("click", () => {
+  setTask(button.dataset.quickTask || "auto");
   el("homePrompt").value = button.dataset.quickPrompt; el("homePrompt").focus();
 }));
 el("homeVoiceBtn").addEventListener("click", () => {

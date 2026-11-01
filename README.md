@@ -188,6 +188,8 @@ Versiunea 2.6.5 migrează automat configurațiile OpenAI de la `gpt-image-1` la 
 
 Versiunea 2.6.6 trimite cererile pentru texte și versuri direct către motorul conversațional configurat, fără a le condiționa de proiectul de programare. Versurile primesc instrucțiuni dedicate pentru titlu, strofe, refren și punte, iar interfața afișează corect răspunsurile care nu conțin evenimente de editare a fișierelor.
 
+Versiunea 2.6.7 face navigarea laterală exclusivă și predictibilă: Chat AI revine întotdeauna la chat liber, iar Programare, Imagini, Voce, CV, Proiecte, Texte și Afaceri deschid instrumentul lor. Comenzile rapide aleg automat motorul potrivit. Fișierele CSS și JavaScript versionate folosesc cache persistent, reducând timpul de încărcare la vizitele următoare.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

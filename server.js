@@ -2082,14 +2082,19 @@ async function handle(req, res) {
       res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       return res.end("Pagina nu a fost găsită.");
     }
+    const extension = path.extname(filePath).toLowerCase();
+    const versionedAsset = [".css", ".js"].includes(extension) && url.searchParams.has("v");
+    const cacheControl = extension === ".html"
+      ? "no-cache"
+      : versionedAsset ? "public, max-age=31536000, immutable" : "public, max-age=86400";
     res.writeHead(200, {
-      "content-type": MIME[path.extname(filePath).toLowerCase()] || "application/octet-stream",
+      "content-type": MIME[extension] || "application/octet-stream",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
-      "cache-control": "no-cache"
+      "cache-control": cacheControl
     });
     if (req.method === "HEAD") return res.end();
-    res.end(path.extname(filePath).toLowerCase() === ".html" ? data.toString("utf8").replaceAll("__NOVA_VERSION__", require("./package.json").version) : data);
+    res.end(extension === ".html" ? data.toString("utf8").replaceAll("__NOVA_VERSION__", require("./package.json").version) : data);
   });
 }
 
