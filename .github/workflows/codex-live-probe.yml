@@ -1,0 +1,23 @@
+name: Temporary Nova 2.7.3 live probe
+on:
+  push:
+    branches: [codex-live-probe-273]
+permissions:
+  contents: write
+jobs:
+  verify-live:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Wait for Render
+        run: |
+          for attempt in $(seq 1 45); do
+            response=$(curl --fail --silent --show-error --max-time 20 https://www.nova-ai-studio.eu/api/version || true)
+            if echo "$response" | grep -q '"version":"2.7.3"'; then
+              git tag codex-live-probe-ok-ade29aa
+              git push origin codex-live-probe-ok-ade29aa
+              exit 0
+            fi
+            sleep 20
+          done
+          exit 1
