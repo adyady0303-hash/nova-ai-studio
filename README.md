@@ -182,6 +182,8 @@ Versiunea 2.6.2 mută panoul principal Chat Nova în partea de sus a paginii, im
 
 Versiunea 2.6.3 adaugă în meniul lateral al conturilor de abonat un card „Upgrade Pro / Premium”, conectat la pagina reală de abonamente. Pentru conturile cu plan lunar activ, cardul afișează starea Pro, cota rămasă și accesul la administrarea abonamentului. Ownerul nu vede această promovare.
 
+Versiunea 2.6.4 verifică modelul de imagine în catalogul live al furnizorului. Dacă acel catalog publică modele de imagine și modelul salvat nu mai există, Nova alege automat cel mai nou model compatibil și adaptează parametrii pentru GPT Image sau DALL·E. API-urile compatibile care listează numai modelele de chat continuă să poată folosi endpointul media configurat; dacă acesta respinge modelul, Nova afișează o explicație clară în locul erorii brute „model does not exist”.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

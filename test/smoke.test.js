@@ -189,7 +189,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     if (req.method === 'GET' && req.url === '/v1/models') {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify({ data: [
-        { id: 'gpt-4.1-mini' }, { id: 'gpt-6.1-mini' }, { id: 'gpt-image-1' },
+        { id: 'gpt-4.1-mini' }, { id: 'gpt-6.1-mini' }, { id: 'gpt-image-2' },
         { id: 'gpt-6.1' }, { id: 'gpt-6.1-2026-10-01' }
       ] }));
     }
@@ -544,7 +544,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(image.status, 200);
   assert.match((await image.json()).dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(mockImageBody.prompt, 'Imagine de probă Nova');
-  assert.equal(mockImageBody.model, 'gpt-image-1');
+  assert.equal(mockImageBody.model, 'gpt-image-2');
   assert.equal(mockImageBody.size, '1024x1024');
   assert.equal(mockImageBody.quality, 'high');
   const sourcePng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
@@ -554,7 +554,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(editedImageResult.dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(editedImageResult.edited, true);
   const imageEditForm = mockImageEditBody.toString('latin1');
-  for (const value of ['name="model"', 'gpt-image-1', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024', 'name="quality"', 'high']) assert.match(imageEditForm, new RegExp(value));
+  for (const value of ['name="model"', 'gpt-image-2', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024', 'name="quality"', 'high']) assert.match(imageEditForm, new RegExp(value));
   assert.ok(mockImageEditBody.includes(Buffer.from('Schimbă fundalul în albastru')));
   assert.equal((await post('/api/media/image/edit', { prompt: '', image: `data:image/png;base64,${sourcePng}` })).status, 400);
   assert.equal((await post('/api/media/image/edit', { prompt: 'Test', image: 'data:text/plain;base64,dGVzdA==' })).status, 400);

@@ -761,6 +761,55 @@ async function cachedProfileModels(profile) {
   return [...await promise];
 }
 
+function rankedImageModels(models) {
+  const candidates = [...new Set((Array.isArray(models) ? models : []).map(model => String(model || "").trim()).filter(model =>
+    model && /(gpt-image|dall-?e|imagen|flux|stable[-_. ]?diffusion|image[-_. ]?(?:gen|generation))/i.test(model)
+      && !/(embedding|moderation|vision|classifier)/i.test(model)
+  ))];
+  const score = model => {
+    const value = model.toLowerCase();
+    const family = value.includes("gpt-image") ? 5 : value.includes("imagen") ? 4 : value.includes("dall") ? 3 : value.includes("flux") ? 2 : 1;
+    const numbers = [...value.matchAll(/\d+(?:\.\d+)?/g)].map(match => Number(match[0]));
+    return [family, ...numbers.slice(0, 3)];
+  };
+  return candidates.sort((left, right) => {
+    const a = score(left), b = score(right);
+    for (let index = 0; index < Math.max(a.length, b.length); index++) {
+      const difference = (b[index] || 0) - (a[index] || 0);
+      if (difference) return difference;
+    }
+    return left.localeCompare(right);
+  });
+}
+
+async function resolvedImageModel(profile) {
+  try {
+    const catalog = await cachedProfileModels(profile);
+    const available = rankedImageModels(catalog);
+    if (available.includes(profile.imageModel)) return profile.imageModel;
+    if (available.length) return available[0];
+  } catch (error) {
+    // Some compatible APIs do not implement /models; their configured media
+    // model is still allowed and the generation endpoint remains authoritative.
+  }
+  return profile.imageModel;
+}
+
+function imageGenerationOptions(model) {
+  if (/dall-?e-?3/i.test(model)) return { size: "1024x1024", quality: "hd", n: 1 };
+  if (/dall-?e-?2/i.test(model)) return { size: "1024x1024", n: 1 };
+  if (/gpt-image/i.test(model)) return { size: "1024x1024", quality: "high", n: 1 };
+  return { size: "1024x1024", n: 1 };
+}
+
+function friendlyImageProviderError(error, profile, model) {
+  const message = String(error?.message || "");
+  if (/(model).*(does not exist|not found|unknown|invalid)|(does not exist|not found|unknown model)/i.test(message)) {
+    return `Modelul de imagine „${model}” nu este disponibil la ${profile.name}. Deschide Motoare AI și alege o rută de imagini oferită de furnizor.`;
+  }
+  return message || "Generarea imaginii a eșuat.";
+}
+
 function requireRouteProfile(capability) {
   const profile = routeProfile(capability);
   if (!profile?.capabilities?.[capability]) throw Object.assign(new Error(`Nu este configurat un motor pentru ${capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text"}.`), { status: 503 });
@@ -1504,38 +1553,42 @@ async function handle(req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/image") {
+    let profile, imageModel;
     try {
-      const profile = requireRouteProfile("image");
+      profile = requireRouteProfile("image");
       if (profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă generare de imagini compatibilă.`), { status: 503 });
       const body = await readJson(req);
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
       if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
+      imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
       const result = await openAiCompatibleJson(profile, "/images/generations", {
-        method: "POST", json: { model: profile.imageModel, prompt, size: "1024x1024", quality: "high", n: 1 }
+        method: "POST", json: { model: imageModel, prompt, ...imageGenerationOptions(imageModel) }
       }, 300000);
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
       const output = providerImageDataUrl(image);
-      return json(res, 200, { ...output, model: profile.imageModel, provider: profile.id, providerName: profile.name });
-    } catch (error) { return json(res, error.status || 502, { error: error.message || "Generarea imaginii a eșuat.", providerError: true }); }
+      return json(res, 200, { ...output, model: imageModel, provider: profile.id, providerName: profile.name });
+    } catch (error) { return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Generarea imaginii a eșuat."), providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/image/edit") {
+    let profile, imageModel;
     try {
-      const profile = requireRouteProfile("image");
+      profile = requireRouteProfile("image");
       if (!profile.capabilities.imageEdit || profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă editare de imagini compatibilă.`), { status: 503 });
       const body = await readJson(req, MAX_IMAGE_EDIT_BODY);
       const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
       if (!prompt) return json(res, 400, { error: "Descrie schimbarea pe care o dorești în fotografie." });
       const source = uploadedImage(body.image);
+      imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const result = await openAiCompatibleImageEdit(profile, source, prompt, { model: profile.imageModel, timeout: 300000 });
+      const result = await openAiCompatibleImageEdit(profile, source, prompt, { model: imageModel, timeout: 300000 });
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat imaginea modificată.");
       const output = providerImageDataUrl(image);
-      return json(res, 200, { ...output, model: profile.imageModel, provider: profile.id, providerName: profile.name, edited: true });
-    } catch (error) { return json(res, error.status || 502, { error: error.message || "Modificarea imaginii a eșuat.", providerError: true }); }
+      return json(res, 200, { ...output, model: imageModel, provider: profile.id, providerName: profile.name, edited: true });
+    } catch (error) { return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Modificarea imaginii a eșuat."), providerError: true }); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/speech") {
