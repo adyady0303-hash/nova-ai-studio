@@ -152,7 +152,7 @@ Pagina principală și chatul folosesc designul Orbit, cu instrumente dedicate, 
 
 ### Actualizarea suitei creative (1.5.0)
 
-Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul aleg automat cel mai nou model GPT compatibil disponibil contului owner, căutarea web are limite clare și finalizează întotdeauna cu un răspuns, iar generarea și editarea imaginilor folosesc implicit modelul complet `gpt-image-1` la calitate ridicată.
+Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul aleg automat cel mai nou model GPT compatibil disponibil contului owner, căutarea web are limite clare și finalizează întotdeauna cu un răspuns, iar generarea și editarea imaginilor folosesc implicit modelul complet `gpt-image-1.5` la calitate ridicată.
 
 Începând cu 1.5.1, abonații au acces și la generarea și editarea imaginilor, în limita cotei planului. Configurarea furnizorului AI, cheile API, verificările administrative și tabloul de administrare rămân disponibile exclusiv ownerului.
 
@@ -183,6 +183,8 @@ Versiunea 2.6.2 mută panoul principal Chat Nova în partea de sus a paginii, im
 Versiunea 2.6.3 adaugă în meniul lateral al conturilor de abonat un card „Upgrade Pro / Premium”, conectat la pagina reală de abonamente. Pentru conturile cu plan lunar activ, cardul afișează starea Pro, cota rămasă și accesul la administrarea abonamentului. Ownerul nu vede această promovare.
 
 Versiunea 2.6.4 verifică modelul de imagine în catalogul live al furnizorului. Dacă acel catalog publică modele de imagine și modelul salvat nu mai există, Nova alege automat cel mai nou model compatibil și adaptează parametrii pentru GPT Image sau DALL·E. API-urile compatibile care listează numai modelele de chat continuă să poată folosi endpointul media configurat; dacă acesta respinge modelul, Nova afișează o explicație clară în locul erorii brute „model does not exist”.
+
+Versiunea 2.6.5 migrează automat configurațiile OpenAI de la `gpt-image-1` la `gpt-image-1.5`. Dacă furnizorul respinge modelul ales, Nova încearcă automat modelele OpenAI de imagine compatibile, fără să trimită utilizatorul în setări după prima eroare. O singură acțiune a utilizatorului consumă cel mult o unitate din cota Nova, inclusiv când sunt încercate alternativele.
 
 ### Înregistrare simplă și Google (1.4.1)
 

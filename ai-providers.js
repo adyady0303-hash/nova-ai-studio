@@ -22,7 +22,7 @@ const ALL_MEDIA = { text: true, image: true, imageEdit: true, speech: true };
 const PLATFORM_PRESETS = deepFreeze({
   openai: {
     id: "openai", name: "OpenAI", protocol: "openai", baseUrl: "https://api.openai.com/v1",
-    textModel: "gpt-5.4", imageModel: "gpt-image-1", speechModel: "gpt-4o-mini-tts", voice: "nova",
+    textModel: "gpt-5.4", imageModel: "gpt-image-1.5", speechModel: "gpt-4o-mini-tts", voice: "nova",
     capabilities: ALL_MEDIA, requiresKey: true, outputTokenField: "max_completion_tokens"
   },
   gemini: {

@@ -30,6 +30,7 @@ test('public catalog exposes every supported platform without credentials', () =
   assert.strictEqual(catalog, PLATFORM_CATALOG);
   assert.equal(PLATFORM_PRESETS.gemini.baseUrl, 'https://generativelanguage.googleapis.com/v1beta/openai');
   assert.equal(PLATFORM_PRESETS.anthropic.protocol, 'anthropic');
+  assert.equal(PLATFORM_PRESETS.openai.imageModel, 'gpt-image-1.5');
   assert.equal(PLATFORM_PRESETS.ollama.requiresKey, false);
   assert.equal(PLATFORM_CATALOG.some(item => Object.hasOwn(item, 'apiKey')), false);
   assert.equal(Object.isFrozen(PLATFORM_PRESETS), true);

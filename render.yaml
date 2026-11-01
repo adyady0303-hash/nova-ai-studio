@@ -49,7 +49,7 @@ services:
       - key: OPENAI_MODEL
         value: gpt-5.4
       - key: OPENAI_IMAGE_MODEL
-        value: gpt-image-1
+        value: gpt-image-1.5
       - key: OPENAI_SPEECH_MODEL
         value: gpt-4o-mini-tts
       - key: WEB_SEARCH_PROVIDER

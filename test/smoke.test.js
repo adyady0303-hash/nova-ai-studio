@@ -181,6 +181,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let mockSpeechMode = 'audio';
   let mockImageBody = null;
   let mockImageEditBody = Buffer.alloc(0);
+  let mockImageAttempts = 0, mockImageEditAttempts = 0;
   const providerServer = http.createServer((req, res) => {
     if (req.headers.authorization !== expectedAuthorization) {
       res.writeHead(401, { 'content-type': 'application/json' });
@@ -267,6 +268,11 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         mockImageBody = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        mockImageAttempts++;
+        if (mockImageBody.model === 'gpt-image-2') {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          return res.end(JSON.stringify({ error: { message: "The model 'gpt-image-2' does not exist." } }));
+        }
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' }] }));
       });
@@ -277,7 +283,12 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         mockImageEditBody = Buffer.concat(chunks);
+        mockImageEditAttempts++;
         assert.match(req.headers['content-type'], /^multipart\/form-data; boundary=/);
+        if (mockImageEditBody.includes(Buffer.from('gpt-image-2'))) {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          return res.end(JSON.stringify({ error: { message: "The model 'gpt-image-2' does not exist." } }));
+        }
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' }] }));
       });
@@ -544,7 +555,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(image.status, 200);
   assert.match((await image.json()).dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(mockImageBody.prompt, 'Imagine de probă Nova');
-  assert.equal(mockImageBody.model, 'gpt-image-2');
+  assert.equal(mockImageBody.model, 'gpt-image-1.5');
+  assert.equal(mockImageAttempts, 2);
   assert.equal(mockImageBody.size, '1024x1024');
   assert.equal(mockImageBody.quality, 'high');
   const sourcePng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
@@ -554,7 +566,8 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match(editedImageResult.dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(editedImageResult.edited, true);
   const imageEditForm = mockImageEditBody.toString('latin1');
-  for (const value of ['name="model"', 'gpt-image-2', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024', 'name="quality"', 'high']) assert.match(imageEditForm, new RegExp(value));
+  for (const value of ['name="model"', 'gpt-image-1.5', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024', 'name="quality"', 'high']) assert.match(imageEditForm, new RegExp(value));
+  assert.equal(mockImageEditAttempts, 2);
   assert.ok(mockImageEditBody.includes(Buffer.from('Schimbă fundalul în albastru')));
   assert.equal((await post('/api/media/image/edit', { prompt: '', image: `data:image/png;base64,${sourcePng}` })).status, 400);
   assert.equal((await post('/api/media/image/edit', { prompt: 'Test', image: 'data:text/plain;base64,dGVzdA==' })).status, 400);

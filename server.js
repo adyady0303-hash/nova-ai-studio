@@ -29,7 +29,7 @@ const ACCESS_USER = process.env.NOVA_ACCESS_USER || "";
 const ACCESS_PASSWORD = process.env.NOVA_ACCESS_PASSWORD || "";
 const DEFAULT_TEXT_MODEL = PLATFORM_PRESETS.openai.textModel;
 const DEFAULT_IMAGE_MODEL = PLATFORM_PRESETS.openai.imageModel;
-const AI_SETTINGS_SCHEMA_VERSION = 4;
+const AI_SETTINGS_SCHEMA_VERSION = 5;
 const configuredAiProvider = String(process.env.AI_PROVIDER || "").trim().toLowerCase();
 const environmentProfiles = createProfilesFromEnv({ ...process.env, OLLAMA_URL: process.env.OLLAMA_URL || OLLAMA });
 const environmentProfileMap = Object.fromEntries(environmentProfiles.map(profile => [profile.id, profile]));
@@ -651,9 +651,12 @@ function normalizedAiConfig(value) {
 function applyStoredAiSettings(value) {
   if (!value || typeof value !== "object") return;
   try {
-    if (Number(value.schemaVersion) >= AI_SETTINGS_SCHEMA_VERSION && (value.configCipher || value.apiKeyCipher)) {
+    if (value.configCipher || (Number(value.schemaVersion) >= 3 && value.apiKeyCipher)) {
       const decrypted = decryptStoredValue(value, value.configCipher ? "configCipher" : "apiKeyCipher", value.configIv ? "configIv" : "apiKeyIv", value.configTag ? "configTag" : "apiKeyTag");
-      aiConfig = normalizedAiConfig(JSON.parse(decrypted));
+      const migrated = normalizedAiConfig(JSON.parse(decrypted));
+      if (migrated.profiles.openai?.imageModel === "gpt-image-1") migrated.profiles.openai.imageModel = DEFAULT_IMAGE_MODEL;
+      migrated.schemaVersion = AI_SETTINGS_SCHEMA_VERSION;
+      aiConfig = migrated;
       return;
     }
     if (!["openai", "ollama"].includes(value.provider)) return;
@@ -663,7 +666,7 @@ function applyStoredAiSettings(value) {
       ? DEFAULT_TEXT_MODEL
       : storedTextModel;
     const storedImageModel = String(value.imageModel || DEFAULT_IMAGE_MODEL);
-    const imageModel = Number(value.schemaVersion || 1) < AI_SETTINGS_SCHEMA_VERSION && storedImageModel === "gpt-image-1-mini"
+    const imageModel = Number(value.schemaVersion || 1) < AI_SETTINGS_SCHEMA_VERSION && ["gpt-image-1-mini", "gpt-image-1"].includes(storedImageModel)
       ? DEFAULT_IMAGE_MODEL
       : storedImageModel;
     const officialOpenAi = PLATFORM_PRESETS.openai.baseUrl.replace(/\/+$/, "");
@@ -802,9 +805,47 @@ function imageGenerationOptions(model) {
   return { size: "1024x1024", n: 1 };
 }
 
+function missingImageModel(error) {
+  return /(model).*(does not exist|not found|unknown|invalid)|(does not exist|not found|unknown model)/i.test(String(error?.message || ""));
+}
+
+function openAiImageCandidates(profile, preferred, { editing = false } = {}) {
+  if (profile.id !== "openai" && !/^gpt-image-/i.test(preferred || "")) return [preferred];
+  const fallbacks = editing ? ["gpt-image-1.5", "gpt-image-1"] : ["gpt-image-1.5", "gpt-image-1", "dall-e-3"];
+  return [...new Set([preferred, ...fallbacks].filter(Boolean))];
+}
+
+async function generateWithAvailableImageModel(profile, prompt, preferred) {
+  let lastError;
+  for (const model of openAiImageCandidates(profile, preferred)) {
+    try {
+      const result = await openAiCompatibleJson(profile, "/images/generations", {
+        method: "POST", json: { model, prompt, ...imageGenerationOptions(model) }
+      }, 300000);
+      return { result, model };
+    } catch (error) {
+      lastError = error;
+      if (!missingImageModel(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
+async function editWithAvailableImageModel(profile, source, prompt, preferred) {
+  let lastError;
+  for (const model of openAiImageCandidates(profile, preferred, { editing: true })) {
+    try { return { result: await openAiCompatibleImageEdit(profile, source, prompt, { model, timeout: 300000 }), model }; }
+    catch (error) {
+      lastError = error;
+      if (!missingImageModel(error)) throw error;
+    }
+  }
+  throw lastError;
+}
+
 function friendlyImageProviderError(error, profile, model) {
   const message = String(error?.message || "");
-  if (/(model).*(does not exist|not found|unknown|invalid)|(does not exist|not found|unknown model)/i.test(message)) {
+  if (missingImageModel(error)) {
     return `Modelul de imagine „${model}” nu este disponibil la ${profile.name}. Deschide Motoare AI și alege o rută de imagini oferită de furnizor.`;
   }
   return message || "Generarea imaginii a eșuat.";
@@ -1562,9 +1603,8 @@ async function handle(req, res) {
       if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
       imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const result = await openAiCompatibleJson(profile, "/images/generations", {
-        method: "POST", json: { model: imageModel, prompt, ...imageGenerationOptions(imageModel) }
-      }, 300000);
+      const generated = await generateWithAvailableImageModel(profile, prompt, imageModel);
+      const result = generated.result; imageModel = generated.model;
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
       const output = providerImageDataUrl(image);
@@ -1583,7 +1623,8 @@ async function handle(req, res) {
       const source = uploadedImage(body.image);
       imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const result = await openAiCompatibleImageEdit(profile, source, prompt, { model: imageModel, timeout: 300000 });
+      const edited = await editWithAvailableImageModel(profile, source, prompt, imageModel);
+      const result = edited.result; imageModel = edited.model;
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat imaginea modificată.");
       const output = providerImageDataUrl(image);
