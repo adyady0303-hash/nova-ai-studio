@@ -1171,17 +1171,24 @@ async function send() {
   state.chat.push({ role: "user", content: contextualPrompt, displayContent: promptText });
   localStorage.setItem(chatKey(), JSON.stringify(state.chat));
   addBubble("user", promptText); el("prompt").value = "";
-  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
+  const directCreation = ["text", "lyrics"].includes(task);
+  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = directCreation
+    ? (task === "lyrics" ? "Nova compune versurile complete…" : "Nova redactează textul complet…")
+    : mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
   messageContainer().append(pending); el("messages").scrollTop = el("messages").scrollHeight;
   state.busy = true; el("sendBtn").disabled = true;
   try {
-    if (state.dirty) await saveFile(false);
-    const result = await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages: state.chat.map(({ role, content }) => ({ role, content })) }));
+    if (!directCreation && state.dirty) await saveFile(false);
+    const messages = state.chat.map(({ role, content }) => ({ role, content }));
+    const result = directCreation
+      ? await api("/api/chat", jsonBody({ model, task, verifyWeb: false, messages }))
+      : await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages }));
     const assistantContent = result.content;
     state.chat.push({ role: "assistant", content: assistantContent });
     localStorage.setItem(chatKey(), JSON.stringify(state.chat));
-    addBubble("assistant", assistantContent, result.events, result);
-    const wroteFiles = result.events.some(event => event.ok && event.tool === "write_file");
+    const events = Array.isArray(result.events) ? result.events : [];
+    addBubble("assistant", assistantContent, events, result);
+    const wroteFiles = events.some(event => event.ok && event.tool === "write_file");
     if (wroteFiles) {
       await refreshFiles(false);
       if (state.activePath && state.files.some(file => file.path === state.activePath)) await openFile(state.activePath, true);

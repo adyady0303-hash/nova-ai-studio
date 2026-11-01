@@ -186,6 +186,8 @@ Versiunea 2.6.4 verifică modelul de imagine în catalogul live al furnizorului.
 
 Versiunea 2.6.5 migrează automat configurațiile OpenAI de la `gpt-image-1` la `gpt-image-1.5`. Dacă furnizorul respinge modelul ales, Nova încearcă automat modelele OpenAI de imagine compatibile, fără să trimită utilizatorul în setări după prima eroare. O singură acțiune a utilizatorului consumă cel mult o unitate din cota Nova, inclusiv când sunt încercate alternativele.
 
+Versiunea 2.6.6 trimite cererile pentru texte și versuri direct către motorul conversațional configurat, fără a le condiționa de proiectul de programare. Versurile primesc instrucțiuni dedicate pentru titlu, strofe, refren și punte, iar interfața afișează corect răspunsurile care nu conțin evenimente de editare a fișierelor.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

@@ -1967,6 +1967,7 @@ async function handle(req, res) {
   if (req.method === "POST" && url.pathname === "/api/chat") {
     try {
       const body = await readJson(req);
+      const task = ["text", "lyrics"].includes(body.task) ? body.task : "auto";
       if (typeof body.model !== "string" || !body.model.trim()) {
         return json(res, 400, { error: "Alege un model AI înainte să trimiți mesajul." });
       }
@@ -1987,15 +1988,18 @@ async function handle(req, res) {
       const model = account.role === "owner" ? body.model.trim() : activeTextProfile().textModel;
       if (!await consumeAiQuota(req, res)) return;
 
+      const creationInstruction = task === "auto"
+        ? "Ești Nova, un asistent AI online pentru programare și creație. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante."
+        : `Ești Nova, un asistent de creație. ${creationPrompts[task]} Livrează direct rezultatul final, fără plan preliminar și fără să ceri acces la proiect.`;
       const chatMessages = [
             {
               role: "system",
-              content: "Ești Nova, un asistent AI online pentru programare și creație. Ajută la analizarea și scrierea codului. Când propui modificări, oferă blocuri de cod complete cu etichete de limbaj și numele fișierului. Nu pretinde că ai schimbat fișiere sau ai rulat comenzi; nu ai acces la sistemul de fișiere ori la terminal. Menționează clar presupunerile și riscurile relevante. Răspunde în limba utilizatorului. " + webPrompt + " " + accuracyPrompt()
+              content: `${creationInstruction} Răspunde în limba utilizatorului. ${task === "auto" ? `${webPrompt} ${accuracyPrompt()}` : accuracyPrompt()}`
             },
             ...messages
           ];
       let result;
-      let verifyWeb = body.verifyWeb === true || automaticWebSearch(messages);
+      let verifyWeb = task === "auto" && (body.verifyWeb === true || automaticWebSearch(messages));
       let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
       const maxWebCalls = account.role === "owner" ? 6 : 4;
       const sources = [];
@@ -2004,10 +2008,11 @@ async function handle(req, res) {
           chatMessages.push({ role: "system", content: "Limita de căutări a fost atinsă. Nu mai cere unelte web. Răspunde acum folosind rezultatele și sursele valide deja disponibile." });
           webLimitNotified = true;
         }
-        result = await providerChat(model, chatMessages, webCalls >= maxWebCalls ? [] : webTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
+        const activeTools = task === "auto" && webCalls < maxWebCalls ? webTools : [];
+        result = await providerChat(model, chatMessages, activeTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
         retryWeb = false;
         const message = result.message || {};
-        if (!message.tool_calls?.length && !webAttempted && !verifyWeb && round < 3 && needsWebRetry(message.content)) {
+        if (task === "auto" && !message.tool_calls?.length && !webAttempted && !verifyWeb && round < 3 && needsWebRetry(message.content)) {
           chatMessages.push(message, { role: "system", content: "Caută automat informațiile publice lipsă cu web_search, fără date private. Răspunde în limba utilizatorului folosind sursele relevante." });
           retryWeb = true;
           webAttempted = true;

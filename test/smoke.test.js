@@ -89,6 +89,8 @@ test('Nova dashboard routes creation tools to implemented actions', () => {
   assert.match(app, /api\("\/api\/cv"/);
   assert.match(app, /looksLikeCvCreationRequest/);
   assert.match(app, /api\("\/api\/agent"/);
+  assert.match(app, /directCreation/);
+  assert.match(app, /api\("\/api\/chat"/);
   assert.match(app, /generateImageFromPrompt\(\)/);
   assert.match(app, /generateImageEdit\(\)/);
   assert.match(app, /\/api\/media\/image\/edit/);
@@ -176,6 +178,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   let mockChatPrompt = '';
   let mockChatLimit = null;
   let mockToolChoice = null;
+  let mockTools = [];
   let mockSystemPrompt = '';
   let mockSpeechBody = null;
   let mockSpeechMode = 'audio';
@@ -243,6 +246,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
         mockChatPrompt = body.messages?.at(-1)?.content || '';
         mockChatLimit = body.max_completion_tokens || body.max_tokens || null;
         mockToolChoice = body.tool_choice || null;
+        mockTools = body.tools || [];
         mockSystemPrompt = body.messages.find(message => message.role === 'system')?.content || '';
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(JSON.stringify({ choices: [{ message: { role: 'assistant', content: body.messages.some(message => message.role === 'user' && message.content === 'Test missing knowledge') && !body.tool_choice ? 'Nu am informații despre acest subiect.' : 'Răspuns verificat de test.' } }], model: body.model }));
@@ -665,6 +669,13 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     assert.equal(response.status, 200);
     await response.json();
     assert.match(mockSystemPrompt, expected);
+  }
+  for (const [task, expected] of [['text', /Scrie textul final/], ['lyrics', /versuri originale complete/]]) {
+    const response = await post('/api/chat', { model: 'gpt-4.1-mini', task, messages: [{ role: 'user', content: 'Creează rezultatul complet' }] });
+    assert.equal(response.status, 200);
+    await response.json();
+    assert.match(mockSystemPrompt, expected);
+    assert.equal(mockTools.length, 0);
   }
   for (const task of ['music', 'video']) {
     const removed = await post('/api/agent', { project: project.id, model: 'gpt-4.1-mini', task, mode: 'plan', messages: [{ role: 'user', content: 'Creează' }] });
