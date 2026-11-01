@@ -190,6 +190,8 @@ Versiunea 2.6.6 trimite cererile pentru texte și versuri direct către motorul 
 
 Versiunea 2.6.7 face navigarea laterală exclusivă și predictibilă: Chat AI revine întotdeauna la chat liber, iar Programare, Imagini, Voce, CV, Proiecte, Texte și Afaceri deschid instrumentul lor. Comenzile rapide aleg automat motorul potrivit. Fișierele CSS și JavaScript versionate folosesc cache persistent, reducând timpul de încărcare la vizitele următoare.
 
+Versiunea 2.6.8 repară deschiderea ferestrei Motoare AI prin restaurarea indicatorului cloud folosit de verificarea conexiunii. Testele verifică acum automat că fiecare element accesat din JavaScript există în interfață.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

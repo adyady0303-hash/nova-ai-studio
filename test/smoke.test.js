@@ -14,12 +14,16 @@ test('app entry points and responsive page metadata exist', () => {
   }
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
+  const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]));
+  const referencedIds = [...app.matchAll(/\bel\("([^"]+)"\)/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(referencedIds.filter(id => !htmlIds.has(id)))], [], 'toate elementele accesate de aplicație trebuie să existe în pagină');
   assert.match(html, /<html[^>]+lang="ro"/);
   assert.match(html, /<meta[^>]+name="viewport"/);
   assert.match(html, /@media\s*\(max-width:\s*(?:620|1000)px\)/);
   assert.match(html, /id="sendBtn"/);
   assert.match(html, /id="editor"/);
   assert.match(html, /id="providerDialog"/);
+  assert.match(html, /id="instanceBadge"/);
   assert.match(html, /id="voiceDialog"/);
   assert.match(html, /id="generateVoiceBtn"/);
   assert.match(html, /id="voiceComposerBtn"/);
