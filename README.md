@@ -180,6 +180,8 @@ Versiunea 2.6.1 adaugă conversația vocală directă în browser. Butonul cu mi
 
 Versiunea 2.6.2 mută panoul principal Chat Nova în partea de sus a paginii, imediat sub bara aplicației și înaintea bannerului și instrumentelor de creație.
 
+Versiunea 2.6.3 adaugă în meniul lateral al conturilor de abonat un card „Upgrade Pro / Premium”, conectat la pagina reală de abonamente. Pentru conturile cu plan lunar activ, cardul afișează starea Pro, cota rămasă și accesul la administrarea abonamentului. Ownerul nu vede această promovare.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

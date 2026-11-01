@@ -53,6 +53,8 @@ test('Nova dashboard routes creation tools to implemented actions', () => {
   assert.match(html, /id="providerRail"/);
   assert.match(html, /id="voiceChatBtn"/);
   assert.match(html, /id="homeVoiceChatBtn"/);
+  assert.match(html, /id="subscriberUpgrade"[^>]*hidden/);
+  assert.match(html, /id="subscriberUpgradeBtn"[^>]*href="\/plans\.html"/);
   assert.ok(html.indexOf('class="dashboard-chat"') < html.indexOf('class="home-hero"'), 'chatul principal trebuie să apară înaintea bannerului');
   assert.match(app, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
   assert.match(app, /new SpeechSynthesisUtterance/);

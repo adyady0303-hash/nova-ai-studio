@@ -103,9 +103,21 @@ function chatKey(project = state.project) { return storageKey(`nova-chat-${proje
 
 function updateAccountLabel() {
   const account = state.account;
+  const subscriber = account.role === "subscriber";
   el("accountLabel").textContent = account.role === "subscriber"
     ? `${account.displayName || account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} unități AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
     : `${account.username} · Administrator`;
+  const upgrade = el("subscriberUpgrade");
+  if (upgrade) {
+    upgrade.hidden = !subscriber;
+    if (subscriber) {
+      const paid = account.plan === "standard" || account.quotaInterval === "month";
+      el("subscriberPlanLabel").textContent = paid ? "PLAN PRO ACTIV" : "PLAN GRATUIT";
+      el("subscriberUpgradeTitle").textContent = paid ? "Abonamentul tău Pro" : "Upgrade Pro / Premium";
+      el("subscriberUpgradeDescription").textContent = paid ? `${account.quotaRemaining}/${account.quotaLimit} unități AI disponibile în această perioadă.` : "Mai multe cereri AI și acces lunar.";
+      el("subscriberUpgradeBtn").textContent = paid ? "Gestionează abonamentul" : "Upgrade acum";
+    }
+  }
   renderDashboardUsage();
 }
 
