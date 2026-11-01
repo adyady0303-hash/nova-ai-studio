@@ -194,6 +194,8 @@ Versiunea 2.6.8 repară deschiderea ferestrei Motoare AI prin restaurarea indica
 
 Versiunea 2.6.9 face construirea unei afaceri online obligatoriu orientată spre rezultat: în modul Afaceri + Construiește, agentul trebuie să creeze `index.html`, `styles.css` și `app.js` înainte să poată declara cererea terminată. Dacă modelul răspunde doar cu idei, Nova îi cere automat să continue cu fișierele, apoi publică proiectul și afișează linkul rezultat.
 
+Versiunea 2.7.0 aliniază aplicațiile web, Android și iOS, rulează serverul și automatizările pe Node.js 24 și actualizează acțiunile GitHub la versiunile stabile curente. Pachetele `pg` și Capacitor sunt deja la ultimele versiuni publicate. Fiecare release construiește și testează din sursă un APK Android nou; adresa stabilă `/downloads/android` redirecționează către APK-ul release-ului curent, fără a mai servi binarul vechi 2.3.1 din container.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.
