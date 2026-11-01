@@ -38,13 +38,20 @@ test('app entry points and responsive page metadata exist', () => {
   assert.match(app, /imageEditSettingsBtn"\)\.hidden = subscriber/);
 });
 
-test('Orbit dashboard routes creation tools to implemented actions', () => {
+test('Nova dashboard routes creation tools to implemented actions', () => {
   const html = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'public/app.js'), 'utf8');
-  const css = fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8');
+  const css = [
+    fs.readFileSync(path.join(root, 'public/studio.css'), 'utf8'),
+    fs.readFileSync(path.join(root, 'public/dashboard.css'), 'utf8')
+  ].join('\n');
   assert.match(html, /<main class="chat home-active" id="chat">/);
-  assert.match(html, /Ideile tale\.<br><span>O nouă dimensiune\.<\/span>/);
-  for (const navItem of ['Acasă', 'Creează', 'Explorează', 'Proiecte']) assert.match(html, new RegExp(`>${navItem}<`));
+  assert.match(html, /NOVA AI <span>STUDIO<\/span>/);
+  for (const navItem of ['Acasă', 'Chat AI', 'Programare', 'Imagini', 'Proiecte']) assert.match(html, new RegExp(`>${navItem}<`));
+  assert.match(html, /id="dashboardSearch"/);
+  assert.match(html, /id="dashboardModelTabs"/);
+  assert.match(html, /id="providerRail"/);
+  assert.match(css, /nova-dashboard-hero\.webp/);
   assert.match(html, /id="homePrompt"/);
   assert.match(html, /id="homeSendBtn"/);
   assert.match(html, /id="resumeChatBtn"/);
@@ -453,6 +460,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.ok(appHtml.includes(`/app.js?v=${version}`));
   assert.ok(appHtml.includes(`/studio.css?v=${version}`));
   assert.ok(appHtml.includes(`/orbit.css?v=${version}`));
+  assert.ok(appHtml.includes(`/dashboard.css?v=${version}`));
   assert.ok(appHtml.includes(`v${version}</span>`));
   assert.doesNotMatch(appHtml, /__NOVA_VERSION__/);
   assert.equal(appPage.headers.get('cache-control'), 'no-cache');

@@ -170,6 +170,8 @@ Versiunea web/server 2.4.1 activează selectarea automată sigură: dacă ruta d
 
 Versiunea web/server 2.4.2 extinde modul automat la un pool: cererile sunt distribuite succesiv între toți furnizorii de text configurați, nu doar către modelul OpenAI implicit. Fiecare răspuns păstrează numele furnizorului și modelului folosite.
 
+Versiunea web/server 2.5.0 introduce interfața Nova Command Center: navigare laterală, căutare globală, banner original Nova, chat central, furnizori configurați, proiecte reale și utilizare într-un singur tablou de bord adaptat pentru desktop și mobil. Funcțiile de chat, programare, imagini, voce, CV, proiecte și publicare rămân conectate la implementările existente; interfața nu afișează generatoare video sau muzicale inexistente.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.

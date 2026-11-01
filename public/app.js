@@ -44,6 +44,7 @@ function updateAccountLabel() {
   el("accountLabel").textContent = account.role === "subscriber"
     ? `${account.displayName || account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} unități AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
     : `${account.username} · Administrator`;
+  renderDashboardUsage();
 }
 
 async function loadAccount() {
@@ -297,6 +298,7 @@ async function loadProviderSettings() {
   renderRoutes(settings);
   renderSearchSettings(settings);
   renderProviderProfile(settings.platform || settings.provider || providerProfiles(settings)[0]?.id);
+  renderDashboardProviders();
   updateCapabilityControls();
   await refreshHealth();
 }
@@ -345,8 +347,76 @@ async function saveProviderSettings() {
   state.settings = result.settings; el("apiKey").value = ""; el("searchApiKey").value = "";
   providerDraftDirty = false; searchDraftDirty = false;
   el("providerDialog").close(); await refreshHealth();
+  renderDashboardProviders();
   updateCapabilityControls();
   toast(result.notice || "Motoarele AI și rutele au fost salvate");
+}
+
+function providerMonogram(profile) {
+  const labels = { openai: "AI", gemini: "G", anthropic: "C", openrouter: "OR", groq: "GQ", mistral: "M", deepseek: "DS", xai: "X", together: "T", custom: "API", ollama: "O" };
+  return labels[profile?.id] || String(profile?.name || "AI").slice(0, 2).toUpperCase();
+}
+
+function renderDashboardProviders() {
+  const rail = el("providerRail"), tabs = el("dashboardModelTabs");
+  if (!rail || !tabs) return;
+  rail.replaceChildren(); tabs.replaceChildren();
+  const profiles = providerProfiles();
+  const activeId = state.settings?.platform || state.settings?.routes?.text;
+  profiles.slice(0, 9).forEach(profile => {
+    const ready = profile.ready?.text ?? profile.configured === true;
+    const row = document.createElement("div"); row.className = "rail-provider";
+    const icon = document.createElement("span"); icon.className = "rail-provider-icon"; icon.textContent = providerMonogram(profile);
+    const copy = document.createElement("span"); copy.className = "rail-provider-copy";
+    const name = document.createElement("strong"); name.textContent = providerLabel(profile);
+    const model = document.createElement("small"); model.textContent = profile.textModel || "Model neconfigurat";
+    const status = document.createElement("span"); status.className = `rail-provider-state${ready ? "" : " off"}`; status.textContent = ready ? "Activ" : "Cheie";
+    copy.append(name, model); row.append(icon, copy, status); rail.append(row);
+    if (ready) {
+      const tab = document.createElement("span"); tab.className = `model-tab${profile.id === activeId ? " active" : ""}`;
+      tab.textContent = providerLabel(profile); tabs.append(tab);
+    }
+  });
+  if (!rail.children.length) { const empty = document.createElement("div"); empty.className = "rail-empty"; empty.textContent = "Niciun motor AI disponibil."; rail.append(empty); }
+  if (!tabs.children.length) { const tab = document.createElement("span"); tab.className = "model-tab active"; tab.textContent = "Configurează un motor"; tabs.append(tab); }
+  renderDashboardUsage();
+}
+
+function renderDashboardProjects() {
+  const rail = el("railProjects");
+  if (!rail) return;
+  rail.replaceChildren();
+  state.projects.slice(0, 6).forEach(project => {
+    const item = document.createElement("button"); item.type = "button"; item.className = "rail-project"; item.textContent = project.name;
+    item.addEventListener("click", async () => {
+      try { if (project.id !== state.project) await loadProject(project.id); setView("chat"); if (!el("app").classList.contains("workspace-open")) el("openWorkspaceBtn").click(); }
+      catch (error) { toast(error.message); }
+    });
+    rail.append(item);
+  });
+  if (!rail.children.length) { const empty = document.createElement("div"); empty.className = "rail-empty"; empty.textContent = "Creează primul proiect pentru a-l vedea aici."; rail.append(empty); }
+}
+
+function renderDashboardUsage() {
+  const node = el("railUsage");
+  if (!node) return;
+  node.replaceChildren();
+  const account = state.account;
+  const configured = providerProfiles().filter(profile => profile.ready?.text ?? profile.configured === true).length;
+  const limit = Number(account?.quotaLimit || 0), remaining = Number(account?.quotaRemaining || 0);
+  const requestPercent = account?.role === "subscriber" && limit ? Math.max(0, Math.min(100, Math.round((limit - remaining) / limit * 100))) : configured ? 100 : 0;
+  const rows = [
+    ["Motoare", configured ? 100 : 0, configured ? String(configured) : "0"],
+    ["Cereri AI", requestPercent, account?.role === "subscriber" && limit ? `${limit - remaining}/${limit}` : "Auto"],
+    ["Proiecte", Math.min(100, state.projects.length * 10), String(state.projects.length)]
+  ];
+  rows.forEach(([label, percent, value]) => {
+    const row = document.createElement("div"); row.className = "usage-row";
+    const name = document.createElement("span"); name.textContent = label;
+    const track = document.createElement("span"); track.className = "usage-track";
+    const fill = document.createElement("span"); fill.className = "usage-fill"; fill.style.width = `${percent}%`; track.append(fill);
+    const amount = document.createElement("span"); amount.textContent = value; row.append(name, track, amount); node.append(row);
+  });
 }
 
 function renderProjects() {
@@ -356,6 +426,8 @@ function renderProjects() {
   const current = state.projects.find(project => project.id === state.project);
   el("projectName").textContent = current?.name || "Niciun proiect";
   renderHomeProjects();
+  renderDashboardProjects();
+  renderDashboardUsage();
 }
 
 function renderHomeProjects() {
@@ -1060,6 +1132,7 @@ el("imageEditDialog").addEventListener("close", () => {
   imageEditPreviewUrl = ""; el("imageEditPreview").hidden = true; el("imageEditPreview").removeAttribute("src"); el("imageEditFile").value = "";
 });
 el("voiceComposerBtn").addEventListener("click", openVoiceDialog);
+el("sideVoiceBtn").addEventListener("click", () => { setView("chat"); openVoiceDialog(); });
 el("generateVoiceBtn").addEventListener("click", generateVoiceFromDialog);
 el("voiceText").addEventListener("input", updateVoiceCost);
 el("voiceSettingsBtn").addEventListener("click", () => { el("voiceDialog").close(); el("providerSettingsBtn").click(); });
@@ -1077,6 +1150,10 @@ el("providerSettingsBtn").addEventListener("click", async () => {
   if (state.account?.role !== "owner") return;
   try { await loadProviderSettings(); el("providerDialog").showModal(); }
   catch (error) { toast(error.message); }
+});
+el("railProviderSettings").addEventListener("click", () => {
+  if (state.account?.role !== "owner") { toast("Furnizorii sunt administrați de owner."); return; }
+  el("providerSettingsBtn").click();
 });
 el("providerSelect").addEventListener("change", event => {
   if (providerDraftDirty && !window.confirm("Ai modificări nesalvate pentru acest profil. Le abandonezi?")) {
@@ -1140,6 +1217,7 @@ el("topSearchBtn").addEventListener("click", () => {
   else { el("homePrompt").focus(); el("homePrompt").scrollIntoView({ behavior: "smooth", block: "center" }); }
 });
 el("projectsNavBtn").addEventListener("click", () => setProjectsOpen(!el("app").classList.contains("projects-open")));
+el("railProjectsBtn").addEventListener("click", () => setProjectsOpen(true));
 el("projectDrawer").addEventListener("toggle", event => {
   const open = event.currentTarget.open;
   el("app").classList.toggle("projects-open", open);
@@ -1174,6 +1252,21 @@ el("homeSendBtn").addEventListener("click", submitHomePrompt);
 el("homePrompt").addEventListener("keydown", event => {
   if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submitHomePrompt(); }
 });
+el("dashboardSearch").addEventListener("keydown", event => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  const value = event.currentTarget.value.trim();
+  if (!value) return;
+  el("homePrompt").value = value; event.currentTarget.value = ""; submitHomePrompt();
+});
+document.addEventListener("keydown", event => {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault(); el("dashboardSearch").focus();
+  }
+});
+document.querySelectorAll("[data-quick-prompt]").forEach(button => button.addEventListener("click", () => {
+  el("homePrompt").value = button.dataset.quickPrompt; el("homePrompt").focus();
+}));
 el("homeVoiceBtn").addEventListener("click", () => {
   const value = el("homePrompt").value.trim();
   if (value) { el("prompt").value = value; el("voiceText").value = value; el("homePrompt").value = ""; }
