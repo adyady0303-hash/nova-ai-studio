@@ -52,6 +52,11 @@ test('Nova dashboard routes creation tools to implemented actions', () => {
   assert.match(html, /id="dashboardModelTabs"/);
   assert.match(html, /id="providerRail"/);
   assert.match(css, /nova-dashboard-hero\.webp/);
+  assert.doesNotMatch(html, /__NOVA_VERSION__/);
+  for (const asset of ['studio.css', 'orbit.css', 'dashboard.css', 'app.js']) {
+    assert.match(html, new RegExp(`["']\\./${asset.replace('.', '\\.')}\\?v=`));
+  }
+  assert.match(css, /url\('\.\/nova-dashboard-hero\.webp'\)/);
   assert.match(html, /id="homePrompt"/);
   assert.match(html, /id="homeSendBtn"/);
   assert.match(html, /id="resumeChatBtn"/);
@@ -457,10 +462,10 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   const appHtml = await appPage.text();
   assert.match(appHtml, /Nova AI Studio/);
   const version = require('../package.json').version;
-  assert.ok(appHtml.includes(`/app.js?v=${version}`));
-  assert.ok(appHtml.includes(`/studio.css?v=${version}`));
-  assert.ok(appHtml.includes(`/orbit.css?v=${version}`));
-  assert.ok(appHtml.includes(`/dashboard.css?v=${version}`));
+  assert.ok(appHtml.includes(`./app.js?v=${version}`));
+  assert.ok(appHtml.includes(`./studio.css?v=${version}`));
+  assert.ok(appHtml.includes(`./orbit.css?v=${version}`));
+  assert.ok(appHtml.includes(`./dashboard.css?v=${version}`));
   assert.ok(appHtml.includes(`v${version}</span>`));
   assert.doesNotMatch(appHtml, /__NOVA_VERSION__/);
   assert.equal(appPage.headers.get('cache-control'), 'no-cache');
