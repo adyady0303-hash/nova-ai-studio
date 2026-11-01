@@ -254,6 +254,7 @@ function renderRoutes(settings) {
   renderRouteOptions("routeText", "text", routes.text || settings.platform);
   renderRouteOptions("routeImage", "image", routes.image);
   renderRouteOptions("routeSpeech", "speech", routes.speech);
+  el("autoSelectProvider").checked = routes.autoSelect !== false;
   el("autoFallback").checked = routes.autoFallback === true;
 }
 
@@ -331,6 +332,7 @@ async function saveProviderSettings() {
       text: el("routeText").value,
       image: el("routeImage").value,
       speech: el("routeSpeech").value,
+      autoSelect: el("autoSelectProvider").checked,
       autoFallback: el("autoFallback").checked
     },
     search: {
@@ -1093,7 +1095,7 @@ el("searchProvider").addEventListener("change", event => {
 });
 el("providerFields").addEventListener("input", () => { providerDraftDirty = true; });
 el("providerFields").addEventListener("change", () => { providerDraftDirty = true; });
-["routeText", "routeImage", "routeSpeech", "autoFallback"].forEach(id => {
+["routeText", "routeImage", "routeSpeech", "autoSelectProvider", "autoFallback"].forEach(id => {
   el(id).addEventListener("change", () => { providerDraftDirty = true; });
 });
 ["searchApiKey", "clearSearchApiKey"].forEach(id => {

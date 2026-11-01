@@ -83,7 +83,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
       HOST: '127.0.0.1', PORT: String(port), NOVA_DATA_DIR: directory, DATABASE_URL: '',
       NOVA_ACCESS_USER: 'owner', NOVA_ACCESS_PASSWORD: 'owner-password-long-enough',
       NOVA_SUBSCRIBER_DAILY_AI_LIMIT: '5',
-      AI_PROVIDER: 'openai', AI_FALLBACK_PROVIDERS: 'openai',
+      AI_PROVIDER: 'anthropic', AI_FALLBACK_PROVIDERS: 'openai', ANTHROPIC_API_KEY: '',
       OPENAI_API_KEY: 'openai-secret-not-real', OPENAI_MODEL: 'openai-fallback',
       OPENAI_IMAGE_MODEL: 'openai-image', GEMINI_API_KEY: 'gemini-secret-not-real', GEMINI_MODEL: 'gemini-primary'
     },
@@ -109,10 +109,15 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
     ...(body === undefined ? {} : { body: JSON.stringify(body) })
   });
 
+  const automaticSettings = await (await fetch(base + '/api/settings', { headers: { cookie: ownerCookie } })).json();
+  assert.equal(automaticSettings.settings.routes.text, 'anthropic');
+  assert.equal(automaticSettings.settings.routes.autoSelect, true);
+  assert.equal(automaticSettings.settings.platform, 'openai', 'Nova selectează automat primul profil configurat');
+
   const configured = await ownerRequest('/api/settings', {
     providerId: 'custom', baseUrl: 'https://custom.example/v1', apiKey: 'custom-secret-not-real',
     textModel: 'custom-primary', imageModel: 'custom-image', speechModel: 'custom-speech', voice: 'nova',
-    routes: { text: 'custom', image: 'openai', speech: 'openai', autoFallback: true },
+    routes: { text: 'custom', image: 'openai', speech: 'openai', autoSelect: true, autoFallback: true },
     search: { provider: 'bing', apiKey: '', clearApiKey: false }
   });
   const configuredText = await configured.text();
@@ -124,7 +129,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   for (const secret of ['custom-secret-not-real', 'openai-secret-not-real', 'gemini-secret-not-real']) {
     assert.doesNotMatch(serializedSettings, new RegExp(secret));
   }
-  assert.deepEqual(ownerSettings.settings.routes, { text: 'custom', image: 'openai', speech: 'openai', autoFallback: true });
+  assert.deepEqual(ownerSettings.settings.routes, { text: 'custom', image: 'openai', speech: 'openai', autoSelect: true, autoFallback: true });
   assert.equal(ownerSettings.settings.providers.find(provider => provider.id === 'custom').apiKeyConfigured, true);
 
   const ownerHealth = await (await fetch(base + '/api/health', { headers: { cookie: ownerCookie } })).json();

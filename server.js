@@ -69,6 +69,7 @@ let aiConfig = {
     text: initialPlatform,
     image: firstMediaPlatform("image", initialPlatform),
     speech: firstMediaPlatform("speech", initialPlatform),
+    autoSelect: true,
     autoFallback: parseFallbackPlatforms(process.env.AI_FALLBACK_PROVIDERS).length > 0,
     fallbacks: parseFallbackPlatforms(process.env.AI_FALLBACK_PROVIDERS)
   },
@@ -450,7 +451,12 @@ function cloneAiConfig(value = aiConfig) {
 }
 
 function activeTextProfile(config = aiConfig) {
-  return config.profiles[config.routes.text] || config.profiles.openai || Object.values(config.profiles)[0];
+  const selected = config.profiles[config.routes.text];
+  if (config.routes.autoSelect !== true) return selected || config.profiles.openai || Object.values(config.profiles)[0];
+  return [selected, ...Object.values(config.profiles)]
+    .filter((profile, index, profiles) => profile && profiles.findIndex(item => item.id === profile.id) === index)
+    .find(profile => routeProfileConfigured(profile, "text") && (profile.id === selected?.id || Boolean(profile.apiKey)))
+    || selected || config.profiles.openai || Object.values(config.profiles)[0];
 }
 
 function routeProfile(capability, config = aiConfig) {
@@ -524,6 +530,7 @@ function publicProviderSettings(role = "owner") {
       text: aiConfig.routes.text,
       image: aiConfig.routes.image,
       speech: aiConfig.routes.speech,
+      autoSelect: aiConfig.routes.autoSelect === true,
       autoFallback: aiConfig.routes.autoFallback === true
     },
     search: {
@@ -617,6 +624,7 @@ function normalizedAiConfig(value) {
     if (next.profiles[requested]?.capabilities?.[capability]) next.routes[capability] = requested;
   }
   next.routes.autoFallback = value?.routes?.autoFallback === true;
+  next.routes.autoSelect = value?.routes?.autoSelect !== false;
   next.routes.fallbacks = [...new Set((Array.isArray(value?.routes?.fallbacks) ? value.routes.fallbacks : [])
     .map(id => String(id || "")).filter(id => next.profiles[id]?.capabilities?.text && id !== next.routes.text))];
   const searchProvider = String(value?.search?.provider || "").toLowerCase();
@@ -1453,6 +1461,7 @@ async function handle(req, res) {
         }
         next.routes[capability] = id;
       }
+      next.routes.autoSelect = requestedRoutes.autoSelect !== false;
       next.routes.autoFallback = requestedRoutes.autoFallback === true;
     } else {
       next.routes.text = providerId;

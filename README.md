@@ -72,6 +72,8 @@ Cheile din variabilele de mediu și secretele Render rămân pe server și nu tr
 
 `AI_PROVIDER` și `AI_FALLBACK_PROVIDERS` controlează rutarea textului, chatului și codului. Imaginile și vocea folosesc rute și modele media OpenAI-compatible separate și nu sunt mutate automat pe lista de fallback; configurează separat credențialele și `OPENAI_IMAGE_MODEL` / `OPENAI_SPEECH_MODEL` dacă folosești aceste funcții.
 
+În **Motoare AI → Rute pe capabilități**, opțiunea de selectare automată este activă implicit: dacă ruta de text aleasă nu are cheia sau modelul necesar, Nova folosește primul profil de text configurat. Fallback-ul între furnizori după o eroare temporară rămâne o opțiune separată, deoarece poate retrimite cererea și poate genera un cost suplimentar.
+
 Conturile sunt salvate în `NOVA_DATA_DIR/data/subscriber-accounts.json`, cu parole protejate prin scrypt. Datele fiecărui abonat sunt păstrate în `NOVA_DATA_DIR/users/<account-id>/`; păstrează `NOVA_DATA_DIR` pe un volum persistent.
 
 ## Pagina publică și versiuni
@@ -163,6 +165,8 @@ Versiunea 2.2.0 transformă Nova într-o Progressive Web App instalabilă pe And
 Versiunea 2.3.0 adaugă proiecte native Capacitor pentru Android și iOS, iconuri și ecrane de pornire proprii și configurare HTTPS exclusivă către `www.nova-ai-studio.eu`. Android poate fi construit cu `npm run mobile:sync`, apoi `cd android && ./gradlew assembleDebug`. Publicarea în magazine necesită conturile și certificatele de semnare ale proprietarului.
 
 Versiunea web/server 2.4.0 adaugă profiluri separate pentru OpenAI, Gemini, Anthropic Claude, OpenRouter, Groq, Mistral, DeepSeek, xAI, Together, Ollama și API-uri OpenAI-compatible, plus Bing, Brave și Tavily pentru căutare. APK-ul Android semnat rămâne la versiunea 2.3.1 și deschide platforma web actualizată; instalarea PWA pe iPhone/iPad rămâne disponibilă. Creatorul de CV online și regulile abonaților sunt păstrate, iar contul owner rămâne protejat.
+
+Versiunea web/server 2.4.1 activează selectarea automată sigură: dacă ruta de text aleasă nu este configurată, Nova folosește primul profil cloud care are o cheie salvată. Serviciile locale fără cheie, precum Ollama, sunt alese automat numai când sunt selectate explicit, ca să nu fie raportate drept disponibile înainte să ruleze.
 
 ### Înregistrare simplă și Google (1.4.1)
 
