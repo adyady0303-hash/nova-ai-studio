@@ -193,7 +193,9 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   const beforeAuthCalls = calls.length;
   const rejected = await subscriberRequest('/api/chat', { model: 'forged-auth', messages: [{ role: 'user', content: 'AUTH' }] });
   assert.equal(rejected.status, 502, 'un 401 extern nu trebuie confundat cu expirarea sesiunii Nova');
-  assert.equal((await rejected.json()).providerError, true);
+  const rejectedBody = await rejected.json();
+  assert.equal(rejectedBody.providerError, true);
+  assert.match(rejectedBody.error, /a respins cheia API sau accesul proiectului/);
   calls = fs.readFileSync(callsPath, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   assert.equal(calls.length, beforeAuthCalls + 1);
   assert.equal(calls.at(-1).provider, 'custom', '401 nu trebuie să declanșeze fallback');

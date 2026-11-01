@@ -851,6 +851,21 @@ function friendlyImageProviderError(error, profile, model) {
   return message || "Generarea imaginii a eșuat.";
 }
 
+function friendlyTextProviderError(error, profile, model) {
+  const status = Number(error?.status) || 502;
+  const name = profile?.name || "Furnizorul AI";
+  const selectedModel = String(model || profile?.textModel || "modelul selectat");
+  const message = String(error?.message || "");
+  if (status === 401 || status === 403) return `${name} a respins cheia API sau accesul proiectului. Creează o cheie validă, salveaz-o în Motoare AI și verifică permisiunile contului.`;
+  if (status === 429) return `${name} a atins limita de cereri sau cota API. Verifică pagina de utilizare/facturare a furnizorului ori așteaptă resetarea cotei.`;
+  if (status === 404 || /model.*(?:not found|does not exist|unknown|invalid)/i.test(message)) return `Modelul „${selectedModel}” nu este disponibil la ${name}. Reîncarcă modelele și alege unul din catalogul furnizorului.`;
+  if (status === 400 && /(tool|function|function.?call)/i.test(message)) return `Modelul „${selectedModel}” de la ${name} nu acceptă uneltele necesare acestei cereri. Alege un model cu function calling sau alt furnizor text.`;
+  if (status === 400) return `${name} a respins cererea pentru modelul „${selectedModel}”. Reîncarcă modelele și încearcă un model compatibil.`;
+  if ([408, 504].includes(status)) return `Conexiunea cu ${name} a expirat. Încearcă din nou; dacă problema continuă, activează un motor de rezervă.`;
+  if (status >= 500) return `${name} este indisponibil temporar. Încearcă din nou sau activează un motor de rezervă în Motoare AI.`;
+  return `${name} nu a putut procesa cererea cu modelul „${selectedModel}”.`;
+}
+
 function requireRouteProfile(capability) {
   const profile = routeProfile(capability);
   if (!profile?.capabilities?.[capability]) throw Object.assign(new Error(`Nu este configurat un motor pentru ${capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text"}.`), { status: 503 });
@@ -1918,12 +1933,12 @@ async function handle(req, res) {
       const result = await runAgent(model, safeMessages, body.project, mode, allowAgentChanges, task, principal, body.verifyWeb === true);
       return json(res, 200, result);
     } catch (error) {
-      const profile = activeTextProfile();
+      const profile = aiConfig.profiles[error?.provider] || activeTextProfile();
       console.error("Nova AI agent provider failed:", { provider: profile.id, status: error.status || 503 });
       const unavailable = !isProfileConfigured(profile)
         ? `Motorul ${profile.name} nu este configurat complet. Deschide Motoare AI în setările Nova.`
-        : "Furnizorul AI nu a putut procesa cererea. Verifică modelul, cheia și limitele API.";
-      return json(res, 503, { error: unavailable });
+        : friendlyTextProviderError(error, profile, model);
+      return json(res, 503, { error: unavailable, providerError: true });
     }
   }
 
@@ -1981,8 +1996,10 @@ async function handle(req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/chat") {
+    let requestedModel = "";
     try {
       const body = await readJson(req);
+      requestedModel = typeof body.model === "string" ? body.model.trim() : "";
       const task = ["text", "lyrics"].includes(body.task) ? body.task : "auto";
       if (typeof body.model !== "string" || !body.model.trim()) {
         return json(res, 400, { error: "Alege un model AI înainte să trimiți mesajul." });
@@ -2065,9 +2082,10 @@ async function handle(req, res) {
         done: true
       });
     } catch (error) {
+      const profile = aiConfig.profiles[error?.provider] || activeTextProfile();
       const providerAuthFailure = error.status === 401 || error.status === 403;
       return json(res, providerAuthFailure ? 502 : (error.status || 502), {
-        error: providerAuthFailure ? "Furnizorul AI a respins cheia configurată. Verifică profilul din Motoare AI." : (error.message || "Nu am putut contacta furnizorul AI."),
+        error: friendlyTextProviderError(error, profile, requestedModel),
         providerError: true
       });
     }
