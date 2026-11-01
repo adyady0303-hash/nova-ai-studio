@@ -138,6 +138,11 @@ function cleanField(value, field, maximum, { allowEmpty = true } = {}) {
   return cleaned;
 }
 
+function normalizedProviderModelId(providerId, value) {
+  const model = String(value || "").trim();
+  return providerId === "gemini" ? model.replace(/^models\/+/, "") : model;
+}
+
 function normalizeBaseUrl(value, { allowEmpty = false } = {}) {
   const raw = cleanField(value, "baseUrl", 2048, { allowEmpty });
   if (!raw && allowEmpty) return "";
@@ -202,7 +207,7 @@ function sanitizeProfileUpdate(update, currentProfile = {}) {
     protocol: preset.protocol,
     baseUrl,
     apiKey,
-    textModel: cleanField(valueFromUpdate(update, current, "textModel", preset.textModel, ["model"]), "textModel", 240),
+    textModel: normalizedProviderModelId(id, cleanField(valueFromUpdate(update, current, "textModel", preset.textModel, ["model"]), "textModel", 240)),
     imageModel: cleanField(valueFromUpdate(update, current, "imageModel", preset.imageModel), "imageModel", 240),
     speechModel: cleanField(valueFromUpdate(update, current, "speechModel", preset.speechModel), "speechModel", 240),
     voice: cleanField(valueFromUpdate(update, current, "voice", preset.voice), "voice", 80),
@@ -478,11 +483,11 @@ async function listProfileModels(profileInput, options = {}) {
     items = uniqueModelIds(payload.data, ["id", "model", "name"]);
   }
   if (!items.length && requestOptions.fallback !== false && profile.textModel) return [profile.textModel];
-  return items;
+  return [...new Set(items.map(item => normalizedProviderModelId(profile.id, item)).filter(Boolean))];
 }
 
 function requestedModel(profile, model) {
-  return cleanField(model || profile.textModel, "model", 240, { allowEmpty: false });
+  return normalizedProviderModelId(profile.id, cleanField(model || profile.textModel, "model", 240, { allowEmpty: false }));
 }
 
 function normalizedMaxTokens(value) {

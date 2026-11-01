@@ -186,6 +186,15 @@ test('model listing keeps non-GPT IDs and uses protocol-specific headers', async
   });
   assert.deepEqual(anthropic, ['claude-a', 'claude-b']);
 
+  const gemini = await listProfileModels({ id: 'gemini', apiKey: 'gemini-secret', textModel: 'models/gemini-2.5-flash' }, {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/openai/models');
+      assert.equal(new Headers(options.headers).get('authorization'), 'Bearer gemini-secret');
+      return jsonResponse({ data: [{ id: 'models/gemini-2.5-flash' }, { id: 'models/gemini-2.5-pro' }] });
+    }
+  });
+  assert.deepEqual(gemini, ['gemini-2.5-flash', 'gemini-2.5-pro']);
+
   const ollama = await listProfileModels({ id: 'ollama', baseUrl: 'http://127.0.0.1:11434' }, {
     fetchImpl: async (url, options) => {
       assert.equal(url, 'http://127.0.0.1:11434/api/tags');
@@ -194,6 +203,19 @@ test('model listing keeps non-GPT IDs and uses protocol-specific headers', async
     }
   });
   assert.deepEqual(ollama, ['qwen3:latest', 'gemma3:12b']);
+});
+
+test('Gemini removes the catalog models prefix before chat requests', async () => {
+  const profile = sanitizeProfileUpdate({ id: 'gemini', apiKey: 'gemini-secret', textModel: 'models/gemini-2.5-flash' });
+  assert.equal(profile.textModel, 'gemini-2.5-flash');
+  await chatWithProfile(profile, {
+    model: 'models/gemini-2.5-flash', messages: [{ role: 'user', content: 'Salut' }],
+    fetchImpl: async (url, options) => {
+      assert.equal(url, 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions');
+      assert.equal(JSON.parse(options.body).model, 'gemini-2.5-flash');
+      return jsonResponse({ model: 'gemini-2.5-flash', choices: [{ message: { role: 'assistant', content: 'Salut!' } }] });
+    }
+  });
 });
 
 test('authenticated helpers reject route/header escapes and retain HTTP status', async () => {

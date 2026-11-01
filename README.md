@@ -198,6 +198,8 @@ Versiunea 2.7.0 aliniază aplicațiile web, Android și iOS, rulează serverul �
 
 Versiunea 2.7.1 înlocuiește mesajul generic al motoarelor text cu erori sigure și explicite pentru cheie sau permisiuni respinse, cotă epuizată, model inexistent, lipsa suportului pentru unelte, timeout și indisponibilitate temporară. Cheile și răspunsurile brute ale furnizorilor nu sunt expuse în browser.
 
+Versiunea 2.7.2 normalizează automat identificatorii Gemini primiți din catalog: `models/gemini-...` devine `gemini-...` înainte de salvare, afișare și trimiterea conversației. Setările Gemini existente sunt migrate la încărcare, fără intervenție manuală.
+
 ### Înregistrare simplă și Google (1.4.1)
 
 Vizitatorul alege utilizatorul și o parolă de 1–8 caractere, fără reguli de compoziție și fără confirmarea parolei. Parola poate coincide cu numele ales. Contul intră imediat în aplicație; accesul administratorului își păstrează configurația.
