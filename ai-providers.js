@@ -370,6 +370,15 @@ async function performRequest(profileInput, route, options = {}, fallbackTimeout
   return { profile, response };
 }
 
+function retryAfterMilliseconds(response) {
+  const raw = response?.headers?.get?.("retry-after");
+  if (typeof raw !== "string" || !raw.trim() || raw.length > 128) return undefined;
+  const value = raw.trim();
+  if (/^\d+(?:\.\d+)?$/.test(value)) return Math.ceil(Number(value) * 1000);
+  const date = Date.parse(value);
+  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
 async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = DEFAULT_TIMEOUT) {
   const { profile, response } = await performRequest(profileInput, route, options, fallbackTimeout);
   const payload = await responsePayload(response);
@@ -377,7 +386,7 @@ async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = 
     const remoteError = plainObject(payload?.error) ? payload.error : {};
     throw providerError(payloadErrorMessage(payload, response), response.status, {
       provider: profile.id, code: remoteError.code || remoteError.type || payload?.code, details: payload,
-      failureKind: "http", upstreamStatus: response.status
+      failureKind: "http", upstreamStatus: response.status, retryAfterMs: retryAfterMilliseconds(response)
     });
   }
   if (own(payload, "raw")) throw providerError("Furnizorul AI nu a returnat JSON valid.", 502, { provider: profile.id, failureKind: "invalid_response" });

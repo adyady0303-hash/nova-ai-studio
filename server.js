@@ -2,6 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { setTimeout: delay } = require("node:timers/promises");
 const dataStore = require("./data-store");
 const { creationPrompts } = require("./creation-prompts");
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
@@ -949,9 +950,80 @@ function rankedGeminiChatModels(models) {
   });
 }
 
+function geminiOverloaded(error) {
+  return error?.failureKind === "http" && Number(error.status) === 503 && Number(error.upstreamStatus) === 503;
+}
+
+async function recoverGeminiOverload(profile, preferredModel, options, firstError, startedAt) {
+  const timeout = options.timeout || 180000;
+  const remaining = () => Math.max(0, timeout - (Date.now() - startedAt));
+  options.signal?.throwIfAborted();
+  if (!remaining()) throw firstError;
+  const deadline = AbortSignal.timeout(remaining());
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+  const checkActive = () => {
+    options.signal?.throwIfAborted();
+    if (deadline.aborted || !remaining()) throw Object.assign(new Error("Conexiunea cu furnizorul AI a expirat."), {
+      provider: profile.id, status: 504, failureKind: "timeout"
+    });
+  };
+  const pause = async (error, minimum) => {
+    checkActive();
+    const milliseconds = Math.max(minimum, error.retryAfterMs || 0);
+    // Do not retry earlier than Retry-After when its delay exceeds our budget.
+    if (!Number.isFinite(milliseconds) || milliseconds >= remaining()) throw error;
+    if (milliseconds) await delay(milliseconds, undefined, { signal });
+    checkActive();
+  };
+  const send = async model => {
+    checkActive();
+    return chatWithProfile(profile, { ...options, model, signal, timeout: Math.max(1, remaining()) });
+  };
+  let lastError = firstError;
+  try {
+    await pause(firstError, 1000);
+    try { return await send(preferredModel); }
+    catch (error) {
+      checkActive();
+      if (!geminiOverloaded(error)) throw error;
+      lastError = error;
+    }
+    // Stay within the configured Flash family and use only the live catalog.
+    if (!/-flash(?:-|$)/i.test(preferredModel)) throw lastError;
+    await pause(lastError, 0);
+    let catalog;
+    try { catalog = await listProfileModels(profile, { signal, timeout: Math.max(1, Math.min(10000, remaining())) }); }
+    catch (error) {
+      checkActive();
+      if ([400, 401, 403, 429].includes(Number(error.status))) throw error;
+      throw lastError;
+    }
+    const alternatives = rankedGeminiChatModels(catalog).filter(model => model !== preferredModel
+      && /-flash(?:-|$)/i.test(model) && !/(preview|experimental|(?:^|-)exp(?:-|$)|(?:^|-)pro(?:-|$))/i.test(model)).slice(0, 2);
+    for (let index = 0; index < alternatives.length; index++) {
+      if (index) await pause(lastError, 0);
+      try { return await send(alternatives[index]); }
+      catch (error) {
+        checkActive();
+        if (geminiOverloaded(error)) lastError = error;
+        else if (Number(error.status) !== 404) throw error;
+      }
+    }
+    throw lastError;
+  } catch (error) {
+    checkActive();
+    throw error;
+  }
+}
+
 async function chatWithResolvedTextModel(profile, preferredModel, options) {
+  if (profile.id === "gemini") preferredModel = String(preferredModel || profile.textModel || "").trim().replace(/^models\/+/, "");
+  const startedAt = Date.now();
   try { return await chatWithProfile(profile, { ...options, model: preferredModel }); }
   catch (firstError) {
+    if (profile.id === "gemini" && geminiOverloaded(firstError)) {
+      return recoverGeminiOverload(profile, preferredModel, options, firstError, startedAt);
+    }
     if (profile.id !== "gemini" || !missingTextModel(firstError)) throw firstError;
     let catalog = [];
     try { catalog = await cachedProfileModels(profile); }
@@ -1808,9 +1880,10 @@ async function handle(req, res) {
       return json(res, 503, { connected: false, provider: publicProviderId(profile), error });
     }
     if (!await consumeAiQuota(req, res)) return;
+    const lifecycle = aiRequestLifecycle(res);
     try {
       const messages = [{ role: "user", content: "Răspunde doar cu: Nova este conectată." }];
-      const response = await chatWithResolvedTextModel(profile, model, { model, messages, maxOutputTokens: profile.id === "gemini" ? 1024 : 24, timeout: 30000 });
+      const response = await chatWithResolvedTextModel(profile, model, { model, messages, maxOutputTokens: profile.id === "gemini" ? 1024 : 24, timeout: 30000, signal: lifecycle.signal });
       const reply = String(response.message?.content || "").trim();
       if (!reply) throw Object.assign(new Error("Modelul nu a returnat text."), { status: 502, failureKind: "invalid_response" });
       return json(res, 200, { connected: true, provider: publicProviderId(profile), model: response.model || model, reply: reply.slice(0, 240) });
@@ -1821,7 +1894,7 @@ async function handle(req, res) {
         ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
         : friendlyTextProviderError(error, profile, model);
       return json(res, 502, { connected: false, provider: publicProviderId(profile), error: message });
-    }
+    } finally { lifecycle.dispose(); }
   }
   if (req.method === "GET" && url.pathname === "/api/projects") {
     const projects = [];

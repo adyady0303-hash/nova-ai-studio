@@ -199,7 +199,9 @@ test('automatic text quota failover preserves manual routing and subscriber quot
       const before = app.calls().length;
       const response = await app.chat(app.owner, `ALL_STATUS_${status}`);
       assert.equal(response.status, [401, 403].includes(status) ? 502 : status);
-      assert.equal(app.calls().length - before, 1);
+      const attempts = app.calls().slice(before);
+      assert.equal(new Set(attempts.map(call => call.provider)).size, 1, 'non-quota errors do not switch providers');
+      assert.equal(attempts.length, status === 503 && attempts[0].provider === 'gemini' ? 2 : 1);
     }
     for (const prompt of ['QUOTA_THEN_AUTH', 'QUOTA_THEN_SERVER_ERROR']) {
       // A fresh app fixes the first selected provider for this failure sequence.
