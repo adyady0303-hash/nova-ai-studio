@@ -857,7 +857,11 @@ function friendlyTextProviderError(error, profile, model) {
   const selectedModel = String(model || profile?.textModel || "modelul selectat");
   const message = String(error?.message || "");
   if (status === 401 || status === 403) return `${name} a respins cheia API sau accesul proiectului. Creează o cheie validă, salveaz-o în Motoare AI și verifică permisiunile contului.`;
-  if (status === 429) return `${name} a atins limita de cereri sau cota API. Verifică pagina de utilizare/facturare a furnizorului ori așteaptă resetarea cotei.`;
+  if (status === 429) {
+    if (error.quotaFallbackExhausted) return "Motoarele AI încercate au refuzat cererea din cauza cotelor lor API. Aceasta nu este o limită de creare Nova. Verifică creditul sau limitele furnizorilor ori configurează un alt motor disponibil.";
+    if (error.code === "insufficient_quota") return `${name} nu mai are credit sau cotă API disponibilă. Aceasta nu este o limită de creare Nova. Verifică facturarea API sau activează modul automat cu un alt motor configurat.`;
+    return `${name} a atins limita de cereri sau cota API. Aceasta nu este o limită de creare Nova. Activează modul automat cu un alt motor configurat sau verifică limitele API ale furnizorului.`;
+  }
   if (status === 404 || /model.*(?:not found|does not exist|unknown|invalid)/i.test(message)) return `Modelul „${selectedModel}” nu este disponibil la ${name}. Reîncarcă modelele și alege unul din catalogul furnizorului.`;
   if (status === 400 && /(tool|function|function.?call)/i.test(message)) return `Modelul „${selectedModel}” de la ${name} nu acceptă uneltele necesare acestei cereri. Alege un model cu function calling sau alt furnizor text.`;
   if (status === 400) return `${name} a respins cererea pentru modelul „${selectedModel}”. Reîncarcă modelele și încearcă un model compatibil.`;
@@ -963,26 +967,44 @@ async function chatWithResolvedTextModel(profile, preferredModel, options) {
   }
 }
 
-async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false) {
+async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false, signal) {
+  signal?.throwIfAborted();
   const automatic = aiConfig.routes.autoSelect === true ? automaticTextProfiles() : [];
   const primary = automatic[0] || requireRouteProfile("text");
-  const chosen = automatic.length
-    ? automatic[automaticProviderCursor++ % automatic.length]
-    : primary;
-  const candidates = [chosen, ...configuredFallbackProfiles(chosen).slice(0, 1)];
+  const start = automatic.length ? automaticProviderCursor++ % automatic.length : 0;
+  const chosen = automatic[start] || primary;
+  const quotaAlternatives = [...automatic.slice(start + 1), ...automatic.slice(0, start)];
+  const explicitFallback = configuredFallbackProfiles(chosen).slice(0, 1);
+  const candidates = [chosen];
+  const attempted = new Set();
+  const quotaRejected = new Set();
   let lastError;
   for (let index = 0; index < candidates.length; index++) {
     const profile = candidates[index];
+    attempted.add(profile.id);
     try {
       return await chatWithResolvedTextModel(profile, profile.id === primary.id ? model : profile.textModel, {
         messages,
         tools,
         maxOutputTokens,
+        signal,
         forceWebTool: verifyWeb && tools?.some(tool => tool.function?.name === "web_search")
       });
     } catch (error) {
+      signal?.throwIfAborted();
       lastError = error;
-      if (index === candidates.length - 1 || !isTransientProviderError(error)) throw error;
+      if (!isTransientProviderError(error)) throw error;
+      const quotaLimited = Number(error.status) === 429;
+      if (quotaLimited) quotaRejected.add(profile.id);
+      // Automatic routing already permits these providers. A rejected quota request
+      // can move within that pool; other retries still require explicit fallback.
+      const alternatives = quotaLimited ? [...quotaAlternatives, ...explicitFallback] : explicitFallback;
+      const next = alternatives.find(candidate => !attempted.has(candidate.id));
+      if (!next) {
+        if (quotaLimited && quotaRejected.size > 1) error.quotaFallbackExhausted = true;
+        throw error;
+      }
+      candidates.push(next);
     }
   }
   throw lastError || new Error("Niciun motor AI nu este disponibil.");
@@ -1352,7 +1374,27 @@ async function callAgentTool(name, args, project, allowChanges, principal = "own
   throw new Error(`Unealtă necunoscută: ${name}`);
 }
 
-async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false) {
+function creationMessages(messages, role) {
+  let inputBudget = 18000;
+  return (role === "owner" ? messages : messages.slice(-6)).map(message => {
+    if (!message || !["user", "assistant"].includes(message.role) || typeof message.content !== "string") {
+      throw Object.assign(new Error("Format de conversație invalid."), { status: 400 });
+    }
+    const content = role === "owner" ? message.content : message.content.slice(0, Math.min(6000, inputBudget));
+    inputBudget -= content.length;
+    return { role: message.role, content };
+  });
+}
+
+function aiRequestLifecycle(res) {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  res.once("close", cancel);
+  if (res.destroyed) controller.abort();
+  return { signal: controller.signal, dispose: () => res.off("close", cancel) };
+}
+
+async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false, signal) {
   verifyWeb = verifyWeb || automaticWebSearch(inputMessages);
   let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
   const taskPrompts = creationPrompts;
@@ -1363,7 +1405,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       : `Ești Nova, asistent de creație și programare. ${taskPrompts[task] || taskPrompts.auto} Explorează proiectul și fișierele relevante când cererea depinde de ele. Implementează cererile de cod folosind write_file numai când este permis. Păstrează schimbările la obiect și raportează fiecare fișier schimbat. Nu rula comenzi și nu pretinde că ai testat codul.`;
   const messages = [
     { role: "system", content: `${prompt}\n\nAi acces la fișierele proiectului deschis prin list_files, read_file și write_file. Nu ai terminal sau acces la alte dosare. ${webPrompt} ${accuracyPrompt()} ${verifyWeb ? "Verificarea pe internet este cerută explicit. Caută numai informațiile publice necesare întrebării; nu trimite conversația sau fișierele private în căutare." : ""} ${allowChanges ? "Modificările sunt permise pentru această cerere." : "Modificările sunt dezactivate pentru această cerere."} Păstrează căile relative în proiect și nu șterge fișiere.` },
-    ...inputMessages.slice(-12)
+    ...inputMessages
   ];
   const tools = allowChanges ? agentTools : agentTools.filter(tool => tool.function.name !== "write_file");
   const events = [];
@@ -1372,15 +1414,19 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     ? new Set(["index.html", "styles.css", "app.js"])
     : null;
   const writtenBusinessFiles = new Set();
-  const maxRounds = principal === "owner" ? 8 : 4;
-  const maxWebCalls = principal === "owner" ? 6 : 4;
+  const owner = principal === "owner";
+  const maxRounds = owner ? Infinity : 4;
+  const maxWebCalls = owner ? Infinity : 4;
+  let businessCompletionRequested = false;
+  let failedToolBatch = null;
   for (let round = 0; round < maxRounds; round++) {
+    signal?.throwIfAborted();
     if (webCalls >= maxWebCalls && !webLimitNotified) {
       messages.push({ role: "system", content: "Limita de căutări a fost atinsă. Nu mai cere unelte web. Formulează acum răspunsul final folosind sursele și rezultatele deja disponibile; ignoră sursele care au eșuat." });
       webLimitNotified = true;
     }
     const activeTools = webCalls >= maxWebCalls ? tools.filter(tool => !webTools.some(webTool => webTool.function.name === tool.function.name)) : tools;
-    const response = await providerChat(model, messages, activeTools, principal === "owner" ? null : 1500, (verifyWeb && round === 0) || retryWeb);
+    const response = await providerChat(model, messages, activeTools, owner ? null : 1500, (verifyWeb && round === 0) || retryWeb, signal);
     retryWeb = false;
     const message = response.message || {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -1394,41 +1440,49 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     }
     if (!calls.length && requiredBusinessFiles) {
       const missing = [...requiredBusinessFiles].filter(file => !writtenBusinessFiles.has(file));
-      if (missing.length && round < maxRounds - 1) {
+      if (missing.length && (!owner || !businessCompletionRequested) && round < maxRounds - 1) {
+        businessCompletionRequested = true;
         messages.push({ role: "system", content: `Cererea nu este finalizată. Creează acum fișierele lipsă ${missing.join(", ")} folosind write_file, cu conținut complet și funcțional. Nu răspunde doar cu idei sau cod în mesaj.` });
         continue;
       }
       if (missing.length) throw Object.assign(new Error(`Motorul AI nu a creat fișierele obligatorii: ${missing.join(", ")}. Încearcă din nou sau alege alt model text.`), { status: 502 });
     }
     if (!calls.length) return { content: answerWithSources(message.content || "Agentul a terminat fără un răspuns text.", sources, verifyWeb), events, model: response.model || model, provider: response.provider, providerName: response.providerName };
-    let toolCount = 0;
+    businessCompletionRequested = false;
+    let toolCount = 0, successfulTools = 0;
     for (const call of calls) {
+      signal?.throwIfAborted();
       const name = call.function?.name;
       const isWebTool = ["web_search", "read_web_page"].includes(name);
       if (isWebTool) { webAttempted = true; webCalls += 1; }
       try {
-      if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
+      if (!owner && ++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
       if (isWebTool && webCalls > maxWebCalls) throw new Error("Limita de căutări web a fost atinsă; redactează răspunsul din sursele existente.");
       let args = call.function?.arguments;
       if (typeof args === "string") { try { args = JSON.parse(args); } catch { args = null; } }
       const result = await callAgentTool(name, args, project, allowChanges, principal);
+      successfulTools += 1;
       if (webTools.some(tool => tool.function.name === name)) collectSources(result, sources);
         if (name === "write_file" && requiredBusinessFiles?.has(args.path)) writtenBusinessFiles.add(args.path);
         if (!isWebTool) events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
-        const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : principal === "owner" ? 30000 : 10000;
-        messages.push({ role: "tool", tool_call_id: call.id, content: String(result).slice(0, toolResultLimit) });
+        const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : 10000;
+        messages.push({ role: "tool", tool_call_id: call.id, content: owner ? String(result) : String(result).slice(0, toolResultLimit) });
       } catch (error) {
         if (!isWebTool) events.push({ tool: name || "unknown", ok: false, summary: error.message });
         messages.push({ role: "tool", tool_call_id: call.id, content: `Eroare: ${error.message}` });
       }
     }
+    // A repeated batch of failed tools is an execution failure, not a creation quota.
+    const failedBatch = successfulTools ? null : JSON.stringify(calls.map(call => call.function));
+    if (failedBatch && failedBatch === failedToolBatch) break;
+    failedToolBatch = failedBatch;
   }
   if (requiredBusinessFiles) {
     const missing = [...requiredBusinessFiles].filter(file => !writtenBusinessFiles.has(file));
     if (missing.length) throw Object.assign(new Error(`Motorul AI nu a creat fișierele obligatorii: ${missing.join(", ")}. Încearcă din nou sau alege alt model text.`), { status: 502 });
   }
   messages.push({ role: "system", content: "Oprește folosirea uneltelor și oferă acum răspunsul final, clar și complet. Folosește informațiile deja obținute, citează numai sursele valide și menționează concis ce nu a putut fi verificat." });
-  const finalResponse = await providerChat(model, messages, [], principal === "owner" ? null : 1500, false);
+  const finalResponse = await providerChat(model, messages, [], owner ? null : 1500, false, signal);
   return { content: answerWithSources(finalResponse.message?.content || "Nu am putut formula răspunsul final din sursele disponibile.", sources, verifyWeb), events, model: finalResponse.model || model, provider: finalResponse.provider, providerName: finalResponse.providerName };
 }
 
@@ -1679,7 +1733,7 @@ async function handle(req, res) {
       profile = requireRouteProfile("image");
       if (profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă generare de imagini compatibilă.`), { status: 503 });
       const body = await readJson(req);
-      const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
+      const prompt = typeof body.prompt === "string" ? (account.role === "owner" ? body.prompt.trim() : body.prompt.trim().slice(0, 4000)) : "";
       if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
       imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
@@ -1698,7 +1752,7 @@ async function handle(req, res) {
       profile = requireRouteProfile("image");
       if (!profile.capabilities.imageEdit || profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă editare de imagini compatibilă.`), { status: 503 });
       const body = await readJson(req, MAX_IMAGE_EDIT_BODY);
-      const prompt = typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
+      const prompt = typeof body.prompt === "string" ? (account.role === "owner" ? body.prompt.trim() : body.prompt.trim().slice(0, 4000)) : "";
       if (!prompt) return json(res, 400, { error: "Descrie schimbarea pe care o dorești în fotografie." });
       const source = uploadedImage(body.image);
       imageModel = await resolvedImageModel(profile);
@@ -1966,20 +2020,14 @@ async function handle(req, res) {
     if (!validProjectId(body.project)) return json(res, 400, { error: "Alege un proiect." });
     if (!Array.isArray(body.messages) || !body.messages.length) return json(res, 400, { error: "Trimite o cerere agentului." });
     const mode = ["build", "plan", "review"].includes(body.mode) ? body.mode : "build";
-    let inputBudget = account.role === "subscriber" ? 18000 : 288000;
-    const safeMessages = body.messages.slice(account.role === "subscriber" ? -6 : -12).map(message => {
-      if (!(["user", "assistant"].includes(message.role)) || typeof message.content !== "string") throw Object.assign(new Error("Format de conversație invalid."), { status: 400 });
-      const limit = account.role === "subscriber" ? 6000 : 24000;
-      const content = message.content.slice(0, Math.min(limit, inputBudget));
-      inputBudget -= content.length;
-      return { role: message.role, content };
-    });
+    const safeMessages = creationMessages(body.messages, account.role);
     const task = Object.hasOwn(creationPrompts, body.task) ? body.task : "auto";
     const allowAgentChanges = mode === "build" && (account.role === "owner" || body.allowChanges === true);
     const model = account.role === "owner" ? body.model.trim() : activeTextProfile().textModel;
     if (!await consumeAiQuota(req, res)) return;
+    const lifecycle = aiRequestLifecycle(res);
     try {
-      const result = await runAgent(model, safeMessages, body.project, mode, allowAgentChanges, task, principal, body.verifyWeb === true);
+      const result = await runAgent(model, safeMessages, body.project, mode, allowAgentChanges, task, principal, body.verifyWeb === true, lifecycle.signal);
       return json(res, 200, result);
     } catch (error) {
       const profile = aiConfig.profiles[error?.provider] || activeTextProfile();
@@ -1988,7 +2036,7 @@ async function handle(req, res) {
         ? `Motorul ${profile.name} nu este configurat complet. Deschide Motoare AI în setările Nova.`
         : friendlyTextProviderError(error, profile, model);
       return json(res, 503, { error: unavailable, providerError: true });
-    }
+    } finally { lifecycle.dispose(); }
   }
 
   if (req.method === "GET" && url.pathname === "/api/health") {
@@ -2046,6 +2094,7 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/chat") {
     let requestedModel = "";
+    const lifecycle = aiRequestLifecycle(res);
     try {
       const body = await readJson(req);
       requestedModel = typeof body.model === "string" ? body.model.trim() : "";
@@ -2057,16 +2106,7 @@ async function handle(req, res) {
         return json(res, 400, { error: "Adaugă un mesaj pentru model." });
       }
 
-      let inputBudget = account.role === "subscriber" ? 18000 : 288000;
-      const messages = body.messages.slice(account.role === "subscriber" ? -6 : -12).map(message => {
-        if (!(["user", "assistant"].includes(message.role)) || typeof message.content !== "string") {
-          throw Object.assign(new Error("Format de mesaj invalid."), { status: 400 });
-        }
-        const limit = account.role === "subscriber" ? 6000 : 24000;
-        const content = message.content.slice(0, Math.min(limit, inputBudget));
-        inputBudget -= content.length;
-        return { role: message.role, content };
-      });
+      const messages = creationMessages(body.messages, account.role);
       const model = account.role === "owner" ? body.model.trim() : activeTextProfile().textModel;
       if (!await consumeAiQuota(req, res)) return;
 
@@ -2083,18 +2123,22 @@ async function handle(req, res) {
       let result;
       let verifyWeb = task === "auto" && (body.verifyWeb === true || automaticWebSearch(messages));
       let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
-      const maxWebCalls = account.role === "owner" ? 6 : 4;
+      let failedToolBatch = null;
+      const owner = account.role === "owner";
+      const maxWebCalls = owner ? Infinity : 4;
+      const maxRounds = owner ? Infinity : 4;
       const sources = [];
-      for (let round = 0; round < 4; round++) {
+      for (let round = 0; round < maxRounds; round++) {
+        lifecycle.signal.throwIfAborted();
         if (webCalls >= maxWebCalls && !webLimitNotified) {
           chatMessages.push({ role: "system", content: "Limita de căutări a fost atinsă. Nu mai cere unelte web. Răspunde acum folosind rezultatele și sursele valide deja disponibile." });
           webLimitNotified = true;
         }
         const activeTools = task === "auto" && webCalls < maxWebCalls ? webTools : [];
-        result = await providerChat(model, chatMessages, activeTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb);
+        result = await providerChat(model, chatMessages, activeTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb, lifecycle.signal);
         retryWeb = false;
         const message = result.message || {};
-        if (task === "auto" && !message.tool_calls?.length && !webAttempted && !verifyWeb && round < 3 && needsWebRetry(message.content)) {
+        if (task === "auto" && !message.tool_calls?.length && !webAttempted && !verifyWeb && round < maxRounds - 1 && needsWebRetry(message.content)) {
           chatMessages.push(message, { role: "system", content: "Caută automat informațiile publice lipsă cu web_search, fără date private. Răspunde în limba utilizatorului folosind sursele relevante." });
           retryWeb = true;
           webAttempted = true;
@@ -2103,25 +2147,30 @@ async function handle(req, res) {
         }
         if (!message.tool_calls?.length) break;
         chatMessages.push(message);
-        let toolCount = 0;
+        let toolCount = 0, successfulTools = 0;
         for (const call of message.tool_calls) {
+          lifecycle.signal.throwIfAborted();
           let content;
           try {
-            if (++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
+            if (!owner && ++toolCount > 4) throw new Error("Limita de unelte pe pas a fost atinsă.");
             if (++webCalls > maxWebCalls) throw new Error("Limita de căutări web a fost atinsă; redactează răspunsul din sursele existente.");
             const args = typeof call.function?.arguments === "string" ? JSON.parse(call.function.arguments) : call.function?.arguments;
             if (!args || typeof args !== "object") throw new Error("Argumente invalide.");
             webAttempted = true;
             content = await callWebTool(call.function.name, args, undefined, { searchConfig: searchConfiguration() });
+            successfulTools += 1;
             collectSources(content, sources);
           } catch (error) { content = `Eroare: ${error.message}`; }
           chatMessages.push({ role: "tool", tool_call_id: call.id, content });
         }
         result = { message: { content: "Am atins limita de căutări web. Trimite o cerere de continuare." } };
+        const failedBatch = successfulTools ? null : JSON.stringify(message.tool_calls.map(call => call.function));
+        if (failedBatch && failedBatch === failedToolBatch) break;
+        failedToolBatch = failedBatch;
       }
       if (result?.message?.tool_calls?.length || result?.message?.content === "Am atins limita de căutări web. Trimite o cerere de continuare.") {
         chatMessages.push({ role: "system", content: "Oprește căutarea și oferă acum răspunsul final, clar și complet, din informațiile deja obținute. Citează numai sursele valide." });
-        result = await providerChat(model, chatMessages, [], account.role === "subscriber" ? 1500 : null, false);
+        result = await providerChat(model, chatMessages, [], account.role === "subscriber" ? 1500 : null, false, lifecycle.signal);
       }
       return json(res, 200, {
         content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, verifyWeb),
@@ -2137,7 +2186,7 @@ async function handle(req, res) {
         error: friendlyTextProviderError(error, profile, requestedModel),
         providerError: true
       });
-    }
+    } finally { lifecycle.dispose(); }
   }
 
   if (req.method !== "GET" && req.method !== "HEAD") {

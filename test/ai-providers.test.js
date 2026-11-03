@@ -218,6 +218,34 @@ test('Gemini removes the catalog models prefix before chat requests', async () =
   });
 });
 
+test('chat adapters propagate caller cancellation to every provider protocol', async t => {
+  const profiles = [
+    customProfile(),
+    { id: 'anthropic', apiKey: 'anthropic-secret', textModel: 'claude-fixture' },
+    { id: 'ollama', baseUrl: 'http://127.0.0.1:11434', textModel: 'local-fixture' }
+  ];
+  for (const profile of profiles) {
+    await t.test(profile.id, async () => {
+      const controller = new AbortController();
+      const reason = new DOMException('Caller disconnected', 'AbortError');
+      let requests = 0;
+      await assert.rejects(chatWithProfile(profile, {
+        messages: [{ role: 'user', content: 'Continue creating the project' }],
+        signal: controller.signal,
+        fetchImpl: async (_url, options) => {
+          requests++;
+          assert.ok(options.signal instanceof AbortSignal);
+          assert.equal(options.signal.aborted, false);
+          controller.abort(reason);
+          assert.equal(options.signal.aborted, true, 'caller cancellation must reach the transport signal');
+          options.signal.throwIfAborted();
+        }
+      }), error => error.status === 504 && error.cause === reason);
+      assert.equal(requests, 1);
+    });
+  }
+});
+
 test('authenticated helpers reject route/header escapes and retain HTTP status', async () => {
   const profile = customProfile();
   await assert.rejects(openAiCompatibleJson(profile, 'https://attacker.example.test/steal', {

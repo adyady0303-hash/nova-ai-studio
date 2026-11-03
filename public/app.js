@@ -106,7 +106,7 @@ function updateAccountLabel() {
   const subscriber = account.role === "subscriber";
   el("accountLabel").textContent = account.role === "subscriber"
     ? `${account.displayName || account.username} · ${account.quotaInterval === "month" ? "Standard" : "Gratuit"} · ${account.quotaRemaining}/${account.quotaLimit} unități AI ${account.quotaInterval === "month" ? "lunar" : "azi"}`
-    : `${account.username} · Administrator`;
+    : `${account.username} · Administrator · Fără limită de creare`;
   const upgrade = el("subscriberUpgrade");
   if (upgrade) {
     upgrade.hidden = !subscriber;
@@ -135,6 +135,8 @@ async function loadAccount() {
   el("voiceSettingsBtn").hidden = subscriber;
   el("imageEditSettingsBtn").hidden = subscriber;
   el("editImageBtn").hidden = false;
+  if (subscriber) el("imageEditPrompt").setAttribute("maxlength", "4000");
+  else el("imageEditPrompt").removeAttribute("maxlength");
   el("adminDashboardLink").hidden = subscriber;
   el("deleteAccountBtn").hidden = !subscriber;
   el("logoutBtn").hidden = !account.authEnabled;
@@ -480,18 +482,25 @@ function renderDashboardUsage() {
   const account = state.account;
   const configured = providerProfiles().filter(profile => profile.ready?.text ?? profile.configured === true).length;
   const limit = Number(account?.quotaLimit || 0), remaining = Number(account?.quotaRemaining || 0);
-  const requestPercent = account?.role === "subscriber" && limit ? Math.max(0, Math.min(100, Math.round((limit - remaining) / limit * 100))) : configured ? 100 : 0;
+  const owner = account?.role === "owner";
+  const requestPercent = !owner && limit ? Math.max(0, Math.min(100, Math.round((limit - remaining) / limit * 100))) : 0;
   const rows = [
     ["Motoare", configured ? 100 : 0, configured ? String(configured) : "0"],
-    ["Cereri AI", requestPercent, account?.role === "subscriber" && limit ? `${limit - remaining}/${limit}` : "Auto"],
-    ["Proiecte", Math.min(100, state.projects.length * 10), String(state.projects.length)]
+    ["Cereri AI", requestPercent, owner ? "Fără limită" : `${limit - remaining}/${limit}`],
+    ["Proiecte", Math.min(100, state.projects.length * 10), owner ? `${state.projects.length} · Fără limită` : String(state.projects.length)]
   ];
   rows.forEach(([label, percent, value]) => {
     const row = document.createElement("div"); row.className = "usage-row";
     const name = document.createElement("span"); name.textContent = label;
     const track = document.createElement("span"); track.className = "usage-track";
     const fill = document.createElement("span"); fill.className = "usage-fill"; fill.style.width = `${percent}%`; track.append(fill);
-    const amount = document.createElement("span"); amount.textContent = value; row.append(name, track, amount); node.append(row);
+    const amount = document.createElement("span"); amount.textContent = value;
+    if (owner && label !== "Motoare") {
+      track.hidden = true;
+      amount.style.gridColumn = "2 / -1";
+      amount.style.textAlign = "right";
+    }
+    row.append(name, track, amount); node.append(row);
   });
 }
 
@@ -859,6 +868,7 @@ function addBubble(role, content, events = [], metadata = null) {
     speakNextAssistant = false;
     speakChatReply(messageText);
   }
+  return node;
 }
 
 async function saveFile(showToast = false) {
@@ -1164,7 +1174,7 @@ async function undoFile() {
 
 async function send() {
   if (state.busy) return;
-  const promptText = el("prompt").value.trim(), model = el("modelSelect").value;
+  const promptDraft = el("prompt").value, promptText = promptDraft.trim(), model = el("modelSelect").value;
   if (!promptText) return;
   if (el("taskSelect").value === "auto" && looksLikeCvCreationRequest(promptText)) {
     speakNextAssistant = false; el("prompt").value = ""; resizePrompt(); openCvBuilder(); return;
@@ -1185,9 +1195,11 @@ async function send() {
   const contextualPrompt = ["code", "business"].includes(task)
     ? `${promptText}\n\nProiect: ${currentProject?.name || state.project}\nFișier activ: ${state.activePath || "niciunul"}\nConținutul fișierului activ:\n\`\`\`${state.activePath?.split(".").pop() || "text"}\n${activeContent}\n\`\`\``
     : promptText;
-  state.chat.push({ role: "user", content: contextualPrompt, displayContent: promptText });
-  localStorage.setItem(chatKey(), JSON.stringify(state.chat));
-  addBubble("user", promptText); el("prompt").value = "";
+  const chat = state.chat, project = state.project, historyKey = chatKey();
+  const sentTurn = { role: "user", content: contextualPrompt, displayContent: promptText };
+  chat.push(sentTurn);
+  localStorage.setItem(historyKey, JSON.stringify(chat));
+  const userBubble = addBubble("user", promptText); el("prompt").value = "";
   const directChat = usesDirectChat(task);
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = directChat
     ? (task === "lyrics" ? "Nova compune versurile complete…" : task === "text" ? "Nova redactează textul complet…" : "Nova pregătește răspunsul…")
@@ -1195,15 +1207,18 @@ async function send() {
       : mode === "build" ? "Agentul explorează proiectul…" : mode === "plan" ? "Nova pregătește planul…" : "Nova revizuiește codul…";
   messageContainer().append(pending); el("messages").scrollTop = el("messages").scrollHeight;
   state.busy = true; el("sendBtn").disabled = true;
+  let receivedResponse = false;
   try {
     if (!directChat && state.dirty) await saveFile(false);
-    const messages = state.chat.map(({ role, content }) => ({ role, content }));
+    const messages = chat.map(({ role, content }) => ({ role, content }));
     const result = directChat
       ? await api("/api/chat", jsonBody({ model, task, verifyWeb: task === "auto" && el("verifyWeb").checked, messages }))
-      : await api("/api/agent", jsonBody({ project: state.project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages }));
+      : await api("/api/agent", jsonBody({ project, model, mode, task, allowChanges, verifyWeb: el("verifyWeb").checked, messages }));
+    receivedResponse = true;
     const assistantContent = result.content;
-    state.chat.push({ role: "assistant", content: assistantContent });
-    localStorage.setItem(chatKey(), JSON.stringify(state.chat));
+    chat.push({ role: "assistant", content: assistantContent });
+    localStorage.setItem(historyKey, JSON.stringify(chat));
+    if (state.chat !== chat) return;
     const events = Array.isArray(result.events) ? result.events : [];
     addBubble("assistant", assistantContent, events, result);
     const wroteFiles = events.some(event => event.ok && event.tool === "write_file");
@@ -1217,7 +1232,17 @@ async function send() {
       catch (error) { addBubble("assistant", `Site-ul a fost creat, dar publicarea nu a reușit: ${error.message}`); }
     }
   } catch (error) {
-    addBubble("assistant", error.message || "Nu am putut contacta agentul.");
+    if (!receivedResponse) {
+      const index = chat.indexOf(sentTurn);
+      if (index !== -1) chat.splice(index, 1);
+      localStorage.setItem(historyKey, JSON.stringify(chat));
+      userBubble?.remove();
+      if (state.chat === chat && !el("prompt").value) {
+        el("prompt").value = promptDraft;
+        resizePrompt();
+      }
+    }
+    if (state.chat === chat) addBubble("assistant", error.message || "Nu am putut contacta agentul.");
   } finally {
     pending.remove(); state.busy = false; el("sendBtn").disabled = false; el("prompt").focus();
   }

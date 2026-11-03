@@ -438,7 +438,7 @@ async function openAiCompatibleImageEdit(profile, image, prompt, options = {}) {
   if (normalized.protocol !== "openai") throw providerError("Profilul nu folosește protocolul OpenAI-compatible.", 400, { provider: normalized.id });
   const requestOptions = typeof options === "number" ? { timeout: options } : normalizedRequestOptions(options);
   const source = imageBytes(image);
-  const cleanPrompt = cleanField(prompt, "prompt", 4000, { allowEmpty: false });
+  const cleanPrompt = cleanField(prompt, "prompt", Infinity, { allowEmpty: false });
   const model = cleanField(requestOptions.model || normalized.imageModel, "imageModel", 240, { allowEmpty: false });
   const form = new FormData();
   form.set("model", model);
@@ -638,7 +638,7 @@ async function anthropicChat(profile, request) {
       ...(converted.system ? { system: converted.system } : {}), messages: converted.messages,
       ...(converted.tools.length ? { tools: converted.tools } : {}), ...(choice ? { tool_choice: choice } : {})
     }),
-    contentType: "application/json", fetchImpl: request.fetchImpl, timeout: request.timeout
+    contentType: "application/json", fetchImpl: request.fetchImpl, timeout: request.timeout, signal: request.signal
   });
   if (!Array.isArray(payload.content)) throw providerError("Anthropic nu a returnat un mesaj valid.", 502, { provider: profile.id });
   const text = payload.content.filter(block => block?.type === "text" && typeof block.text === "string").map(block => block.text).join("");
@@ -661,7 +661,7 @@ async function openAiChat(profile, request) {
     ...(request.maxOutputTokens ? { [preset.outputTokenField]: request.maxOutputTokens } : {})
   };
   const payload = await openAiCompatibleJson(profile, "/chat/completions", {
-    method: "POST", json: body, fetchImpl: request.fetchImpl, timeout: request.timeout
+    method: "POST", json: body, fetchImpl: request.fetchImpl, timeout: request.timeout, signal: request.signal
   });
   return normalizedChatResult(profile, String(payload.model || request.model), payload.choices?.[0]?.message);
 }
@@ -683,7 +683,7 @@ async function ollamaChat(profile, request) {
       model: request.model, stream: false, messages, ...(tools ? { tools } : {}),
       options: { temperature: 0.2, ...(request.maxOutputTokens ? { num_predict: request.maxOutputTokens } : {}) }
     }),
-    contentType: "application/json", fetchImpl: request.fetchImpl, timeout: request.timeout
+    contentType: "application/json", fetchImpl: request.fetchImpl, timeout: request.timeout, signal: request.signal
   });
   return normalizedChatResult(profile, String(payload.model || request.model), payload.message);
 }
@@ -695,7 +695,7 @@ async function chatWithProfile(profileInput, options = {}) {
   const request = {
     model: requestedModel(profile, options.model), messages: options.messages, tools: options.tools,
     maxOutputTokens: normalizedMaxTokens(options.maxOutputTokens), forceWebTool: options.forceWebTool === true,
-    fetchImpl: options.fetchImpl, timeout: normalizedTimeout(options.timeout, DEFAULT_TIMEOUT)
+    fetchImpl: options.fetchImpl, timeout: normalizedTimeout(options.timeout, DEFAULT_TIMEOUT), signal: options.signal
   };
   if (profile.protocol === "anthropic") return anthropicChat(profile, request);
   if (profile.protocol === "ollama") return ollamaChat(profile, request);
