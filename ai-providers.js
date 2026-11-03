@@ -356,16 +356,17 @@ async function performRequest(profileInput, route, options = {}, fallbackTimeout
     });
   } catch (cause) {
     if (cause?.status) throw cause;
-    const timedOut = cause?.name === "AbortError" || cause?.name === "TimeoutError" || cause?.code === "ABORT_ERR" || cause?.code === "ETIMEDOUT";
+    const code = cause?.code || cause?.cause?.code;
+    const timedOut = cause?.name === "AbortError" || cause?.name === "TimeoutError" || ["ABORT_ERR", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"].includes(code);
     throw providerError(timedOut ? "Conexiunea cu furnizorul AI a expirat." : "Furnizorul AI nu poate fi contactat.", timedOut ? 504 : 502, {
-      provider: profile.id, code: cause?.code, cause
+      provider: profile.id, code, cause, failureKind: timedOut ? "timeout" : "network"
     });
   }
   if (response && !Number.isInteger(response.status) && typeof response.ok === "boolean") {
     // Test doubles and a few embedded fetch bridges expose `ok` without `status`.
     response = { ...response, status: response.ok ? 200 : 502 };
   }
-  if (!response || !Number.isInteger(response.status)) throw providerError("Furnizorul AI a returnat un răspuns HTTP invalid.", 502, { provider: profile.id });
+  if (!response || !Number.isInteger(response.status)) throw providerError("Furnizorul AI a returnat un răspuns HTTP invalid.", 502, { provider: profile.id, failureKind: "invalid_response" });
   return { profile, response };
 }
 
@@ -375,10 +376,11 @@ async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = 
   if (!responseIsOk(response)) {
     const remoteError = plainObject(payload?.error) ? payload.error : {};
     throw providerError(payloadErrorMessage(payload, response), response.status, {
-      provider: profile.id, code: remoteError.code || remoteError.type || payload?.code, details: payload
+      provider: profile.id, code: remoteError.code || remoteError.type || payload?.code, details: payload,
+      failureKind: "http", upstreamStatus: response.status
     });
   }
-  if (own(payload, "raw")) throw providerError("Furnizorul AI nu a returnat JSON valid.", 502, { provider: profile.id });
+  if (own(payload, "raw")) throw providerError("Furnizorul AI nu a returnat JSON valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
   return payload;
 }
 
@@ -535,7 +537,7 @@ function normalizedToolCalls(toolCalls) {
 }
 
 function normalizedChatResult(profile, model, message) {
-  if (!plainObject(message)) throw providerError("Furnizorul AI nu a returnat un mesaj valid.", 502, { provider: profile.id });
+  if (!plainObject(message)) throw providerError("Furnizorul AI nu a returnat un mesaj valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
   const toolCalls = normalizedToolCalls(message.tool_calls);
   return {
     message: {
@@ -640,7 +642,7 @@ async function anthropicChat(profile, request) {
     }),
     contentType: "application/json", fetchImpl: request.fetchImpl, timeout: request.timeout, signal: request.signal
   });
-  if (!Array.isArray(payload.content)) throw providerError("Anthropic nu a returnat un mesaj valid.", 502, { provider: profile.id });
+  if (!Array.isArray(payload.content)) throw providerError("Anthropic nu a returnat un mesaj valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
   const text = payload.content.filter(block => block?.type === "text" && typeof block.text === "string").map(block => block.text).join("");
   const toolCalls = payload.content.filter(block => block?.type === "tool_use" && block.id && block.name).map(block => ({
     id: String(block.id), type: "function", function: { name: String(block.name), arguments: JSON.stringify(block.input ?? {}) }

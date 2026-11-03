@@ -866,7 +866,14 @@ function friendlyTextProviderError(error, profile, model) {
   if (status === 400 && /(tool|function|function.?call)/i.test(message)) return `Modelul „${selectedModel}” de la ${name} nu acceptă uneltele necesare acestei cereri. Alege un model cu function calling sau alt furnizor text.`;
   if (status === 400) return `${name} a respins cererea pentru modelul „${selectedModel}”. Reîncarcă modelele și încearcă un model compatibil.`;
   if ([408, 504].includes(status)) return `Conexiunea cu ${name} a expirat. Încearcă din nou; dacă problema continuă, activează un motor de rezervă.`;
-  if (status >= 500) return `${name} este indisponibil temporar. Încearcă din nou sau activează un motor de rezervă în Motoare AI.`;
+  if (error.failureKind === "network") {
+    if (["ENOTFOUND", "EAI_AGAIN"].includes(error.code)) return `Serverul Nova nu poate rezolva adresa API pentru ${name} (eroare DNS). Verifică rețeaua și adresa API de pe serverul de găzduire.`;
+    if (["CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "DEPTH_ZERO_SELF_SIGNED_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "ERR_TLS_CERT_ALTNAME_INVALID"].includes(error.code)) return `Serverul Nova nu poate verifica certificatul conexiunii securizate către ${name} (eroare TLS). Verifică certificatele de pe serverul de găzduire.`;
+    return `Serverul Nova nu poate contacta API-ul ${name} (eroare de conexiune). Verifică accesul la rețea de pe serverul de găzduire.`;
+  }
+  if (error.failureKind === "invalid_response") return `API-ul ${name} a returnat un răspuns invalid sau incompatibil. Verifică modelul și protocolul API; răspunsul nu confirmă o indisponibilitate a furnizorului.`;
+  if (error.failureKind === "http" && status >= 500) return `${name} a returnat HTTP ${status}. Serviciul furnizorului a respins cererea cu o eroare de server. Încearcă din nou sau activează un motor de rezervă în Motoare AI.`;
+  if (status >= 500) return `Nova nu a putut obține un răspuns valid de la ${name} (cod ${status}). Încearcă testul de chat din Administrare pentru a verifica motorul configurat.`;
   return `${name} nu a putut procesa cererea cu modelul „${selectedModel}”.`;
 }
 
@@ -1803,22 +1810,16 @@ async function handle(req, res) {
     if (!await consumeAiQuota(req, res)) return;
     try {
       const messages = [{ role: "user", content: "Răspunde doar cu: Nova este conectată." }];
-      const response = await chatWithProfile(profile, { model, messages, maxOutputTokens: 24, timeout: 30000 });
+      const response = await chatWithResolvedTextModel(profile, model, { model, messages, maxOutputTokens: profile.id === "gemini" ? 1024 : 24, timeout: 30000 });
       const reply = String(response.message?.content || "").trim();
-      if (!reply) throw new Error("Modelul nu a returnat text.");
+      if (!reply) throw Object.assign(new Error("Modelul nu a returnat text."), { status: 502, failureKind: "invalid_response" });
       return json(res, 200, { connected: true, provider: publicProviderId(profile), model: response.model || model, reply: reply.slice(0, 240) });
     } catch (error) {
       console.error("Nova AI connection test failed:", { provider: profile.id, status: error.status || 502 });
       const status = error.status;
-      const message = profile.id === "openai" || profile.id === "custom"
-        ? status === 401 || status === 403
-          ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
-          : status === 429
-            ? "OpenAI a limitat cererea de test. Verifică limitele și facturarea API."
-            : "Modelul OpenAI nu a putut răspunde. Verifică modelul, accesul API și limitele contului."
-        : profile.id === "ollama"
-          ? "Modelul Ollama nu a putut răspunde. Verifică dacă serviciul și modelul sunt pornite."
-          : `${profile.name} nu a putut răspunde. Verifică cheia, modelul și limitele contului furnizorului.`;
+      const message = ["openai", "custom"].includes(profile.id) && [401, 403].includes(status)
+        ? "OpenAI a respins cheia API. Verifică OPENAI_API_KEY în Render."
+        : friendlyTextProviderError(error, profile, model);
       return json(res, 502, { connected: false, provider: publicProviderId(profile), error: message });
     }
   }

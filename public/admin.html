@@ -48,7 +48,7 @@
         <div class="row" style="margin-top:14px"><span class="label">Furnizor</span><span class="value" id="provider">—</span></div>
         <div class="row"><span class="label">Model chat</span><span class="value" id="model">—</span></div>
         <div class="row"><span class="label">Cheie API</span><span class="value" id="keyState">—</span></div>
-        <div class="notice" id="aiDiagnostic" role="status" aria-live="polite">Se verifică furnizorul și modelul…</div>
+        <div class="notice" id="aiDiagnostic" role="status" aria-live="polite">Se verifică accesul la catalogul de modele…</div>
         <div class="actions" style="margin-top:14px"><a class="btn" href="/?settings=ai">Configurează AI</a><button class="btn primary" type="button" id="testAi">Testează chatul AI</button></div>
         <p class="muted" id="aiTestResult">Testul trimite un mesaj foarte scurt modelului selectat și poate fi tarifat de furnizor.</p>
       </article>
@@ -144,11 +144,11 @@
         }else{
           byId("provider").textContent="Indisponibil";byId("model").textContent="Indisponibil";byId("keyState").textContent="Indisponibil";
         }
+        aiTestModel=(settings&&settings.textModel)||(health&&health.recommendedModel)||(health&&health.models&&health.models[0])||"";
         if(health){
-          aiTestModel=(health.models&&health.models[0])||(settings&&settings.textModel)||"";
           const providerName=health.providerName||(settings&&settings.platformName)||health.provider||"Motor AI";
-          setPill(health.connected ? providerName+" · conexiune verificată" : providerName+" · neconectat", Boolean(health.connected));
-          byId("aiDiagnostic").textContent=health.connected ? "Serverul a validat conexiunea și a primit lista modelelor."
+          setPill(health.connected ? providerName+" · catalog accesibil" : providerName+" · catalog indisponibil", Boolean(health.connected));
+          byId("aiDiagnostic").textContent=health.connected ? "Serverul a primit catalogul modelelor. Chatul nu a fost încă testat; apasă «Testează chatul AI» pentru a verifica modelul configurat."
             : (health.error||"Motorul AI nu a putut fi verificat.");
           byId("aiDiagnostic").className="notice"+(health.connected?"":" error");
         }else{
