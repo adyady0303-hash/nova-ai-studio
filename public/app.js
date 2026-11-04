@@ -48,15 +48,16 @@ function updateVoiceChatButtons(listening) {
 }
 
 function speakChatReply(text) {
-  if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance !== "function") return;
-  const clean = String(text || "").replace(/```[\s\S]*?```/g, " fragment de cod ").replace(/[*_#`>~-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 12000);
-  if (!clean) return;
+  if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance !== "function") return false;
+  const clean = String(text || "").replace(/```[\s\S]*?```/g, " fragment de cod ").replace(/[*_#`>~-]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean) return false;
   speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(clean);
   utterance.lang = "ro-RO"; utterance.rate = 1; utterance.pitch = 1;
   const romanianVoice = speechSynthesis.getVoices().find(voice => /^ro(?:-|_)/i.test(voice.lang));
   if (romanianVoice) utterance.voice = romanianVoice;
   speechSynthesis.speak(utterance);
+  return true;
 }
 
 function startVoiceChat(targetId) {
@@ -1020,8 +1021,11 @@ function addBubble(role, content, events = [], metadata = null) {
     const activity = document.createElement("div"); activity.className = "agent-events";
     activity.textContent = events.map(event => `${event.ok ? "✓" : "!"} ${event.summary}`).join("\n"); node.append(activity);
   }
-  if (role === "assistant" && messageText.trim() && routeSupports("speech")) {
-    const row = document.createElement("div"); row.className = "apply-row"; addSpeechButton(row, messageText); node.append(row);
+  if (role === "assistant" && messageText.trim()) {
+    const row = document.createElement("div"); row.className = "apply-row";
+    addBrowserSpeechButton(row, messageText);
+    if (routeSupports("speech")) addSpeechButton(row, messageText);
+    node.append(row);
   }
   messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
   if (role === "assistant" && messageText.trim() && speakNextAssistant) {
@@ -1029,6 +1033,21 @@ function addBubble(role, content, events = [], metadata = null) {
     speakChatReply(messageText);
   }
   return node;
+}
+
+function addBrowserSpeechButton(node, text) {
+  const button = document.createElement("button"); button.className = "btn small"; button.textContent = "Ascultă în browser";
+  const stop = document.createElement("button"); stop.className = "btn small"; stop.textContent = "Oprește citirea"; stop.hidden = true;
+  button.addEventListener("click", () => {
+    try {
+      if (speakChatReply(text)) stop.hidden = false;
+      else toast("Citirea vocală nu este disponibilă în acest browser. Textul poate fi descărcat cu Descarcă TXT.");
+    } catch {
+      toast("Browserul nu a putut porni citirea vocală. Încearcă din nou sau descarcă textul.");
+    }
+  });
+  stop.addEventListener("click", () => { speechSynthesis.cancel(); stop.hidden = true; });
+  node.append(button, stop);
 }
 
 async function saveFile(showToast = false) {
