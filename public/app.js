@@ -1108,7 +1108,7 @@ async function loadProjects() {
 
 function createProject(name = "") {
   const dialog = el("newProjectDialog");
-  el("newProjectName").value = name;
+  el("newProjectName").value = typeof name === "string" ? name : "";
   dialog.showModal();
   requestAnimationFrame(() => el("newProjectName").focus());
 }
