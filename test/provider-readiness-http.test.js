@@ -317,4 +317,22 @@ test('provider readiness reflects real requests, preserves owner access and prot
     assert.equal(app.chatCalls().length, 5, 'Five subscriber units authorize exactly five upstream requests');
     assert.ok(app.chatCalls().every(call => call.provider === 'openai' && call.model === 'openai-saved-model'));
   });
+  await t.test('an explicit Gemini save overrides stale OpenAI routing and survives settings reload', async () => {
+    app.control({ openai: 'quota', gemini: 'success' });
+    const saved = await app.owner('/api/settings', { providerId:'gemini',selectForChat:true,
+      routes:{text:'openai',image:'openai',speech:'openai',autoSelect:true,autoFallback:true} });
+    assert.equal(saved.status,200,await saved.clone().text());
+    const configured=(await saved.json()).settings;
+    assert.equal(configured.routes.text,'gemini');
+    assert.equal(configured.routes.autoSelect,false);
+    assert.equal(configured.routes.autoFallback,false);
+    await new Promise(resolve=>setTimeout(resolve,1100));
+    assert.equal((await app.settings()).routes.text,'gemini');
+    app.clearCalls();
+    const reply=await app.owner('/api/chat',{model:'gemini-saved-model',task:'text',messages:[{role:'user',content:'Salut'}]});
+    assert.equal(reply.status,200,await reply.clone().text());
+    assert.equal((await reply.json()).provider,'gemini');
+    assert.deepEqual(app.chatCalls().map(call=>call.provider),['gemini']);
+  });
+
 });

@@ -410,6 +410,7 @@ function renderSearchSettings(settings) {
 
 async function loadProviderSettings() {
   const { settings } = await api("/api/settings"); state.settings = settings;
+  state.chatProviderSelection = null;
   renderProviderOptions(settings);
   renderRoutes(settings);
   renderSearchSettings(settings);
@@ -544,11 +545,14 @@ async function useSelectedProviderForChat() {
   el("autoSelectProvider").checked = false;
   el("autoFallback").checked = false;
   providerDraftDirty = true;
+  state.chatProviderSelection = id;
   await saveProviderSettings();
 }
 
 async function saveProviderSettings() {
+  const selectForChat = state.chatProviderSelection === el("providerSelect").value;
   const settings = {
+    selectForChat,
     providerId: el("providerSelect").value,
     baseUrl: el("apiBaseUrl").value.trim(),
     apiKey: el("apiKey").value,
@@ -570,7 +574,14 @@ async function saveProviderSettings() {
       clearApiKey: el("clearSearchApiKey").checked
     }
   };
+  if (selectForChat) {
+    settings.routes.text = settings.providerId;
+    settings.routes.autoSelect = false;
+    settings.routes.autoFallback = false;
+  }
   const result = await api("/api/settings", jsonBody(settings));
+  if (selectForChat && (result.settings?.routes?.text !== settings.providerId || result.settings.routes.autoSelect || result.settings.routes.autoFallback)) throw new Error("Motorul ales nu a fost confirmat de server. Setările au rămas deschise.");
+  state.chatProviderSelection = null;
   state.settings = result.settings; el("apiKey").value = ""; el("searchApiKey").value = "";
   providerDraftDirty = false; searchDraftDirty = false;
   el("providerDialog").close(); await refreshHealth();
@@ -1443,6 +1454,12 @@ el("providerSelect").addEventListener("change", event => {
     return;
   }
   renderProviderProfile(event.target.value);
+  state.chatProviderSelection = event.target.value;
+  el("routeText").value = event.target.value;
+  el("autoSelectProvider").checked = false;
+  el("autoFallback").checked = false;
+  providerDraftDirty = true;
+  el("providerProfileState").textContent += " · Va fi folosit pentru chat după salvare";
 });
 el("searchProvider").addEventListener("change", event => {
   if (searchDraftDirty && !window.confirm("Ai o cheie de căutare nesalvată. Abandonezi modificarea?")) {
@@ -1455,7 +1472,10 @@ el("searchProvider").addEventListener("change", event => {
 el("providerFields").addEventListener("input", () => { providerDraftDirty = true; });
 el("providerFields").addEventListener("change", () => { providerDraftDirty = true; });
 ["routeText", "routeImage", "routeSpeech", "autoSelectProvider", "autoFallback"].forEach(id => {
-  el(id).addEventListener("change", () => { providerDraftDirty = true; });
+  el(id).addEventListener("change", () => {
+    providerDraftDirty = true;
+    if (["routeText", "autoSelectProvider", "autoFallback"].includes(id)) state.chatProviderSelection = null;
+  });
 });
 ["searchApiKey", "clearSearchApiKey"].forEach(id => {
   el(id).addEventListener("input", () => { searchDraftDirty = true; });

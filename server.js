@@ -109,6 +109,7 @@ const sessions = new Map();
 let accountQueue = Promise.resolve();
 let publicationQueue = Promise.resolve();
 let aiSettingsCacheExpiresAt = 0;
+let aiSettingsRevision = 0;
 let aiHealthCache = null;
 let aiHealthPending = null;
 let automaticProviderCursor = 0;
@@ -715,6 +716,7 @@ async function initializeAiEncryption() {
 
 async function refreshAiSettings(force = false) {
   if (!force && Date.now() < aiSettingsCacheExpiresAt) return;
+  const revision = aiSettingsRevision;
   let value;
   if (dataStore.enabled) value = await dataStore.getSetting("ai-provider");
   else {
@@ -723,6 +725,7 @@ async function refreshAiSettings(force = false) {
       if (error.code !== "ENOENT") console.error("Nova AI settings file could not be read; keeping the current configuration.");
     }
   }
+  if (revision !== aiSettingsRevision) return;
   if (value) applyStoredAiSettings(value);
   aiSettingsCacheExpiresAt = Date.now() + 1000;
 }
@@ -738,6 +741,7 @@ async function persistAiSettings(settings = aiConfig) {
       await fs.promises.rename(temporary, AI_SETTINGS_FILE);
     } finally { await fs.promises.unlink(temporary).catch(() => {}); }
   }
+  aiSettingsRevision += 1;
   aiSettingsCacheExpiresAt = 0;
 }
 
@@ -1857,7 +1861,7 @@ async function handle(req, res) {
     const requestedRoutes = body.routes && typeof body.routes === "object" && !Array.isArray(body.routes) ? body.routes : null;
     if (requestedRoutes) {
       for (const capability of ["text", "image", "speech"]) {
-        const id = aliases[String(requestedRoutes[capability] || "").trim().toLowerCase()] || String(requestedRoutes[capability] || "").trim().toLowerCase();
+        const id = aliases[String(capability === "text" && body.selectForChat === true ? providerId : requestedRoutes[capability] || "").trim().toLowerCase()] || String(capability === "text" && body.selectForChat === true ? providerId : requestedRoutes[capability] || "").trim().toLowerCase();
         if (!next.profiles[id]?.capabilities?.[capability]) return json(res, 400, { error: `Ruta pentru ${capability} nu este compatibilă cu motorul ales.` });
         if (!routeProfileConfigured(next.profiles[id], capability)) {
           const label = capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text";
@@ -1871,6 +1875,12 @@ async function handle(req, res) {
       next.routes.text = providerId;
       if (routeProfileConfigured(updatedProfile, "image")) next.routes.image = providerId;
       if (routeProfileConfigured(updatedProfile, "speech")) next.routes.speech = providerId;
+    }
+    if (body.selectForChat === true) {
+      if (!routeProfileConfigured(updatedProfile, "text")) return json(res, 400, { error: "Configurează cheia și modelul motorului ales pentru chat." });
+      next.routes.text = providerId;
+      next.routes.autoSelect = false;
+      next.routes.autoFallback = false;
     }
     const activeAfterSave = next.profiles[next.routes.text];
     if (!routeProfileConfigured(activeAfterSave, "text")) {

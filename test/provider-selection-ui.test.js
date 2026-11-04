@@ -17,7 +17,7 @@ test('reopening settings preserves the edited Gemini profile while the current c
 test('explicit Gemini choice pins chat and disables rotation and fallback while retaining media routes', async () => {
  const nodes={providerSelect:{value:'gemini'},routeText:{value:'openai'},routeImage:{value:'openai'},routeSpeech:{value:'openai'},autoSelectProvider:{checked:true},autoFallback:{checked:true}};
  let saved;
- const context=vm.createContext({el:id=>nodes[id],providerProfile:()=>({capabilities:{text:true}}),providerDraftDirty:false,
+ const context=vm.createContext({state:{},el:id=>nodes[id],providerProfile:()=>({capabilities:{text:true}}),providerDraftDirty:false,
   saveProviderSettings:async()=>{saved={route:nodes.routeText.value,auto:nodes.autoSelectProvider.checked,fallback:nodes.autoFallback.checked,image:nodes.routeImage.value,speech:nodes.routeSpeech.value};}});
  vm.runInContext(section('async function useSelectedProviderForChat(', 'async function saveProviderSettings('),context);
  await context.useSelectedProviderForChat();
@@ -31,4 +31,17 @@ test('an older health response cannot overwrite a newly saved Gemini selection',
  const pending=context.refreshHealth();context.state.settings={platform:'gemini'};
  el('connectionText').textContent='Gemini';done({connected:true,provider:'openai'});await pending;
  assert.equal(el('connectionText').textContent,'Gemini');
+});
+test('choosing Gemini in the ordinary profile dropdown stages Gemini for the normal save', () => {
+ const nodes={providerSelect:{addEventListener:(type,callback)=>{nodes.change=callback;}},routeText:{value:'openai'},autoSelectProvider:{checked:true},autoFallback:{checked:true},providerProfileState:{textContent:'Gemini'}};
+ const context=vm.createContext({state:{},el:id=>nodes[id],providerDraftDirty:false,renderProviderProfile(){}});
+ const start=source.indexOf('el("providerSelect").addEventListener("change"');
+ const end=source.indexOf('el("searchProvider").addEventListener("change"',start);
+ vm.runInContext(source.slice(start,end),context);
+ nodes.change({target:{value:'gemini'}});
+ assert.equal(context.state.chatProviderSelection,'gemini');
+ assert.equal(nodes.routeText.value,'gemini');
+ assert.equal(nodes.autoSelectProvider.checked,false);
+ assert.equal(nodes.autoFallback.checked,false);
+ assert.equal(context.providerDraftDirty,true);
 });
