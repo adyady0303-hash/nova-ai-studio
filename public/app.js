@@ -247,12 +247,14 @@ function fallbackNames(fallbacks) {
 }
 
 async function refreshHealth() {
+  const healthSettings = state.settings;
   const badge = el("statusBadge"), dot = el("connectionDot"), label = el("connectionText"), select = el("modelSelect");
   const sideDot = el("sidebarConnectionDot"), sideLabel = el("sidebarConnectionText");
   el("instanceBadge").textContent = "ONLINE · CLOUD";
   el("projectStorageLabel").textContent = "Fișiere pe serverul cloud";
   try {
     const data = await api("/api/health");
+    if (state.settings !== healthSettings) return;
     const providerName = data.providerName || (data.provider ? providerDisplayName(data.provider) : state.settings?.platformName) || "Motor AI";
     const chatStatus = data.chatStatus || { state: "unchecked", checkedAt: null, model: "", error: "" };
     const profile = providerProfile(data.provider || routeProfile("text")?.id);
@@ -276,6 +278,7 @@ async function refreshHealth() {
       select.value = models.includes(previous) ? previous : models.includes(configured) ? configured : models.includes(recommended) ? recommended : models[0];
     }
   } catch (error) {
+    if (state.settings !== healthSettings) return;
     dot.classList.remove("on"); label.textContent = "Stare AI necunoscută"; badge.textContent = "Stare necunoscută";
     sideDot.classList.remove("on");
     const reason = error?.message || "Verifică profilurile și rutele din Motoare AI.";
@@ -410,7 +413,7 @@ async function loadProviderSettings() {
   renderProviderOptions(settings);
   renderRoutes(settings);
   renderSearchSettings(settings);
-  renderProviderProfile(settings.platform || settings.provider || providerProfiles(settings)[0]?.id);
+  renderProviderProfile(providerProfiles(settings).some(profile => profile.id === editingProviderId) ? editingProviderId : settings.platform || settings.provider || providerProfiles(settings)[0]?.id);
   renderDashboardProviders();
   updateCapabilityControls();
   await refreshHealth();
@@ -532,6 +535,16 @@ async function testWebConnection() {
       : `Acces web neconfirmat: ${data.error || "Căutarea a eșuat."} Versiune server: ${data.version}.`;
   } catch (error) { status.textContent = `Verificarea accesului web a eșuat: ${error.message}`; }
   finally { button.disabled = false; }
+}
+
+async function useSelectedProviderForChat() {
+  const id = el("providerSelect").value;
+  if (!providerProfile(id)?.capabilities?.text) return;
+  el("routeText").value = id;
+  el("autoSelectProvider").checked = false;
+  el("autoFallback").checked = false;
+  providerDraftDirty = true;
+  await saveProviderSettings();
 }
 
 async function saveProviderSettings() {
@@ -1423,6 +1436,7 @@ el("railProviderSettings").addEventListener("click", () => {
   if (state.account?.role !== "owner") { toast("Furnizorii sunt administrați de owner."); return; }
   el("providerSettingsBtn").click();
 });
+el("useProviderForChat").addEventListener("click", () => useSelectedProviderForChat().catch(error => toast(error.message)));
 el("providerSelect").addEventListener("change", event => {
   if (providerDraftDirty && !window.confirm("Ai modificări nesalvate pentru acest profil. Le abandonezi?")) {
     event.target.value = editingProviderId;

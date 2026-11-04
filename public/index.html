@@ -573,6 +573,7 @@ body {background:#080b13;}
           <label for="apiBaseUrl">Adresă API</label><input id="apiBaseUrl" autocomplete="url" spellcheck="false" placeholder="https://api.exemplu.ro/v1">
           <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Lasă gol pentru a păstra cheia de pe server">
           <div class="provider-note" id="apiKeyState">Cheile sunt mascate și nu sunt returnate în browser.</div>
+          <button class="btn" type="button" id="useProviderForChat">Folosește acest motor pentru chat</button>
           <label for="textModel">Model text / programare</label><input id="textModel" autocomplete="off" spellcheck="false">
           <div class="provider-catalog-actions"><button class="btn" type="button" id="loadProviderModels">Încarcă modelele</button><label for="providerModelCatalog">Modele disponibile</label><select id="providerModelCatalog" disabled><option value="">Încarcă modelele disponibile</option></select></div>
           <div class="provider-note" id="providerModelsStatus" role="status" aria-live="polite">Catalogul se încarcă pentru profilul salvat. Alegerea unui model trebuie salvată.</div>
@@ -662,7 +663,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=2.7.4-provider-diagnostics"></script>
+  <script src="./app.js?v=2.7.4-provider-selection"></script>
 </body>
 </html>
 
