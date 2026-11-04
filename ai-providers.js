@@ -527,7 +527,13 @@ function messageText(content) {
   return String(content);
 }
 
-function normalizedToolCalls(toolCalls) {
+function googleThoughtSignature(value) {
+  const signature = value?.extra_content?.google?.thought_signature;
+  return typeof signature === "string" && signature
+    ? { extra_content: { google: { thought_signature: signature } } } : {};
+}
+
+function normalizedToolCalls(toolCalls, preserveGoogleSignature = false) {
   if (!Array.isArray(toolCalls)) return [];
   return toolCalls.flatMap((call, index) => {
     const name = toolName(call);
@@ -540,18 +546,20 @@ function normalizedToolCalls(toolCalls) {
     return [{
       id: cleanField(String(call.id || `call_${index + 1}`), "tool call id", 240, { allowEmpty: false }),
       type: "function",
-      function: { name: cleanField(name, "tool name", 240, { allowEmpty: false }), arguments: args }
+      function: { name: cleanField(name, "tool name", 240, { allowEmpty: false }), arguments: args },
+      ...(preserveGoogleSignature ? googleThoughtSignature(call) : {})
     }];
   });
 }
 
 function normalizedChatResult(profile, model, message) {
   if (!plainObject(message)) throw providerError("Furnizorul AI nu a returnat un mesaj valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
-  const toolCalls = normalizedToolCalls(message.tool_calls);
+  const toolCalls = normalizedToolCalls(message.tool_calls, profile.id === "gemini");
   return {
     message: {
       role: typeof message.role === "string" && message.role ? message.role : "assistant",
       content: messageText(message.content),
+      ...(profile.id === "gemini" ? googleThoughtSignature(message) : {}),
       ...(toolCalls.length ? { tool_calls: toolCalls } : {})
     },
     model,
@@ -665,9 +673,18 @@ async function openAiChat(profile, request) {
   if (!Array.isArray(request.messages) || !request.messages.length) throw providerError("Lista de mesaje este invalidă.", 400);
   const preset = PLATFORM_PRESETS[profile.id] || PLATFORM_PRESETS.custom;
   const choice = request.forceWebTool ? webToolChoice(request.tools) : undefined;
+  const tools = profile.id === "gemini" && Array.isArray(request.tools) ? request.tools.map(tool => {
+    const parameters = tool?.function?.parameters;
+    if (tool?.type !== "function" || parameters?.type !== "object"
+      || !plainObject(parameters.properties) || Object.keys(parameters.properties).length
+      || parameters.required?.length) return tool;
+    // Google represents parameterless functions by omitting the schema.
+    const { parameters: unused, ...declaration } = tool.function;
+    return { ...tool, function: declaration };
+  }) : request.tools;
   const body = {
     model: request.model, messages: request.messages,
-    ...(Array.isArray(request.tools) && request.tools.length ? { tools: request.tools } : {}),
+    ...(Array.isArray(tools) && tools.length ? { tools } : {}),
     ...(choice ? { tool_choice: choice } : {}),
     ...(request.maxOutputTokens ? { [preset.outputTokenField]: request.maxOutputTokens } : {})
   };

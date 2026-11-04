@@ -2199,7 +2199,10 @@ async function handle(req, res) {
       return json(res, 200, result);
     } catch (error) {
       const profile = aiConfig.profiles[error?.provider] || activeTextProfile();
-      console.error("Nova AI agent provider failed:", { provider: profile.id, status: error.status || 503 });
+      const requestIssue = Number(error.status) !== 400 ? undefined
+        : /thought.?signature/i.test(String(error.message)) ? "thought_signature"
+          : /parameters|schema|function_declarations/i.test(String(error.message)) ? "tool_schema" : "other_request";
+      console.error("Nova AI agent provider failed:", { provider: profile.id, status: error.status || 503, requestIssue });
       const unavailable = !isProfileConfigured(profile)
         ? `Motorul ${profile.name} nu este configurat complet. Deschide Motoare AI în setările Nova.`
         : friendlyTextProviderError(error, profile, model);
