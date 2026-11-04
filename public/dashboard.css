@@ -35,5 +35,13 @@ body{background:var(--dash-bg)}
   .app.projects-open .sidebar{top:62px;bottom:76px;left:8px;right:auto;width:min(340px,calc(100vw - 16px));height:auto;min-height:0}
   .app.projects-open .project-drawer{display:block!important}
   .app.projects-open .project-drawer[open]{max-height:100%;overflow-y:auto}
+  .app.projects-open .project-drawer[open] .side-title-row,
+  .app.projects-open .project-drawer[open] .project-controls,
+  .app.projects-open .project-drawer[open] .project-card,
+  .app.projects-open .project-drawer[open] .files-title{display:flex}
+  .app.projects-open .project-drawer[open] .project-actions,
+  .app.projects-open .project-drawer[open] .filelist{display:grid}
+  .app.projects-open .project-drawer[open] .file-search{display:block}
+  .app.projects-open .project-drawer[open] .side-title{display:block!important}
   .app.projects-open::after{inset:62px 0 0}
 }
