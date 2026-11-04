@@ -1056,7 +1056,7 @@ async function openFile(name, force = false) {
     else return;
   }
   const data = await api(`/api/file?project=${encodeURIComponent(state.project)}&path=${encodeURIComponent(name)}`);
-  state.activePath = name; localStorage.setItem(activeKey(), name);
+  state.activePath = name; writeLocalCache(activeKey(), name);
   el("activeFileName").textContent = name; el("editor").value = data.content;
   const ext = name.split(".").pop().toLowerCase();
   el("languageLabel").textContent = ({ js: "JavaScript", mjs: "JavaScript", cjs: "JavaScript", ts: "TypeScript", py: "Python", md: "Markdown", css: "CSS", html: "HTML", json: "JSON", gpc: "GPC" })[ext] || ext.toUpperCase();
@@ -1066,9 +1066,9 @@ async function openFile(name, force = false) {
 async function loadProject(id) {
   if (state.dirty && state.project) await saveFile(false);
   state.project = id; renderProjects();
-  try { state.chat = JSON.parse(localStorage.getItem(chatKey()) || "[]"); } catch { state.chat = []; }
+  try { state.chat = JSON.parse(readLocalCache(chatKey()) || "[]"); } catch { state.chat = []; }
   renderChat();
-  const savedActive = localStorage.getItem(activeKey());
+  const savedActive = readLocalCache(activeKey());
   const data = await api(`/api/files?project=${encodeURIComponent(id)}`); state.files = data.files;
   state.activePath = state.files.some(file => file.path === savedActive) ? savedActive : (state.files.find(file => /\.(js|ts|py|gpc|html|css)$/i.test(file.path))?.path || state.files[0]?.path || null);
   renderFiles(); renderHomeProjects();
@@ -1082,9 +1082,9 @@ async function loadProjects() {
     const created = await api("/api/projects", jsonBody({ name: "Nova Playground" }));
     state.projects = [created.project];
   }
-  const remembered = localStorage.getItem(storageKey("nova-project"));
+  const remembered = readLocalCache(storageKey("nova-project"));
   const selected = state.projects.find(project => project.id === remembered) || state.projects[0];
-  state.project = selected.id; localStorage.setItem(storageKey("nova-project"), selected.id); renderProjects(); await loadProject(selected.id);
+  state.project = selected.id; writeLocalCache(storageKey("nova-project"), selected.id); renderProjects(); await loadProject(selected.id);
 }
 
 function createProject(name = "") {
@@ -1098,7 +1098,7 @@ async function saveNewProject(name) {
   if (!name?.trim()) return;
   try {
     const data = await api("/api/projects", jsonBody({ name: name.trim() }));
-    state.projects.push(data.project); state.dirty = false; await loadProject(data.project.id); localStorage.setItem(storageKey("nova-project"), data.project.id); setProjectsOpen(false); toast("Proiect creat"); return true;
+    state.projects.push(data.project); state.dirty = false; await loadProject(data.project.id); writeLocalCache(storageKey("nova-project"), data.project.id); setProjectsOpen(false); toast("Proiect creat"); return true;
   } catch (error) { toast(error.message); return false; }
 }
 
@@ -1109,6 +1109,28 @@ function looksLikeCvCreationRequest(value) {
 
 function usesDirectChat(task) {
   return ["auto", "text", "lyrics"].includes(task);
+}
+
+const localCacheFallback = new Map();
+let localCacheWarningShown = false;
+function writeLocalCache(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    localCacheFallback.delete(key);
+    return true;
+  } catch {
+    localCacheFallback.set(key, value);
+    if (!localCacheWarningShown) {
+      localCacheWarningShown = true;
+      toast("Stocarea locală nu este disponibilă. Poți continua să creezi; descarcă răspunsurile înainte să închizi sau să reîncarci pagina.");
+    }
+    return false;
+  }
+}
+function readLocalCache(key) {
+  if (localCacheFallback.has(key)) return localCacheFallback.get(key);
+  try { return localStorage.getItem(key); }
+  catch { return null; }
 }
 
 function openCvBuilder() {
@@ -1160,7 +1182,7 @@ async function createCvOnline() {
     const projects = await api("/api/projects");
     state.projects = projects.projects;
     state.project = result.project.id;
-    localStorage.setItem(storageKey("nova-project"), result.project.id);
+    writeLocalCache(storageKey("nova-project"), result.project.id);
     await loadProject(result.project.id);
     el("cvDialog").close();
     form.reset(); delete form.dataset.requestId; sessionStorage.removeItem(storageKey("nova-cv-draft"));
@@ -1188,7 +1210,7 @@ async function deleteProject() {
     await api("/api/project/delete", jsonBody({ project: current.id }));
     state.projects = state.projects.filter(project => project.id !== current.id); state.dirty = false; state.project = null;
     if (!state.projects.length) { await loadProjects(); }
-    else { state.project = state.projects[0].id; localStorage.setItem(storageKey("nova-project"), state.project); renderProjects(); await loadProject(state.project); }
+    else { state.project = state.projects[0].id; writeLocalCache(storageKey("nova-project"), state.project); renderProjects(); await loadProject(state.project); }
     toast("Proiect mutat în coș; îl poți restaura");
   } catch (error) { toast(error.message); }
 }
@@ -1204,7 +1226,7 @@ async function restoreProject() {
     if (!project) { toast("Număr invalid"); return; }
     await api("/api/project/restore", jsonBody({ project: project.id }));
     const data = await api("/api/projects"); state.projects = data.projects; state.project = project.id;
-    localStorage.setItem(storageKey("nova-project"), project.id); renderProjects(); await loadProject(project.id); toast("Proiect restaurat");
+    writeLocalCache(storageKey("nova-project"), project.id); renderProjects(); await loadProject(project.id); toast("Proiect restaurat");
   } catch (error) { toast(error.message); }
 }
 
@@ -1293,7 +1315,7 @@ async function importFolder(files) {
       } catch { failed++; }
     }
     const data = await api("/api/projects"); state.projects = data.projects; state.project = created.project.id;
-    localStorage.setItem(storageKey("nova-project"), state.project); renderProjects(); await loadProject(state.project);
+    writeLocalCache(storageKey("nova-project"), state.project); renderProjects(); await loadProject(state.project);
     toast(failed ? `Importate ${imported} fișiere; ${failed} au eșuat` : `${imported} fișiere importate`);
   } catch (error) { toast(error.message); }
 }
@@ -1358,7 +1380,7 @@ async function send() {
   const chat = state.chat, project = state.project, historyKey = chatKey();
   const sentTurn = { role: "user", content: contextualPrompt, displayContent: promptText };
   chat.push(sentTurn);
-  localStorage.setItem(historyKey, JSON.stringify(chat));
+  writeLocalCache(historyKey, JSON.stringify(chat));
   const userBubble = addBubble("user", promptText); el("prompt").value = "";
   const directChat = usesDirectChat(task);
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = directChat
@@ -1377,7 +1399,7 @@ async function send() {
     receivedResponse = true;
     const assistantContent = result.content;
     chat.push({ role: "assistant", content: assistantContent });
-    localStorage.setItem(historyKey, JSON.stringify(chat));
+    writeLocalCache(historyKey, JSON.stringify(chat));
     if (state.chat !== chat) return;
     const events = Array.isArray(result.events) ? result.events : [];
     addBubble("assistant", assistantContent, events, result);
@@ -1395,7 +1417,7 @@ async function send() {
     if (!receivedResponse) {
       const index = chat.indexOf(sentTurn);
       if (index !== -1) chat.splice(index, 1);
-      localStorage.setItem(historyKey, JSON.stringify(chat));
+      writeLocalCache(historyKey, JSON.stringify(chat));
       userBubble?.remove();
       if (state.chat === chat && !el("prompt").value) {
         el("prompt").value = promptDraft;
@@ -1549,7 +1571,7 @@ el("homeProjects").addEventListener("click", async event => {
   if (!card) return;
   try {
     const id = card.dataset.projectId;
-    if (id !== state.project) { await loadProject(id); localStorage.setItem(storageKey("nova-project"), id); }
+    if (id !== state.project) { await loadProject(id); writeLocalCache(storageKey("nova-project"), id); }
     setView("chat");
     if (!el("app").classList.contains("workspace-open")) el("openWorkspaceBtn").click();
   } catch (error) { toast(error.message); }
@@ -1628,7 +1650,7 @@ el("fileSearch").addEventListener("input", event => { state.filter = event.targe
 el("newFileBtn").addEventListener("click", createFile);
 el("deleteFileBtn").addEventListener("click", deleteFile);
 el("undoBtn").addEventListener("click", undoFile);
-el("projectSelect").addEventListener("change", async event => { try { await loadProject(event.target.value); localStorage.setItem(storageKey("nova-project"), event.target.value); } catch (error) { toast(error.message); } });
+el("projectSelect").addEventListener("change", async event => { try { await loadProject(event.target.value); writeLocalCache(storageKey("nova-project"), event.target.value); } catch (error) { toast(error.message); } });
 el("logoutBtn").addEventListener("click", async () => {
   try { await api("/api/auth/logout", { method: "POST" }); window.location.replace("/"); }
   catch (error) { toast(error.message); }
@@ -1657,7 +1679,7 @@ el("deleteAccountBtn").addEventListener("click", async () => {
 });
 el("clearChat").addEventListener("click", () => {
   state.chat = [];
-  localStorage.setItem(chatKey(), "[]");
+  writeLocalCache(chatKey(), "[]");
   setTask("auto");
   el("prompt").value = "";
   el("homePrompt").value = "";
