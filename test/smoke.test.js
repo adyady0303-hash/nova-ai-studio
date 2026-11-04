@@ -568,7 +568,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
     connected: true, provider: 'openai', model: 'gpt-4.1-mini', reply: 'Răspuns verificat de test.'
   });
   assert.equal(mockChatPrompt, 'Răspunde doar cu: Nova este conectată.');
-  assert.equal(mockChatLimit, 24);
+  assert.equal(mockChatLimit, 1024);
 
   const voice = await post('/api/media/speech', { text: 'Bun venit la Nova AI Studio.' });
   assert.equal(voice.status, 200);

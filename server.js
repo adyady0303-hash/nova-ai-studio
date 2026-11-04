@@ -4,6 +4,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { setTimeout: delay } = require("node:timers/promises");
 const dataStore = require("./data-store");
+const { createProviderStatus } = require("./provider-status");
+const providerStatus = createProviderStatus();
 const { creationPrompts } = require("./creation-prompts");
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
@@ -456,7 +458,7 @@ function automaticTextProfiles(config = aiConfig) {
   const selected = config.profiles[config.routes.text];
   return [selected, ...Object.values(config.profiles)]
     .filter((profile, index, profiles) => profile && profiles.findIndex(item => item.id === profile.id) === index)
-    .filter(profile => routeProfileConfigured(profile, "text") && (profile.id === selected?.id || Boolean(profile.apiKey)));
+    .filter(profile => textRoutingEligible(profile, config));
 }
 
 function activeTextProfile(config = aiConfig) {
@@ -482,6 +484,10 @@ function routeProfileConfigured(profile, capability) {
   if (capability === "image") return Boolean(profile.imageModel);
   if (capability === "speech") return Boolean(profile.speechModel && profile.voice);
   return false;
+}
+
+function textRoutingEligible(profile, config = aiConfig) {
+  return Boolean(profile && routeProfileConfigured(profile, "text") && (profile.id === config.routes.text || profile.apiKey));
 }
 
 function legacyProvider(profile) {
@@ -511,7 +517,9 @@ function safePublicProfile(profile, detailed) {
     },
     requiresKey: profile.requiresKey,
     apiKeyConfigured: Boolean(profile.apiKey),
-    configured: isProfileConfigured(profile)
+    configured: isProfileConfigured(profile),
+    textRoutingEligible: textRoutingEligible(profile),
+    status: providerStatus.get(profile)
   };
 }
 
@@ -571,6 +579,10 @@ function availableOpenAiChatModels(catalog, fallback) {
 
 function recommendedChatModel(profile, models) {
   const available = Array.isArray(models) ? models : [];
+  if (profile?.id === "gemini") {
+    if (available.includes(profile.textModel)) return profile.textModel;
+    return rankedGeminiChatModels(available)[0] || "";
+  }
   const rankedGpt = availableOpenAiChatModels(available, "");
   if (rankedGpt.length) return rankedGpt[0];
   return available[0] || profile?.textModel || "";
@@ -1026,8 +1038,8 @@ async function chatWithResolvedTextModel(profile, preferredModel, options) {
     }
     if (profile.id !== "gemini" || !missingTextModel(firstError)) throw firstError;
     let catalog = [];
-    try { catalog = await cachedProfileModels(profile); }
-    catch { throw firstError; }
+    try { catalog = await listProfileModels(profile, { timeout: 10000, signal: options.signal, fallback: false }); }
+    catch { options.signal?.throwIfAborted(); throw firstError; }
     let lastError = firstError;
     for (const candidate of rankedGeminiChatModels(catalog).filter(candidate => candidate !== preferredModel).slice(0, 6)) {
       try {
@@ -1062,22 +1074,27 @@ async function providerChat(model, messages, tools, maxOutputTokens = null, veri
     const profile = candidates[index];
     attempted.add(profile.id);
     try {
-      return await chatWithResolvedTextModel(profile, profile.id === primary.id ? model : profile.textModel, {
+      const result = await chatWithResolvedTextModel(profile, profile.id === primary.id ? model : profile.textModel, {
         messages,
         tools,
         maxOutputTokens,
         signal,
         forceWebTool: verifyWeb && tools?.some(tool => tool.function?.name === "web_search")
       });
+      if (String(result.message?.content || "").trim() || result.message?.tool_calls?.length) providerStatus.success(profile, result);
+      else providerStatus.failure(profile, { status: 502, failureKind: "invalid_response" }, friendlyTextProviderError({ status: 502, failureKind: "invalid_response" }, profile, profile.textModel));
+      return result;
     } catch (error) {
       signal?.throwIfAborted();
+      providerStatus.failure(profile, error, friendlyTextProviderError(error, profile, profile.textModel));
       lastError = error;
       if (!isTransientProviderError(error)) throw error;
       const quotaLimited = Number(error.status) === 429;
       if (quotaLimited) quotaRejected.add(profile.id);
-      // Automatic routing already permits these providers. A rejected quota request
-      // can move within that pool; other retries still require explicit fallback.
-      const alternatives = quotaLimited ? [...quotaAlternatives, ...explicitFallback] : explicitFallback;
+      // These providers already belong to the selected automatic pool. Only
+      // explicit quota and service-unavailable responses move within that pool.
+      const serviceUnavailable = error.failureKind === "http" && Number(error.upstreamStatus) === 503;
+      const alternatives = quotaLimited || serviceUnavailable ? [...quotaAlternatives, ...explicitFallback] : explicitFallback;
       const next = alternatives.find(candidate => !attempted.has(candidate.id));
       if (!next) {
         if (quotaLimited && quotaRejected.size > 1) error.quotaFallbackExhausted = true;
@@ -1565,6 +1582,27 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
   return { content: answerWithSources(finalResponse.message?.content || "Nu am putut formula răspunsul final din sursele disponibile.", sources, verifyWeb), events, model: finalResponse.model || model, provider: finalResponse.provider, providerName: finalResponse.providerName };
 }
 
+async function probeTextProvider(profile, model, signal, timeout = 15000) {
+  const callerSignal = signal;
+  signal = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout);
+  try {
+    const response = await chatWithResolvedTextModel(profile, model || profile.textModel, {
+      messages: [{ role: "user", content: "Răspunde doar cu: Nova este conectată." }],
+      maxOutputTokens: 1024, timeout, signal
+    });
+    signal?.throwIfAborted();
+    const reply = String(response.message?.content || "").trim();
+    if (!reply) throw Object.assign(new Error("Modelul nu a returnat text."), { status: 502, failureKind: "invalid_response" });
+    providerStatus.success(profile, response);
+    return { response, reply };
+  } catch (error) {
+    callerSignal?.throwIfAborted();
+    if (signal.aborted) error = Object.assign(new Error("Verificarea motorului a expirat."), { status: 504, failureKind: "timeout" });
+    providerStatus.failure(profile, error, friendlyTextProviderError(error, profile, model || profile.textModel));
+    throw error;
+  }
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, `http://${HOST}:${PORT}`);
 
@@ -1738,6 +1776,53 @@ async function handle(req, res) {
     return json(res, 200, { settings: publicProviderSettings(account.role) });
   }
 
+  if (req.method === "GET" && url.pathname === "/api/ai/models") {
+    if (account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate verifica modelele unui profil." });
+    const id = url.searchParams.get("provider");
+    const profile = Object.hasOwn(aiConfig.profiles, id || "") ? aiConfig.profiles[id] : null;
+    if (!profile) return json(res, 400, { error: "Alege un profil AI valid." });
+    if (!profile.baseUrl || !profile.capabilities?.text || ((profile.requiresKey || profile.id === "custom" && !localProviderUrl(profile)) && !profile.apiKey)) return json(res, 503, { error: `Configurează mai întâi profilul ${profile.name} pentru text.` });
+    const lifecycle = aiRequestLifecycle(res);
+    try {
+      const catalog = await listProfileModels(profile, { timeout: 10000, signal: lifecycle.signal, fallback: false });
+      const models = profile.id === "openai" ? availableOpenAiChatModels(catalog, "")
+        : catalog.filter(model => !/(embed|embedding|imagen|image|dall|tts|speech|whisper|moderation|rerank|realtime|audio|robotics)/i.test(model));
+      return json(res, 200, { provider: id, models, recommendedModel: models.length ? recommendedChatModel(profile, models) : "", configuredModel: profile.textModel });
+    } catch (error) {
+      return json(res, 502, { error: friendlyTextProviderError(error, profile, profile.textModel), providerError: true });
+    } finally { lifecycle.dispose(); }
+  }
+
+  if (url.pathname === "/api/ai/diagnostics") {
+    if (account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate verifica toate motoarele AI." });
+    if (req.method !== "POST") return json(res, 405, { error: "Verificarea motoarelor necesită POST." });
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de verificare respinsă." });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) return json(res, 415, { error: "Verificarea acceptă numai cereri JSON." });
+    await readJson(req);
+    const profiles = Object.values(aiConfig.profiles);
+    const checks = profiles.filter(profile => textRoutingEligible(profile));
+    const lifecycle = aiRequestLifecycle(res);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < checks.length) {
+        lifecycle.signal.throwIfAborted();
+        const profile = checks[cursor++];
+        try { await probeTextProvider(profile, profile.textModel, lifecycle.signal); }
+        catch (error) { lifecycle.signal.throwIfAborted(); }
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.min(2, checks.length) }, () => worker()));
+      const commit = process.env.RENDER_GIT_COMMIT || "";
+      return json(res, 200, {
+        version: require("./package.json").version,
+        commit: /^[a-f0-9]{40}$/i.test(commit) ? commit : null,
+        providers: profiles.map(profile => ({ id: profile.id, name: profile.name,
+          configured: routeProfileConfigured(profile, "text"), eligible: textRoutingEligible(profile), status: providerStatus.get(profile) }))
+      });
+    } finally { lifecycle.dispose(); }
+  }
+
   if (req.method === "GET" && url.pathname === "/api/web/health") {
     if (account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate verifica accesul web al serverului." });
     return json(res, 200, { ...await checkWebHealth(), version: require("./package.json").version });
@@ -1869,7 +1954,9 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/ai/test") {
     const body = await readJson(req);
-    const profile = activeTextProfile();
+    if (body.providerId && account.role !== "owner") return json(res, 403, { error: "Doar administratorul poate alege profilul verificat." });
+    const profile = body.providerId && Object.hasOwn(aiConfig.profiles, body.providerId) ? aiConfig.profiles[body.providerId] : body.providerId ? null : activeTextProfile();
+    if (!profile) return json(res, 400, { connected: false, error: "Alege un profil AI valid." });
     const requestedModel = account.role === "owner" ? body.model : profile.textModel;
     const model = String(requestedModel || profile.textModel || "").trim().slice(0, 240);
     if (!model) return json(res, 400, { connected: false, error: "Alege un model AI înainte de test." });
@@ -1882,10 +1969,7 @@ async function handle(req, res) {
     if (!await consumeAiQuota(req, res)) return;
     const lifecycle = aiRequestLifecycle(res);
     try {
-      const messages = [{ role: "user", content: "Răspunde doar cu: Nova este conectată." }];
-      const response = await chatWithResolvedTextModel(profile, model, { model, messages, maxOutputTokens: profile.id === "gemini" ? 1024 : 24, timeout: 30000, signal: lifecycle.signal });
-      const reply = String(response.message?.content || "").trim();
-      if (!reply) throw Object.assign(new Error("Modelul nu a returnat text."), { status: 502, failureKind: "invalid_response" });
+      const { response, reply } = await probeTextProvider(profile, model, lifecycle.signal, 30000);
       return json(res, 200, { connected: true, provider: publicProviderId(profile), model: response.model || model, reply: reply.slice(0, 240) });
     } catch (error) {
       console.error("Nova AI connection test failed:", { provider: profile.id, status: error.status || 502 });
@@ -2116,11 +2200,13 @@ async function handle(req, res) {
   if (req.method === "GET" && url.pathname === "/api/health") {
     const profile = activeTextProfile();
     const provider = publicProviderId(profile);
+    const chatStatus = providerStatus.get(profile);
+    const observedChat = chatStatus.state === "unchecked" ? {} : { chatStatus };
     if (!isProfileConfigured(profile)) {
       const message = profile.id === "openai"
         ? "Cheia API OpenAI lipsește din configurarea serverului."
         : `Motorul ${profile.name} nu este configurat complet.`;
-      return json(res, 200, { connected: false, provider, providerName: profile.name, error: message, models: [] });
+      return json(res, 200, { connected: false, provider, ...observedChat, providerName: profile.name, error: message, models: [] });
     }
     try {
       let availableModels = await cachedProfileModels(profile);
@@ -2135,6 +2221,7 @@ async function handle(req, res) {
       return json(res, 200, {
         connected: true,
         provider,
+        ...observedChat,
         providerName: profile.name,
         version: "Conexiune verificată",
         recommendedModel,
@@ -2149,6 +2236,7 @@ async function handle(req, res) {
           connected: true,
           provider,
           providerName: profile.name,
+          ...observedChat,
           version: "Profil configurat · catalog /models indisponibil",
           models: profile.textModel ? [profile.textModel] : [],
           ...(fallbacks.length ? { fallbacks } : {})
@@ -2162,7 +2250,7 @@ async function handle(req, res) {
           : status === 404
             ? `${profile.name} nu oferă ruta de catalog /models. Verifică adresa API și modelul.`
             : `Serverul nu a putut valida conexiunea ${profile.name}. Verifică rețeaua și configurarea API.`;
-      return json(res, 200, { connected: false, provider, providerName: profile.name, error: message, models: [] });
+      return json(res, 200, { connected: false, provider, ...observedChat, providerName: profile.name, error: message, models: [] });
     }
   }
 

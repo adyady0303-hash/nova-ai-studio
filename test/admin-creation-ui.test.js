@@ -24,6 +24,7 @@ function usageContext(account, projectCount, profiles = [{ ready: { text: true }
     el: id => nodes[id], providerProfiles: () => profiles,
     document: { createElement: element }
   });
+  vm.runInContext(source.slice(source.indexOf('function textRoutingReady('), source.indexOf('function providerStatusText(')), context);
   vm.runInContext(source.slice(source.indexOf('function renderDashboardUsage('), source.indexOf('function renderProjects(')), context);
   vm.runInContext(source.slice(source.indexOf('function updateAccountLabel('), source.indexOf('async function loadAccount(')), context);
   return { context, nodes };

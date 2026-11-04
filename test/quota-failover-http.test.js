@@ -195,7 +195,7 @@ test('automatic text quota failover preserves manual routing and subscriber quot
 
   await t.test('automatic routing without explicit fallback stops on non-quota provider errors', async t => {
     const app = await startApp(t);
-    for (const status of [400, 401, 403, 500, 503]) {
+    for (const status of [400, 401, 403, 500]) {
       const before = app.calls().length;
       const response = await app.chat(app.owner, `ALL_STATUS_${status}`);
       assert.equal(response.status, [401, 403].includes(status) ? 502 : status);
@@ -212,6 +212,14 @@ test('automatic text quota failover preserves manual routing and subscriber quot
         assert.deepEqual(sequence.calls().map(call => call.provider), ['openai', 'gemini']);
       });
     }
+  });
+
+  await t.test('automatic routing recovers a real service-unavailable response using another configured provider', async t => {
+    const app = await startApp(t);
+    const response = await app.chat(app.owner, 'OPENAI_STATUS_503');
+    assert.equal(response.status, 200, await response.clone().text());
+    assert.equal((await response.json()).provider, 'gemini');
+    assert.deepEqual(app.calls().map(call => call.provider), ['openai', 'gemini']);
   });
 
   await t.test('explicit manual fallback retains its existing single alternate and transient-error behavior', async t => {

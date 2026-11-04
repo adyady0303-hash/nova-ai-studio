@@ -382,7 +382,7 @@ body {background:#080b13;}
 </style>
   <link rel="stylesheet" href="./studio.css?v=2.7.4">
   <link rel="stylesheet" href="./orbit.css?v=2.7.4">
-  <link rel="stylesheet" href="./dashboard.css?v=2.7.4">
+  <link rel="stylesheet" href="./dashboard.css?v=2.7.4-provider-diagnostics">
 </head>
 <body>
   <div class="app" id="app">
@@ -535,7 +535,7 @@ body {background:#080b13;}
     <aside class="dashboard-rail" aria-label="Modele, proiecte și utilizare">
       <section class="rail-card"><div class="rail-heading"><h2>Modele AI</h2><button type="button" id="railProviderSettings">Vezi toate</button></div><div class="rail-list" id="providerRail"></div></section>
       <section class="rail-card"><div class="rail-heading"><h2>Proiectele mele</h2><button type="button" id="railProjectsBtn">Vezi toate</button></div><div class="rail-projects" id="railProjects"></div></section>
-      <section class="rail-card usage-card"><div class="rail-heading"><h2>Utilizare</h2><span>Live</span></div><div id="railUsage"></div></section>
+      <section class="rail-card usage-card"><div class="rail-heading"><h2>Utilizare</h2><span>Profiluri</span></div><div id="railUsage"></div></section>
     </aside>
 
     <section class="workspace" id="workspace" aria-label="Editorul proiectului">
@@ -574,6 +574,8 @@ body {background:#080b13;}
           <label for="apiKey">Cheie API</label><input id="apiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Lasă gol pentru a păstra cheia de pe server">
           <div class="provider-note" id="apiKeyState">Cheile sunt mascate și nu sunt returnate în browser.</div>
           <label for="textModel">Model text / programare</label><input id="textModel" autocomplete="off" spellcheck="false">
+          <div class="provider-catalog-actions"><button class="btn" type="button" id="loadProviderModels">Încarcă modelele</button><label for="providerModelCatalog">Modele disponibile</label><select id="providerModelCatalog" disabled><option value="">Încarcă modelele disponibile</option></select></div>
+          <div class="provider-note" id="providerModelsStatus" role="status" aria-live="polite">Catalogul se încarcă pentru profilul salvat. Alegerea unui model trebuie salvată.</div>
           <label for="imageModel">Model imagini</label><input id="imageModel" autocomplete="off" spellcheck="false">
           <div class="provider-row"><div><label for="speechModel">Model voce</label><input id="speechModel" autocomplete="off" spellcheck="false"></div><div><label for="voiceSelect">Voce implicită</label><input id="voiceSelect" autocomplete="off" spellcheck="false" placeholder="Vocea acceptată de motor"></div></div>
           <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API salvată pentru acest profil</label>
@@ -587,6 +589,12 @@ body {background:#080b13;}
         <div class="provider-note">În modul automat, conversațiile sunt distribuite între furnizorii care au cheie și model. Dacă un motor refuză cererea din cauza cotei API, Nova încearcă celelalte motoare din acest grup, câte o dată. Răspunsul arată furnizorul și modelul folosite; fiecare furnizor poate factura separat.</div>
         <label class="provider-clear"><input type="checkbox" id="autoFallback"> Folosește automat un motor de rezervă compatibil când ruta principală nu este disponibilă</label>
         <div class="provider-note">Fallback-ul poate retrimite aceeași cerere și fișierul activ unui singur alt furnizor și poate genera un cost separat. Furnizorul folosit este afișat în răspuns.</div>
+      </section>
+      <section class="provider-section" aria-labelledby="providerDiagnosticsTitle">
+        <div class="provider-section-head"><div><h3 id="providerDiagnosticsTitle">Starea motoarelor</h3><p>Verificarea trimite câte un mesaj scurt motoarelor configurate. Furnizorii pot taxa aceste teste.</p></div></div>
+        <div class="provider-diagnostic-actions"><button class="btn" type="button" id="runProviderDiagnostics">Verifică motoarele</button><button class="btn" type="button" id="copyProviderReport" disabled>Copiază raportul</button></div>
+        <div class="provider-note" id="providerDiagnosticsNotice" role="status" aria-live="polite">Un profil configurat nu confirmă că modelul poate răspunde. Verifică motoarele pentru a vedea rezultatele.</div>
+        <div class="provider-diagnostics-list" id="providerDiagnosticsList" aria-live="polite"></div>
       </section>
       <section class="provider-section" aria-labelledby="searchTitle">
         <div class="provider-section-head"><div><h3 id="searchTitle">Căutare pe internet</h3><p>Alege motorul folosit pentru verificarea informațiilor actuale.</p></div></div>
@@ -654,7 +662,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=2.7.4-admin-quota-failover"></script>
+  <script src="./app.js?v=2.7.4-provider-diagnostics"></script>
 </body>
 </html>
 

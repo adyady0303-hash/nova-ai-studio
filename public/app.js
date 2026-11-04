@@ -2,6 +2,7 @@ const el = id => document.getElementById(id);
 const state = { projects: [], project: null, files: [], activePath: null, dirty: false, chat: [], busy: false, filter: "", settings: null, account: null, publication: null, view: "home" };
 let activeMessageStream = null;
 let providerDraftDirty = false, searchDraftDirty = false, editingProviderId = "", editingSearchProvider = "";
+let providerDiagnosticReport = null, providerModelRequest = 0, providerCatalogModels = [];
 let voiceRecognition = null, speakNextAssistant = false;
 const fileIcons = { js: "JS", mjs: "JS", cjs: "JS", ts: "TS", py: "PY", md: "MD", css: "{}", html: "<>", json: "{}", gpc: "GPC" };
 const providerNames = {
@@ -171,6 +172,35 @@ function providerLabel(provider) {
   return providerNames[provider?.id] || provider?.name || provider?.id || "Motor AI";
 }
 
+function textRoutingReady(profile) {
+  if (!profile || !(profile.ready?.text ?? profile.configured === true)) return false;
+  if (typeof profile.textRoutingEligible === "boolean") return profile.textRoutingEligible;
+  const selected = state.settings?.routes?.text || state.settings?.platform || state.settings?.provider;
+  return profile.id !== "ollama" || profile.apiKeyConfigured === true || profile.id === selected;
+}
+
+function providerStatusText(profile) {
+  if (profile?.id === "ollama" && profile.textRoutingEligible === false) return "Local · neselectat";
+  const labels = { available: "Disponibil", quota: "Cotă API", auth_error: "Acces respins", unavailable: "Indisponibil", network_error: "Eroare de rețea", invalid_response: "Răspuns invalid", timeout: "Timp expirat", model_error: "Model indisponibil" };
+  return labels[profile?.status?.state] || ((profile?.ready?.text ?? profile?.configured === true) ? "Configurat · neverificat" : "Neconfigurat");
+}
+
+function renderChatConnection(providerName, status = {}, catalogConnected = false, catalogError = "") {
+  const available = status?.state === "available";
+  const unchecked = !status?.state || status.state === "unchecked";
+  const description = unchecked ? (catalogConnected ? "Catalog accesibil · chat neverificat" : "Chat neverificat") : providerStatusText({ status });
+  const badge = el("statusBadge"), label = el("connectionText"), sideLabel = el("sidebarConnectionText");
+  const title = [status?.model ? `Model: ${status.model}` : "", status?.checkedAt ? `Ultima verificare: ${new Date(status.checkedAt).toLocaleString()}` : "", status?.error || catalogError, catalogConnected ? "Catalogul de modele este accesibil." : ""].filter(Boolean).join(" ");
+  label.textContent = `${providerName} · ${description}`; sideLabel.textContent = label.textContent;
+  badge.textContent = description;
+  label.title = title; sideLabel.title = title; badge.title = title;
+  for (const dot of [el("connectionDot"), el("sidebarConnectionDot")]) {
+    if (available) dot.classList.add("on"); else dot.classList.remove("on");
+  }
+  badge.style.color = available ? "var(--mint)" : unchecked ? "#dbc58a" : "#e4a69b";
+  badge.style.borderColor = available ? "#364b40" : unchecked ? "#5a5136" : "#583b35";
+}
+
 function providerDisplayName(providerId, settings = state.settings) {
   const profile = providerProfile(providerId, settings);
   return profile ? providerLabel(profile) : providerNames[providerId] || providerId || "Motor AI";
@@ -224,19 +254,18 @@ async function refreshHealth() {
   try {
     const data = await api("/api/health");
     const providerName = data.providerName || (data.provider ? providerDisplayName(data.provider) : state.settings?.platformName) || "Motor AI";
+    const chatStatus = data.chatStatus || { state: "unchecked", checkedAt: null, model: "", error: "" };
+    const profile = providerProfile(data.provider || routeProfile("text")?.id);
+    if (profile) profile.status = chatStatus;
+    renderChatConnection(providerName, chatStatus, Boolean(data.connected), data.error || "");
+    renderDashboardProviders();
     if (!data.connected) {
-      const message = data.error || `Conexiunea cu ${providerName} nu este disponibilă`;
-      label.title = message;
-      sideLabel.title = message;
-      throw new Error(message);
+      const configured = routeProfile("text")?.textModel;
+      select.replaceChildren(new Option(configured || "Configurează un motor AI", configured || ""));
+      return;
     }
     const fallbacks = fallbackNames(data.fallbacks);
-    const connectionTitle = fallbacks.length ? `Motoare de rezervă: ${fallbacks.join(", ")}` : `${providerName} este conectat`;
-    label.title = connectionTitle; sideLabel.title = connectionTitle; badge.title = connectionTitle;
-    dot.classList.add("on"); label.textContent = `${providerName} conectat`;
-    sideDot.classList.add("on"); sideLabel.textContent = `${providerName} conectat`;
-    badge.textContent = `${providerName} · verificat`;
-    badge.style.color = "var(--mint)"; badge.style.borderColor = "#364b40";
+    if (fallbacks.length) badge.title += ` Motoare de rezervă: ${fallbacks.join(", ")}`;
     const previous = select.value; select.replaceChildren();
     const models = healthModels(data);
     if (!models.length) select.add(new Option(`Setează modelul pentru ${providerName}`, ""));
@@ -244,10 +273,10 @@ async function refreshHealth() {
       models.forEach(model => select.add(new Option(model, model)));
       const configured = routeProfile("text")?.textModel;
       const recommended = typeof data.recommendedModel === "string" ? data.recommendedModel : "";
-      select.value = models.includes(previous) ? previous : models.includes(recommended) ? recommended : models.includes(configured) ? configured : models[0];
+      select.value = models.includes(previous) ? previous : models.includes(configured) ? configured : models.includes(recommended) ? recommended : models[0];
     }
   } catch (error) {
-    dot.classList.remove("on"); label.textContent = "Motor AI neconectat"; badge.textContent = "AI neconectat";
+    dot.classList.remove("on"); label.textContent = "Stare AI necunoscută"; badge.textContent = "Stare necunoscută";
     sideDot.classList.remove("on");
     const reason = error?.message || "Verifică profilurile și rutele din Motoare AI.";
     sideLabel.textContent = reason;
@@ -301,7 +330,13 @@ function renderProviderProfile(providerId) {
   el("apiKeyState").textContent = profile.apiKeyConfigured
     ? "•••••••• · Cheie configurată pe server. Valoarea nu este returnată în browser."
     : "Nicio cheie salvată pentru acest profil. Valoarea introdusă este trimisă numai la salvare.";
-  el("providerProfileState").textContent = `${profile.configured ? "Configurat" : "Neconfigurat"} · ${providerLabel(profile)}`;
+  el("providerProfileState").textContent = `${providerLabel(profile)} · ${providerStatusText(profile)}`;
+  providerModelRequest++;
+  providerCatalogModels = [];
+  el("providerModelCatalog").replaceChildren(new Option("Încarcă modelele disponibile", ""));
+  el("providerModelCatalog").disabled = true;
+  el("providerModelsStatus").textContent = "Catalogul se încarcă pentru profilul salvat. Alegerea unui model trebuie salvată.";
+  el("loadProviderModels").disabled = false;
   const capabilities = profile.capabilities || {};
   const capabilityList = el("providerCapabilities"); capabilityList.replaceChildren();
   [["text", "Text"], ["image", "Imagini"], ["imageEdit", "Editare imagini"], ["speech", "Voce"]].forEach(([id, label]) => {
@@ -381,6 +416,107 @@ async function loadProviderSettings() {
   await refreshHealth();
 }
 
+function unsavedAiDraft() {
+  return providerDraftDirty || searchDraftDirty || Boolean(el("apiKey").value || el("searchApiKey").value);
+}
+
+function safeProviderReport(data) {
+  return {
+    version: typeof data.version === "string" ? data.version : "",
+    commit: typeof data.commit === "string" ? data.commit : "",
+    providers: (Array.isArray(data.providers) ? data.providers : []).filter(profile => profile && typeof profile === "object").map(profile => ({
+      id: String(profile.id || ""), name: String(profile.name || profile.id || "Motor AI"),
+      configured: profile.configured === true, eligible: profile.eligible === true,
+      status: {
+        state: String(profile.status?.state || "unchecked"), checkedAt: typeof profile.status?.checkedAt === "string" ? profile.status.checkedAt : null,
+        model: String(profile.status?.model || ""), error: String(profile.status?.error || "")
+      }
+    }))
+  };
+}
+
+function renderProviderDiagnostics(report) {
+  const list = el("providerDiagnosticsList"); list.replaceChildren();
+  report.providers.forEach(profile => {
+    const card = document.createElement("div"); card.className = "provider-diagnostic";
+    const name = document.createElement("strong"); name.textContent = profile.name;
+    const detail = document.createElement("p");
+    detail.textContent = `${profile.status.model || "Model neconfigurat"} · ${providerStatusText({ ...profile, textRoutingEligible: profile.eligible })}`;
+    card.append(name, detail);
+    if (profile.status.error) { const error = document.createElement("p"); error.className = "provider-diagnostic-error"; error.textContent = profile.status.error; card.append(error); }
+    list.append(card);
+  });
+}
+
+async function runProviderDiagnostics() {
+  if (state.account?.role !== "owner") return;
+  const button = el("runProviderDiagnostics"), notice = el("providerDiagnosticsNotice"), copy = el("copyProviderReport");
+  if (unsavedAiDraft()) { notice.textContent = "Salvează mai întâi modificările din Motoare AI. Verificarea folosește profilurile salvate."; return; }
+  if (button.disabled) return;
+  button.disabled = true; copy.disabled = true; providerDiagnosticReport = null;
+  const savedSettings = state.settings;
+  el("providerDiagnosticsList").replaceChildren();
+  notice.textContent = "Se trimit mesaje scurte motoarelor configurate. Așteaptă rezultatele…";
+  try {
+    const report = safeProviderReport(await api("/api/ai/diagnostics", jsonBody({})));
+    providerDiagnosticReport = report;
+    renderProviderDiagnostics(report);
+    if (state.settings === savedSettings) report.providers.forEach(result => {
+      const profile = providerProfile(result.id);
+      if (profile) { profile.status = result.status; profile.textRoutingEligible = result.eligible; }
+    });
+    const selected = providerProfile(editingProviderId);
+    if (selected) el("providerProfileState").textContent = `${providerLabel(selected)} · ${providerStatusText(selected)}`;
+    renderDashboardProviders();
+    const active = routeProfile("text");
+    if (active) renderChatConnection(providerLabel(active), active.status || {});
+    copy.disabled = false;
+    notice.textContent = "Verificarea s-a încheiat. Raportul arată rezultatul fiecărui motor; cheile nu sunt incluse.";
+  } catch (error) { notice.textContent = `Verificarea motoarelor a eșuat: ${error.message}`; }
+  finally { button.disabled = false; }
+}
+
+async function copyProviderReport() {
+  const notice = el("providerDiagnosticsNotice");
+  if (!providerDiagnosticReport) { notice.textContent = "Verifică mai întâi motoarele pentru a crea un raport."; return; }
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("Copierea nu este disponibilă în acest browser.");
+    await navigator.clipboard.writeText(JSON.stringify(providerDiagnosticReport, null, 2));
+    notice.textContent = "Raportul a fost copiat. Conține rezultatele verificării, fără chei API.";
+  } catch (error) { notice.textContent = error.message || "Raportul nu a putut fi copiat."; }
+}
+
+async function loadSavedProviderModels() {
+  if (state.account?.role !== "owner") return;
+  const button = el("loadProviderModels"), notice = el("providerModelsStatus"), select = el("providerModelCatalog");
+  if (unsavedAiDraft()) { notice.textContent = "Salvează mai întâi profilul și modificările din Motoare AI, apoi încarcă modelele."; return; }
+  if (button.disabled) return;
+  const providerId = editingProviderId, request = ++providerModelRequest;
+  if (!providerId) return;
+  button.disabled = true; notice.textContent = "Se încarcă modelele profilului salvat…";
+  try {
+    const data = await api(`/api/ai/models?provider=${encodeURIComponent(providerId)}`);
+    if (request !== providerModelRequest || providerId !== editingProviderId) return;
+    if (unsavedAiDraft()) { notice.textContent = "Ai modificări nesalvate. Salvează profilul înainte de a încărca din nou modelele."; return; }
+    providerCatalogModels = [...new Set((Array.isArray(data.models) ? data.models : []).filter(model => typeof model === "string" && model))];
+    select.replaceChildren(new Option("Alege un model din catalog", ""));
+    providerCatalogModels.forEach(model => select.add(new Option(model, model)));
+    select.disabled = !providerCatalogModels.length;
+    select.value = providerCatalogModels.includes(data.configuredModel) ? data.configuredModel : "";
+    notice.textContent = providerCatalogModels.length
+      ? `${providerCatalogModels.length} modele disponibile.${data.recommendedModel ? ` Recomandat: ${data.recommendedModel}.` : ""} Alege modelul, apoi salvează profilul.`
+      : "Furnizorul nu a returnat modele de chat. Modelul introdus a fost păstrat.";
+  } catch (error) { if (request === providerModelRequest) notice.textContent = `Catalogul nu a putut fi încărcat: ${error.message}`; }
+  finally { if (request === providerModelRequest) button.disabled = false; }
+}
+
+function chooseProviderModel() {
+  const model = el("providerModelCatalog").value;
+  if (!providerCatalogModels.includes(model)) return;
+  el("textModel").value = model; providerDraftDirty = true;
+  el("providerModelsStatus").textContent = "Model selectat. Salvează profilul pentru a-l folosi.";
+}
+
 async function testWebConnection() {
   const button = el("testWebConnection"), status = el("webConnectionStatus");
   if (searchDraftDirty || el("searchProvider").value !== state.settings?.search?.provider) {
@@ -441,14 +577,14 @@ function renderDashboardProviders() {
   rail.replaceChildren(); tabs.replaceChildren();
   const profiles = providerProfiles();
   const activeId = state.settings?.platform || state.settings?.routes?.text;
-  profiles.slice(0, 9).forEach(profile => {
-    const ready = profile.ready?.text ?? profile.configured === true;
+  profiles.forEach(profile => {
+    const ready = textRoutingReady(profile);
     const row = document.createElement("div"); row.className = "rail-provider";
     const icon = document.createElement("span"); icon.className = "rail-provider-icon"; icon.textContent = providerMonogram(profile);
     const copy = document.createElement("span"); copy.className = "rail-provider-copy";
     const name = document.createElement("strong"); name.textContent = providerLabel(profile);
     const model = document.createElement("small"); model.textContent = profile.textModel || "Model neconfigurat";
-    const status = document.createElement("span"); status.className = `rail-provider-state${ready ? "" : " off"}`; status.textContent = ready ? "Activ" : "Cheie";
+    const status = document.createElement("span"); status.className = `rail-provider-state${ready && profile.status?.state === "available" ? "" : " off"}`; status.textContent = providerStatusText(profile); status.title = [profile.status?.checkedAt ? `Ultima verificare: ${new Date(profile.status.checkedAt).toLocaleString()}` : "", profile.status?.error || status.textContent].filter(Boolean).join(" · ");
     copy.append(name, model); row.append(icon, copy, status); rail.append(row);
     if (ready) {
       const tab = document.createElement("span"); tab.className = `model-tab${profile.id === activeId ? " active" : ""}`;
@@ -480,7 +616,7 @@ function renderDashboardUsage() {
   if (!node) return;
   node.replaceChildren();
   const account = state.account;
-  const configured = providerProfiles().filter(profile => profile.ready?.text ?? profile.configured === true).length;
+  const configured = providerProfiles().filter(textRoutingReady).length;
   const limit = Number(account?.quotaLimit || 0), remaining = Number(account?.quotaRemaining || 0);
   const owner = account?.role === "owner";
   const requestPercent = !owner && limit ? Math.max(0, Math.min(100, Math.round((limit - remaining) / limit * 100))) : 0;
@@ -1317,6 +1453,10 @@ el("providerDialog").addEventListener("close", () => {
   providerDraftDirty = false; searchDraftDirty = false;
 });
 el("testWebConnection").addEventListener("click", testWebConnection);
+el("runProviderDiagnostics").addEventListener("click", runProviderDiagnostics);
+el("copyProviderReport").addEventListener("click", copyProviderReport);
+el("loadProviderModels").addEventListener("click", loadSavedProviderModels);
+el("providerModelCatalog").addEventListener("change", chooseProviderModel);
 el("providerForm").addEventListener("submit", event => {
   event.preventDefault();
   if (event.submitter?.value === "cancel") {
