@@ -281,6 +281,15 @@ async function searchWithProvider(provider, query, download, config) {
   return normalizeSearchResults(response.results);
 }
 async function webSearch(query, download, config) {
+  // Search engines sometimes ignore site: operators. Enforce the user's
+  // positive domain/path scope before exposing results to the model.
+  const scopes = [...query.matchAll(/(?:^|\s)site:(?:"([^"]+)"|([^\s]+))/gi)].flatMap(match => {
+    try {
+      const scope = new URL(/^https?:\/\//i.test(match[1] || match[2]) ? match[1] || match[2] : `https://${match[1] || match[2]}`);
+      if (scope.username || scope.password || scope.port) return [];
+      return [{ host: scope.hostname.toLowerCase(), path: scope.pathname.replace(/\/$/, '') }];
+    } catch { return []; }
+  });
   const providers = config.provider === 'auto'
     ? [...(config.keys.brave ? ['brave'] : []), ...(config.keys.tavily ? ['tavily'] : []), 'bing']
     : [config.provider];
@@ -288,7 +297,12 @@ async function webSearch(query, download, config) {
   const secrets = Object.values(config.keys);
   for (const provider of providers) {
     try {
-      const sources = await searchWithProvider(provider, query, download, config);
+      const results = await searchWithProvider(provider, query, download, config);
+      const sources = scopes.length ? results.filter(source => {
+        const url = new URL(source.url);
+        return scopes.some(scope => (url.hostname === scope.host || url.hostname.endsWith(`.${scope.host}`))
+          && (!scope.path || url.pathname === scope.path || url.pathname.startsWith(`${scope.path}/`)));
+      }) : results;
       if (config.provider === 'auto' && provider !== 'bing' && !sources.length) {
         failures.push(`${provider}: nu a returnat surse utilizabile`);
         continue;

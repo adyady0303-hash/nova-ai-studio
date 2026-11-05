@@ -229,7 +229,7 @@ test('web health requires actual sources, caches and shares concurrent checks, t
   const check = createWebHealthChecker(async () => { calls++; return response; }, () => time);
   const first = check(), second = check();
   assert.equal(calls,1);
-  resolve({ body:'<rss><item><title>Nova</title><link>https://example.com/</link></item></rss>' });
+  resolve({ body:'<rss><item><title>Nova</title><link>https://nodejs.org/</link></item></rss>' });
   assert.deepEqual(await first, await second);
   assert.equal((await check()).connected, true);
   assert.equal((await check()).searchProvider, 'bing');
@@ -251,7 +251,7 @@ test('web health loads search config dynamically and redacts provider credential
   let configReads = 0;
   const healthy = createWebHealthChecker(async (_url, options) => {
     assert.equal(options.headers['X-Subscription-Token'], secret);
-    return { body:'{"web":{"results":[{"title":"Nova","url":"https://example.com/","description":"OK"}]}}' };
+    return { body:'{"web":{"results":[{"title":"Nova","url":"https://nodejs.org/","description":"OK"}]}}' };
   }, Date.now, async () => {
     configReads++;
     return { searchConfig:{ provider:'brave', keys:{ brave:secret } } };
@@ -277,10 +277,10 @@ test('web health cache is invalidated immediately when provider or credentials c
     const url = new URL(value);
     if (url.hostname === 'api.search.brave.com') {
       requests.push({ provider:'brave', key:options.headers['X-Subscription-Token'] });
-      return { body:'{"web":{"results":[{"title":"Brave","url":"https://example.com/brave"}]}}' };
+      return { body:'{"web":{"results":[{"title":"Brave","url":"https://nodejs.org/brave"}]}}' };
     }
     requests.push({ provider:'tavily', key:JSON.parse(options.body).api_key });
-    return { body:'{"results":[{"title":"Tavily","url":"https://example.com/tavily"}]}' };
+    return { body:'{"results":[{"title":"Tavily","url":"https://nodejs.org/tavily"}]}' };
   }, Date.now, () => config);
 
   assert.equal((await check()).searchProvider, 'brave');
