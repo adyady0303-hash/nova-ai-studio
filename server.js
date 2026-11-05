@@ -1056,6 +1056,20 @@ async function chatWithResolvedTextModel(profile, preferredModel, options) {
   const startedAt = Date.now();
   try { return await chatWithProfile(profile, { ...options, model: preferredModel }); }
   catch (firstError) {
+    const errorDetails = firstError.details?.error?.details;
+    const violations = (Array.isArray(errorDetails) ? errorDetails : []).flatMap(detail =>
+      detail?.['@type'] === 'type.googleapis.com/google.rpc.QuotaFailure' && Array.isArray(detail.violations) ? detail.violations : []) || [];
+    const fixedQuota = violations.some(violation => String(violation.quotaValue) === '0' || /perday|permonth/i.test(violation.quotaId || ''));
+    const retryWait = firstError.retryAfterMs;
+    if (profile.id === "gemini" && Number(firstError.status) === 429 && !fixedQuota
+      && Number.isFinite(retryWait) && retryWait > 0 && retryWait <= 30000
+      && Date.now() - startedAt + retryWait < (options.timeout || 180000)) {
+      options.signal?.throwIfAborted();
+      await delay(retryWait, undefined, { signal: options.signal });
+      options.signal?.throwIfAborted();
+      return chatWithProfile(profile, { ...options, model: preferredModel,
+        timeout: Math.max(1, (options.timeout || 180000) - (Date.now() - startedAt)) });
+    }
     if (profile.id === "gemini" && geminiOverloaded(firstError)) {
       return recoverGeminiOverload(profile, preferredModel, options, firstError, startedAt);
     }

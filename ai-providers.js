@@ -370,9 +370,16 @@ async function performRequest(profileInput, route, options = {}, fallbackTimeout
   return { profile, response };
 }
 
-function retryAfterMilliseconds(response) {
+function retryAfterMilliseconds(response, payload) {
   const raw = response?.headers?.get?.("retry-after");
-  if (typeof raw !== "string" || !raw.trim() || raw.length > 128) return undefined;
+  if (typeof raw !== "string" || !raw.trim() || raw.length > 128) {
+    const details = payload?.error?.details;
+    if (!Array.isArray(details)) return undefined;
+    const retry = details.find(detail => detail?.['@type'] === 'type.googleapis.com/google.rpc.RetryInfo');
+    const duration = typeof retry?.retryDelay === 'string' && retry.retryDelay.match(/^(\d{1,9})(?:\.(\d{1,9}))?s$/);
+    if (!duration) return undefined;
+    return Math.ceil(Number(duration[1] + (duration[2] ? '.' + duration[2] : '')) * 1000);
+  }
   const value = raw.trim();
   if (/^\d+(?:\.\d+)?$/.test(value)) return Math.ceil(Number(value) * 1000);
   const date = Date.parse(value);
@@ -386,7 +393,7 @@ async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = 
     const remoteError = plainObject(payload?.error) ? payload.error : {};
     throw providerError(payloadErrorMessage(payload, response), response.status, {
       provider: profile.id, code: remoteError.code || remoteError.type || payload?.code, details: payload,
-      failureKind: "http", upstreamStatus: response.status, retryAfterMs: retryAfterMilliseconds(response)
+      failureKind: "http", upstreamStatus: response.status, retryAfterMs: retryAfterMilliseconds(response, payload)
     });
   }
   if (own(payload, "raw")) throw providerError("Furnizorul AI nu a returnat JSON valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
