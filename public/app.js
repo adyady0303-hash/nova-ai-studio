@@ -34,7 +34,22 @@ async function api(url, options = {}) {
   }
   return data;
 }
-function jsonBody(value) { return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(value) }; }
+function encodeMessageContent(content) {
+  const bytes = new TextEncoder().encode(content);
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 32768) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768));
+  }
+  return btoa(binary);
+}
+function jsonBody(value) {
+  const payload = Array.isArray(value?.messages) ? {
+    ...value, messagesEncoding: "base64-utf8",
+    messages: value.messages.map(message => typeof message?.content === "string"
+      ? { ...message, content: encodeMessageContent(message.content) } : message)
+  } : value;
+  return { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) };
+}
 function toast(text) { const node = el("toast"); node.textContent = text; node.classList.add("show"); setTimeout(() => node.classList.remove("show"), 2200); }
 
 function updateVoiceChatButtons(listening) {

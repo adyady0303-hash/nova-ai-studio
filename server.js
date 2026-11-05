@@ -95,6 +95,7 @@ const PUBLICATIONS_FILE = path.join(DATA_DIR, "data", "published-sites.json");
 const MAX_ACCOUNTS = Math.max(1, Math.min(10000, Number.parseInt(process.env.NOVA_MAX_ACCOUNTS || "100", 10) || 100));
 const SUBSCRIBER_DAILY_AI_LIMIT = Math.max(1, Math.min(5, Number.parseInt(process.env.NOVA_SUBSCRIBER_DAILY_AI_LIMIT || "5", 10) || 5));
 const MAX_BODY = 1024 * 1024;
+const MAX_CREATION_WIRE_BODY = Math.ceil(MAX_BODY / 3) * 4 + 128;
 const MAX_IMAGE_EDIT_BODY = 12 * 1024 * 1024;
 const MAX_IMAGE_UPLOAD = 8 * 1024 * 1024;
 const MAX_FILE = 512 * 1024;
@@ -447,6 +448,24 @@ async function readJson(req, maximum = MAX_BODY) {
   const raw = await readBody(req, maximum);
   try { return JSON.parse(raw.toString("utf8") || "{}"); }
   catch { throw Object.assign(new Error("Corpul cererii nu este JSON valid."), { status: 400 }); }
+}
+
+async function readCreationJson(req) {
+  const raw = await readBody(req, MAX_CREATION_WIRE_BODY);
+  let body;
+  try { body = JSON.parse(raw.toString("utf8") || "{}"); }
+  catch { throw Object.assign(new Error("Corpul cererii nu este JSON valid."), { status: 400 }); }
+  if (body?.messagesEncoding === undefined) {
+    if (raw.length > MAX_BODY) throw Object.assign(new Error("Cererea este prea mare."), { status: 413 });
+    return body;
+  }
+  const messages = creationMessages(body.messages, "owner", body.messagesEncoding);
+  const decoded = { ...body, messages: body.messages.map((message, index) => ({ ...message, content: messages[index].content })) };
+  delete decoded.messagesEncoding;
+  if (Buffer.byteLength(JSON.stringify(decoded), "utf8") > MAX_BODY) {
+    throw Object.assign(new Error("Cererea este prea mare."), { status: 413 });
+  }
+  return decoded;
 }
 
 const billing = createBilling({ readAccounts, writeAccounts, withAccountsLock });
@@ -1474,7 +1493,25 @@ async function callAgentTool(name, args, project, allowChanges, principal = "own
   throw new Error(`Unealtă necunoscută: ${name}`);
 }
 
-function creationMessages(messages, role) {
+function creationMessages(messages, role, encoding) {
+  if (encoding !== undefined && encoding !== "base64-utf8") {
+    throw Object.assign(new Error("Codificarea mesajelor nu este acceptată."), { status: 400 });
+  }
+  if (encoding === "base64-utf8") {
+    if (!Array.isArray(messages)) throw Object.assign(new Error("Format de conversație invalid."), { status: 400 });
+    messages = messages.map(message => {
+      const content = message?.content;
+      if (typeof content !== "string" || content.length % 4 || !/^[A-Za-z0-9+/]*={0,2}$/.test(content)) {
+        throw Object.assign(new Error("Codificarea unui mesaj este invalidă."), { status: 400 });
+      }
+      try {
+        const bytes = Buffer.from(content, "base64");
+        if (bytes.toString("base64") !== content) throw new Error("Noncanonical base64");
+        const decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+        return { ...message, content: decoded };
+      } catch { throw Object.assign(new Error("Codificarea unui mesaj este invalidă."), { status: 400 }); }
+    });
+  }
   let inputBudget = 18000;
   return (role === "owner" ? messages : messages.slice(-6)).map(message => {
     if (!message || !["user", "assistant"].includes(message.role) || typeof message.content !== "string") {
@@ -2182,7 +2219,7 @@ async function handle(req, res) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/agent") {
-    const body = await readJson(req);
+    const body = await readCreationJson(req);
     if (["music", "video"].includes(body.task)) return json(res, 410, { error: "Instrumentul solicitat a fost eliminat din Nova AI Studio." });
     if (typeof body.model !== "string" || !body.model.trim()) return json(res, 400, { error: "Alege un model AI în bara de chat." });
     if (!validProjectId(body.project)) return json(res, 400, { error: "Alege un proiect." });
@@ -2271,7 +2308,7 @@ async function handle(req, res) {
     let requestedModel = "";
     const lifecycle = aiRequestLifecycle(res);
     try {
-      const body = await readJson(req);
+      const body = await readCreationJson(req);
       requestedModel = typeof body.model === "string" ? body.model.trim() : "";
       const task = ["text", "lyrics"].includes(body.task) ? body.task : "auto";
       if (typeof body.model !== "string" || !body.model.trim()) {
