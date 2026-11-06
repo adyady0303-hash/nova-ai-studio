@@ -20,8 +20,10 @@ test('an upstream AI authentication failure does not log the visitor out of Nova
 
 test('image failure restores the prompt without overwriting a new draft', async () => {
   for (const newerDraft of ['', 'Un alt prompt']) {
-    const nodes = { prompt: { value: 'Imaginea mea' }, generateImageBtn: { disabled: false } };
+    const nodes = { prompt: { value: 'Imaginea mea' }, generateImageBtn: { disabled: false }, sendBtn: {disabled: false} };
     const context = {
+      state: {chat: [], busy: false}, chatKey: () => 'image-test', routeSupports: () => true,
+      updateCapabilityControls() {nodes.generateImageBtn.disabled = false;},
       el: id => nodes[id], setView() {}, addBubble() {}, resizePrompt() {}, jsonBody: value => value,
       document: { createElement: () => ({ remove() {} }) }, messageContainer: () => ({ append() {} }),
       api: async () => { nodes.prompt.value = newerDraft; throw Error('Provider failed'); }

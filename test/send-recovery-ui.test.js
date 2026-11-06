@@ -48,7 +48,7 @@ function sendContext(task = 'text', prompt = '  Creează un rezultat complet.\n'
     jsonBody: value => value, setView() {}, toast() {}, resizePrompt() {},
     speakNextAssistant: false, routeSupports: () => false,
     saveFile: async () => {}, refreshFiles: async () => {}, openFile: async () => {},
-    publishProject: async () => ({ published: true }), addPublishedSiteCard() {},
+    publishProject: async () => ({ published: true }), addPublishedSiteCard() {}, setWorkspaceOpen() {},
     api: async (route, body) => {
       requests.push({ route, body: JSON.parse(JSON.stringify(body)) });
       return context.respond(route, body);
@@ -160,4 +160,33 @@ test('a successful response stays in its original project after the user switche
   assert.equal(JSON.parse(storage.get('nova-chat-project-one')).at(-1).content, 'Răspuns pentru primul proiect');
   assert.equal(nodes.prompt.value, 'Mesaj în proiectul nou');
   assert.equal(bubbles('assistant').length, 0);
+});
+
+
+test('generated code opens the written file and editor instead of leaving an unrelated active file', async () => {
+  const { context } = sendContext('code');
+  const opened = [], workspace = [];
+  context.state.files.push({path: 'src/new.js'});
+  context.respond = async () => ({content: 'Cod salvat.', events: [
+    {tool: 'write_file', ok: false, path: 'missing.js'},
+    {tool: 'write_file', ok: true, path: 'src/new.js'}
+  ]});
+  context.openFile = async (path, force) => opened.push({path, force});
+  context.setWorkspaceOpen = value => workspace.push(value);
+  await context.send();
+  assert.deepEqual(opened, [{path: 'src/new.js', force: true}]);
+  assert.deepEqual(workspace, [true]);
+});
+
+test('code completion preserves edits made while the model was running', async () => {
+  const { context, nodes } = sendContext('code');
+  context.respond = async () => {
+    context.state.dirty = true;
+    nodes.editor.value = 'const unsaved = true;';
+    return {content: 'Cod salvat.', events: [{tool: 'write_file', ok: true, path: 'app.js'}]};
+  };
+  context.openFile = async () => assert.fail('must not discard the newer editor draft');
+  await context.send();
+  assert.equal(nodes.editor.value, 'const unsaved = true;');
+  assert.equal(context.state.dirty, true);
 });

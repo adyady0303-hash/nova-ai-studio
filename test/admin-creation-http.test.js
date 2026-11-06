@@ -189,6 +189,7 @@ test('administrator creation has no Nova quotas while subscriber limits remain e
     const result = await response.json();
     assert.equal(response.status, 200, JSON.stringify(result));
     assert.equal(result.events.length, 54);
+    assert.deepEqual(result.events.map(event => event.path), Array.from({length: 54}, (_, index) => `generated/round-${Math.floor(index / 6)}-file-${index % 6}.txt`));
     assert.ok(result.events.every(event => event.ok), JSON.stringify(result.events.filter(event => !event.ok)));
     const finalFile = await owner(`/api/file?project=${project.id}&path=generated/round-8-file-5.txt`, undefined, 'GET');
     assert.equal(finalFile.status, 200);

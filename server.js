@@ -822,6 +822,9 @@ function rankedImageModels(models) {
 }
 
 async function resolvedImageModel(profile) {
+  // A catalog can omit valid generation models or include edit-only models.
+  // The saved model and the generation endpoint are authoritative.
+  if (profile.imageModel) return profile.imageModel;
   try {
     const catalog = await cachedProfileModels(profile);
     const available = rankedImageModels(catalog);
@@ -1620,7 +1623,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       successfulTools += 1;
       if (webTools.some(tool => tool.function.name === name)) collectSources(result, sources);
         if (name === "write_file" && requiredBusinessFiles?.has(args.path)) writtenBusinessFiles.add(args.path);
-        if (!isWebTool) events.push({ tool: name, ok: true, summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
+        if (!isWebTool) events.push({ tool: name, ok: true, ...(name === "write_file" ? { path: projectFile(project, args.path, principal).relative } : {}), summary: name === "write_file" ? result : name === "list_files" ? "Lista de fișiere citită" : `Fișier citit: ${args.path}` });
         const toolResultLimit = webTools.some(tool => tool.function.name === name) ? 24000 : 10000;
         messages.push({ role: "tool", tool_call_id: call.id, content: owner ? String(result) : String(result).slice(0, toolResultLimit) });
       } catch (error) {

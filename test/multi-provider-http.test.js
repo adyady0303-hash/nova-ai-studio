@@ -58,7 +58,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
       fs.appendFileSync(callsPath, JSON.stringify({ provider, path: parsed.pathname, model: requestBody?.model || '', messages: requestBody?.messages || [] }) + '\\n');
       if (parsed.pathname.endsWith('/models')) {
         if (parsed.pathname.includes('/catalogless/')) return reply(404, { error: { message: 'catalog absent' } });
-        const models = provider === 'custom' ? ['llama-3.3-70b', 'custom-primary']
+        const models = provider === 'custom' ? ['llama-3.3-70b', 'custom-primary', 'gpt-image-9-catalog-fixture']
           : provider === 'openai' ? ['openai-fallback'] : ['models/gemini-3-flash', 'models/gemini-primary'];
         return reply(200, { data: models.map(id => ({ id })) });
       }
@@ -228,6 +228,17 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   }
   assert.deepEqual(poolProviders, ['custom', 'openai', 'gemini'], 'modul automat folosește pe rând toate profilurile configurate');
 
+  const customImages = await ownerRequest('/api/settings', {
+    providerId: 'custom', baseUrl: 'https://custom.example/v1',
+    imageModel: 'gpt-image-saved-fixture',
+    routes: { text: 'custom', image: 'custom', speech: 'openai', autoSelect: false, autoFallback: false }
+  });
+  assert.equal(customImages.status, 200, await customImages.text());
+  const customImage = await ownerRequest('/api/media/image', { prompt: 'Saved model wins over a newer catalog entry' });
+  assert.equal(customImage.status, 200, await customImage.text());
+  calls = fs.readFileSync(callsPath, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+  assert.equal(calls.at(-1).model, 'gpt-image-saved-fixture');
+  assert.equal(calls.at(-1).provider, 'custom');
   const geminiSettings = await ownerRequest('/api/settings', {
     providerId: 'gemini', textModel: 'gemini-primary',
     routes: { text: 'gemini', image: 'openai', speech: 'openai', autoSelect: false, autoFallback: false },

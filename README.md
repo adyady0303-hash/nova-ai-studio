@@ -154,6 +154,8 @@ Chatul caută automat surse pentru întrebări actuale și încearcă o căutare
 
 Pagina principală și chatul folosesc designul Orbit, cu instrumente dedicate, glob decorativ realizat în CSS și afișare adaptată telefonului. Chatul rămâne separat de editor; editorul are și un buton propriu de închidere. Modul Imagine trimite descrierea către generatorul de imagini, inclusiv la Enter. Fișierele interfeței sunt versionate automat pentru fiecare publicare. Previzualizarea demonstrativă rămâne disponibilă la `/preview-orbit`.
 
+Imaginile generate și editate se păstrează în istoricul conversației din browser și sunt afișate la redeschiderea proiectului. Generarea folosește întâi modelul de imagini salvat, chiar dacă un alt model apare în catalog. Dacă spațiul browserului este plin, istoricul rămâne în memorie pentru sesiunea curentă; descarcă imaginile pentru o copie independentă. După generarea de cod, Nova deschide fișierul scris și editorul; modificările nesalvate făcute în timpul cererii sunt păstrate.
+
 ### Actualizarea suitei creative (1.5.0)
 
 Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul aleg automat cel mai nou model GPT compatibil disponibil contului owner, căutarea web are limite clare și finalizează întotdeauna cu un răspuns, iar generarea și editarea imaginilor folosesc implicit modelul complet `gpt-image-1.5` la calitate ridicată.

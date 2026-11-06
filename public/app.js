@@ -802,7 +802,10 @@ function renderChat() {
     const visibleContent = message.role === "user"
       ? (message.displayContent || String(message.content || "").split(/\n\nProiect:\s/)[0])
       : message.content;
-    addBubble(message.role, visibleContent, message.events);
+    if (message.role === "assistant" && message.media?.type === "image") {
+      try { addImageCard(message.media.prompt, message.media.result); }
+      catch { addBubble("assistant", "Imaginea salvată nu mai poate fi afișată."); }
+    } else addBubble(message.role, visibleContent, message.events);
   }
   box.scrollTop = box.scrollHeight;
   updateHomeHistory();
@@ -951,17 +954,36 @@ function addImageCard(prompt, result) {
   node.append(meta, caption, img, link); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
+function rememberImageResult(prompt, result, chat, historyKey) {
+  safeImageResultUrl(result.dataUrl);
+  chat.push(
+    { role: "user", content: `${result.edited ? "Modifică fotografia" : "Creează imagine"}: ${prompt}` },
+    { role: "assistant", content: `${result.edited ? "Imagine modificată" : "Imagine AI"}: ${prompt}`,
+      media: { type: "image", prompt, result } }
+  );
+  writeLocalCache(historyKey, JSON.stringify(chat));
+  if (state.chat === chat) { addImageCard(prompt, result); updateHomeHistory(); }
+}
+
 async function generateImageFromPrompt() {
-  if (el("generateImageBtn").disabled) return;
+  if (state.busy) return;
+  if (!routeSupports("image")) { toast("Configurează un motor și un model de imagini în Motoare AI. Modelul text nu generează automat imagini."); return; }
   const prompt = el("prompt").value.trim(); if (!prompt) { toast("Descrie imaginea în caseta de chat."); return; }
   setView("chat");
+  const chat = state.chat, historyKey = chatKey();
   const button = el("generateImageBtn"); button.disabled = true;
+  state.busy = true; el("sendBtn").disabled = true;
   addBubble("user", `Creează imagine: ${prompt}`);
   const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = "Se generează imaginea…"; messageContainer().append(pending);
   el("prompt").value = "";
-  try { const result = await api("/api/media/image", jsonBody({ prompt })); addImageCard(prompt, result); }
-  catch (error) { if (!el("prompt").value.trim()) { el("prompt").value = prompt; resizePrompt(); } addBubble("assistant", error.message); }
-  finally { pending.remove(); button.disabled = false; }
+  try { const result = await api("/api/media/image", jsonBody({ prompt })); rememberImageResult(prompt, result, chat, historyKey); }
+  catch (error) {
+    if (state.chat === chat) {
+      if (!el("prompt").value.trim()) { el("prompt").value = prompt; resizePrompt(); }
+      addBubble("assistant", error.message);
+    } else toast(error.message);
+  }
+  finally { pending.remove(); state.busy = false; el("sendBtn").disabled = false; updateCapabilityControls(); }
 }
 
 let imageEditPreviewUrl = "";
@@ -1005,12 +1027,14 @@ function openImageEditDialog() {
 
 async function generateImageEdit() {
   const status = el("imageEditStatus"), button = el("generateImageEditBtn");
+  const chat = state.chat, historyKey = chatKey();
   try {
     const file = selectedImageEditFile(), prompt = el("imageEditPrompt").value.trim();
     if (!prompt) { el("imageEditPrompt").focus(); throw new Error("Descrie schimbarea pe care o dorești în fotografie."); }
     button.disabled = true; status.hidden = false; status.classList.remove("error"); status.textContent = "Se încarcă fotografia și se generează modificarea…";
     const result = await api("/api/media/image/edit", jsonBody({ prompt, image: await fileDataUrl(file) }));
-    setView("chat"); addBubble("user", `Modifică fotografia: ${prompt}`); addImageCard(prompt, result);
+    if (state.chat === chat) { setView("chat"); addBubble("user", `Modifică fotografia: ${prompt}`); }
+    rememberImageResult(prompt, result, chat, historyKey);
     el("imageEditDialog").close(); el("imageEditFile").value = ""; el("imageEditPrompt").value = "";
     el("imageEditPreview").hidden = true; el("imageEditPreview").removeAttribute("src");
     if (imageEditPreviewUrl) URL.revokeObjectURL(imageEditPreviewUrl); imageEditPreviewUrl = "";
@@ -1396,9 +1420,7 @@ async function send() {
     speakNextAssistant = false; el("prompt").value = ""; resizePrompt(); openCvBuilder(); return;
   }
   if (el("taskSelect").value === "image") {
-    state.busy = true; el("sendBtn").disabled = true;
-    try { await generateImageFromPrompt(); }
-    finally { state.busy = false; el("sendBtn").disabled = false; }
+    await generateImageFromPrompt();
     return;
   }
   if (!model) { speakNextAssistant = false; toast("Configurează furnizorul AI și alege un model."); return; }
@@ -1440,8 +1462,17 @@ async function send() {
     const wroteFiles = events.some(event => event.ok && event.tool === "write_file");
     if (wroteFiles) {
       await refreshFiles(false);
-      if (state.activePath && state.files.some(file => file.path === state.activePath)) await openFile(state.activePath, true);
-      toast("Agentul a salvat modificările. Folosește Undo pentru a reveni.");
+      if (state.chat !== chat) return;
+      const writtenPaths = events.filter(event => event.ok && event.tool === "write_file")
+        .map(event => event.path).filter(path => state.files.some(file => file.path === path));
+      const target = writtenPaths.includes(state.activePath) ? state.activePath
+        : writtenPaths[0] || (state.files.some(file => file.path === state.activePath) ? state.activePath : state.files[0]?.path);
+      if (state.dirty) toast("Codul a fost creat. Modificările nesalvate din editor au fost păstrate.");
+      else {
+        if (target) await openFile(target, true);
+        if (task === "code") setWorkspaceOpen(true);
+        toast("Agentul a salvat modificările. Folosește Undo pentru a reveni.");
+      }
     }
     if (task === "business" && wroteFiles) {
       try { addPublishedSiteCard(await publishProject(false)); }

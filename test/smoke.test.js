@@ -590,7 +590,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.match((await image.json()).dataUrl, /^data:image\/png;base64,iVBOR/);
   assert.equal(mockImageBody.prompt, 'Imagine de probă Nova');
   assert.equal(mockImageBody.model, 'gpt-image-1.5');
-  assert.equal(mockImageAttempts, 2);
+  assert.equal(mockImageAttempts, 1, 'uses the saved model instead of trying an unrelated catalog model');
   assert.equal(mockImageBody.size, '1024x1024');
   assert.equal(mockImageBody.quality, 'high');
   const sourcePng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=';
@@ -601,7 +601,7 @@ test('authenticated HTTP flows protect settings, projects, files and exports', a
   assert.equal(editedImageResult.edited, true);
   const imageEditForm = mockImageEditBody.toString('latin1');
   for (const value of ['name="model"', 'gpt-image-1.5', 'name="prompt"', 'filename="nova-input.png"', 'name="size"', '1024x1024', 'name="quality"', 'high']) assert.match(imageEditForm, new RegExp(value));
-  assert.equal(mockImageEditAttempts, 2);
+  assert.equal(mockImageEditAttempts, 1, 'editing also respects the saved image model');
   assert.ok(mockImageEditBody.includes(Buffer.from('Schimbă fundalul în albastru')));
   assert.equal((await post('/api/media/image/edit', { prompt: '', image: `data:image/png;base64,${sourcePng}` })).status, 400);
   assert.equal((await post('/api/media/image/edit', { prompt: 'Test', image: 'data:text/plain;base64,dGVzdA==' })).status, 400);
