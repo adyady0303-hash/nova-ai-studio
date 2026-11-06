@@ -321,7 +321,7 @@ async function responsePayload(response) {
   }
   if (typeof response?.json === "function") {
     try { return await response.json(); }
-    catch { return {}; }
+    catch (error) { if (error instanceof SyntaxError) return { raw: "" }; throw error; }
   }
   return {};
 }
@@ -332,6 +332,15 @@ function payloadErrorMessage(payload, response) {
   return typeof message === "string" && message.trim()
     ? message.trim().slice(0, 2000)
     : `Furnizorul AI a răspuns cu HTTP ${response?.status || 502}.`;
+}
+
+function transportFailure(profile, cause) {
+  const code = cause?.code || cause?.cause?.code;
+  const timedOut = cause?.name === "AbortError" || cause?.name === "TimeoutError" || ["ABORT_ERR", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"].includes(code);
+  const reportedStatus = Number(cause?.status);
+  return providerError(timedOut ? "Conexiunea cu furnizorul AI a expirat." : "Furnizorul AI nu poate fi contactat.",
+    Number.isInteger(reportedStatus) && reportedStatus >= 400 && reportedStatus <= 599 ? reportedStatus : timedOut ? 504 : 502,
+    { provider: profile.id, code, cause, failureKind: timedOut ? "timeout" : "network" });
 }
 
 async function performRequest(profileInput, route, options = {}, fallbackTimeout = DEFAULT_TIMEOUT) {
@@ -355,12 +364,7 @@ async function performRequest(profileInput, route, options = {}, fallbackTimeout
       redirect: "error"
     });
   } catch (cause) {
-    if (cause?.status) throw cause;
-    const code = cause?.code || cause?.cause?.code;
-    const timedOut = cause?.name === "AbortError" || cause?.name === "TimeoutError" || ["ABORT_ERR", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT"].includes(code);
-    throw providerError(timedOut ? "Conexiunea cu furnizorul AI a expirat." : "Furnizorul AI nu poate fi contactat.", timedOut ? 504 : 502, {
-      provider: profile.id, code, cause, failureKind: timedOut ? "timeout" : "network"
-    });
+    throw transportFailure(profile, cause);
   }
   if (response && !Number.isInteger(response.status) && typeof response.ok === "boolean") {
     // Test doubles and a few embedded fetch bridges expose `ok` without `status`.
@@ -388,7 +392,14 @@ function retryAfterMilliseconds(response, payload) {
 
 async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = DEFAULT_TIMEOUT) {
   const { profile, response } = await performRequest(profileInput, route, options, fallbackTimeout);
-  const payload = await responsePayload(response);
+  let payload;
+  try { payload = await responsePayload(response); }
+  catch (cause) {
+    if (!responseIsOk(response)) throw providerError("Furnizorul AI a refuzat cererea.", response.status, {
+      provider: profile.id, failureKind: "http", upstreamStatus: response.status, cause
+    });
+    throw transportFailure(profile, cause);
+  }
   if (!responseIsOk(response)) {
     const remoteError = plainObject(payload?.error) ? payload.error : {};
     throw providerError(payloadErrorMessage(payload, response), response.status, {
@@ -396,7 +407,14 @@ async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = 
       failureKind: "http", upstreamStatus: response.status, retryAfterMs: retryAfterMilliseconds(response, payload)
     });
   }
-  if (own(payload, "raw")) throw providerError("Furnizorul AI nu a returnat JSON valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
+  if (!plainObject(payload) || own(payload, "raw")) throw providerError("Furnizorul AI nu a returnat JSON valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
+  if (plainObject(payload.error)) {
+    const code = Number(payload.error.code);
+    const status = Number.isInteger(code) && code >= 400 && code <= 599 ? code : 502;
+    throw providerError(payloadErrorMessage(payload, response), status, {
+      provider: profile.id, code: payload.error.code, failureKind: "provider_error", upstreamStatus: response.status
+    });
+  }
   return payload;
 }
 

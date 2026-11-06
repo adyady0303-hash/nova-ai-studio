@@ -46,6 +46,9 @@ test('provider diagnostics distinguish Gemini transport, HTTP and response failu
         throw new TypeError(privateDetail, { cause });
       }
       if (scenario === 'http503') return reply(503, { error: { message: privateDetail, code: privateDetail, status: 'UNAVAILABLE' } });
+      if (scenario === 'null-json') return reply(200, null);
+      if (scenario === 'inband-error') return reply(200, { error: { code: 503, message: privateDetail } });
+      if (scenario === 'body-interrupted') return { status:200,ok:true,text:async()=>{throw new TypeError(privateDetail,{cause:Object.assign(new Error(privateDetail),{code:'UND_ERR_SOCKET'})});} };
       if (scenario === 'invalid-json') return reply(200, privateDetail, true);
       if (scenario === 'missing-message') return reply(200, { choices: [], diagnostic: privateDetail });
       const body = JSON.parse(options.body);
@@ -128,6 +131,9 @@ test('provider diagnostics distinguish Gemini transport, HTTP and response failu
     ['network', /rețea|contact|conect/i, 502],
     ['timeout', /expirat|timeout|timp/i, 504],
     ['http503', /HTTP\s*503/i, 503],
+    ['null-json', /răspuns.*(?:invalid|incompatibil)/i, 502],
+    ['inband-error', /cod 503/i, 503],
+    ['body-interrupted', /conexiune|contact/i, 502],
     ['invalid-json', /JSON|răspuns.*(?:invalid|nevalid)|format.*(?:invalid|nevalid)/i, 502],
     ['missing-message', /răspuns.*(?:invalid|nevalid)|mesaj.*(?:invalid|nevalid)|format.*(?:invalid|nevalid)/i, 502]
   ];

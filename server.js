@@ -893,6 +893,7 @@ function friendlyTextProviderError(error, profile, model) {
   const selectedModel = String(model || profile?.textModel || "modelul selectat");
   const message = String(error?.message || "");
   if (status === 401 || status === 403) return `${name} a respins cheia API sau accesul proiectului. Creează o cheie validă, salveaz-o în Motoare AI și verifică permisiunile contului.`;
+  if (status === 402) return `${name} a refuzat cererea pentru facturarea API (cod 402). Verifică soldul și facturarea contului furnizorului.`;
   if (status === 429) {
     if (error.quotaFallbackExhausted) return "Motoarele AI încercate au refuzat cererea din cauza cotelor lor API. Aceasta nu este o limită de creare Nova. Verifică creditul sau limitele furnizorilor ori configurează un alt motor disponibil.";
     if (error.code === "insufficient_quota") return `${name} nu mai are credit sau cotă API disponibilă. Aceasta nu este o limită de creare Nova. Verifică facturarea API sau activează modul automat cu un alt motor configurat.`;
@@ -909,6 +910,7 @@ function friendlyTextProviderError(error, profile, model) {
   }
   if (error.failureKind === "invalid_response") return `API-ul ${name} a returnat un răspuns invalid sau incompatibil. Verifică modelul și protocolul API; răspunsul nu confirmă o indisponibilitate a furnizorului.`;
   if (error.failureKind === "http" && status >= 500) return `${name} a returnat HTTP ${status}. Serviciul furnizorului a respins cererea cu o eroare de server. Încearcă din nou sau activează un motor de rezervă în Motoare AI.`;
+  if (error.failureKind === "provider_error") return `${name} a raportat o eroare de procesare (cod ${status}) în răspunsul API. Încearcă din nou sau verifică motorul în Motoare AI.`;
   if (status >= 500) return `Nova nu a putut obține un răspuns valid de la ${name} (cod ${status}). Încearcă testul de chat din Administrare pentru a verifica motorul configurat.`;
   return `${name} nu a putut procesa cererea cu modelul „${selectedModel}”.`;
 }
