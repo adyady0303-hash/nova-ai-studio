@@ -1,5 +1,7 @@
 "use strict";
 
+const { setTimeout: delay } = require("node:timers/promises");
+
 const DEFAULT_TIMEOUT = 180000;
 const MODEL_LIST_TIMEOUT = 10000;
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -412,7 +414,7 @@ async function jsonRequest(profileInput, route, options = {}, fallbackTimeout = 
     const code = Number(payload.error.code);
     const status = Number.isInteger(code) && code >= 400 && code <= 599 ? code : 502;
     throw providerError(payloadErrorMessage(payload, response), status, {
-      provider: profile.id, code: payload.error.code, failureKind: "provider_error", upstreamStatus: response.status
+      provider: profile.id, code: payload.error.code, failureKind: "provider_error", upstreamStatus: response.status, retryAfterMs: retryAfterMilliseconds(response, payload)
     });
   }
   return payload;
@@ -716,7 +718,11 @@ async function openAiChat(profile, request) {
   const payload = await openAiCompatibleJson(profile, "/chat/completions", {
     method: "POST", json: body, fetchImpl: request.fetchImpl, timeout: request.timeout, signal: request.signal
   });
-  return normalizedChatResult(profile, String(payload.model || request.model), payload.choices?.[0]?.message);
+  try { return normalizedChatResult(profile, String(payload.model || request.model), payload.choices?.[0]?.message); }
+  catch (cause) {
+    if (cause?.status) throw cause;
+    throw providerError("Răspunsul modelului nu poate fi interpretat.", 502, { provider: profile.id, failureKind: "invalid_response", cause });
+  }
 }
 
 async function ollamaChat(profile, request) {
@@ -741,6 +747,35 @@ async function ollamaChat(profile, request) {
   return normalizedChatResult(profile, String(payload.model || request.model), payload.message);
 }
 
+async function openRouterChat(profile, request) {
+  const callerSignal = request.signal;
+  const deadline = AbortSignal.timeout(request.timeout);
+  const signal = callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+  const checkActive = () => {
+    callerSignal?.throwIfAborted();
+    if (deadline.aborted) throw providerError("Conexiunea cu furnizorul AI a expirat.", 504, { provider: profile.id, failureKind: "timeout" });
+  };
+  const started = Date.now();
+  try {
+    try { return await openAiChat(profile, { ...request, signal }); }
+    catch (error) {
+      checkActive();
+      const retryable = Number(error.status) === 502 && (
+        ["http", "provider_error", "invalid_response"].includes(error.failureKind)
+        || error.failureKind === "network" && ["ECONNRESET", "EPIPE", "UND_ERR_SOCKET", "EAI_AGAIN"].includes(error.code));
+      if (!retryable) throw error;
+      const pause = Math.max(1000, error.retryAfterMs || 0);
+      if (!Number.isFinite(pause) || pause >= request.timeout - (Date.now() - started)) throw error;
+      await delay(pause, undefined, { signal });
+      checkActive();
+      return await openAiChat(profile, { ...request, signal });
+    }
+  } catch (error) {
+    checkActive();
+    throw error;
+  }
+}
+
 async function chatWithProfile(profileInput, options = {}) {
   if (!plainObject(options)) throw providerError("Opțiunile conversației sunt invalide.", 400);
   const profile = sanitizeProfileUpdate(profileInput);
@@ -750,6 +785,7 @@ async function chatWithProfile(profileInput, options = {}) {
     maxOutputTokens: normalizedMaxTokens(options.maxOutputTokens), forceWebTool: options.forceWebTool === true,
     fetchImpl: options.fetchImpl, timeout: normalizedTimeout(options.timeout, DEFAULT_TIMEOUT), signal: options.signal
   };
+  if (profile.id === "openrouter") return openRouterChat(profile, request);
   if (profile.protocol === "anthropic") return anthropicChat(profile, request);
   if (profile.protocol === "ollama") return ollamaChat(profile, request);
   return openAiChat(profile, request);

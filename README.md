@@ -214,3 +214,5 @@ Conectarea Google este opțională. În Google Cloud Console configurează un cl
 
 
 Motoare AI include «Verifică motoarele», care trimite câte un mesaj scurt profilurilor eligibile și arată separat configurația salvată și rezultatele recente. Verificarea este disponibilă numai administratorului și poate fi tarifată de furnizori. Profilul Ollama implicit nu este numărat ca rută de text dacă nu este selectat explicit. «Încarcă modelele» citește catalogul profilului salvat; alegerea se aplică prin «Salvează motoarele». Raportul copiat conține numai numele, modelele și rezultatele, fără chei API.
+
+OpenRouter: un răspuns 502 temporar, un răspuns invalid sau o întrerupere temporară a conexiunii pot declanșa o singură reîncercare identică, după o pauză de cel puțin o secundă. Sunt respectate anularea, Retry-After și timpul total al operației. Nu se schimbă modelul sau furnizorul; erorile de autentificare, facturare și cotă nu sunt reîncercate. Furnizorul poate tarifa fiecare încercare.
