@@ -27,7 +27,7 @@ async function waitUntil(predicate, message) {
   assert.fail(message);
 }
 
-async function startApp(t, { autoSelect = true, autoFallback = false } = {}) {
+async function startApp(t, { autoSelect = true, autoFallback = false, primary = 'openai' } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'nova-quota-failover-'));
   const callsPath = path.join(directory, 'calls.jsonl');
   const preloadPath = path.join(directory, 'provider-mock.cjs');
@@ -46,7 +46,7 @@ async function startApp(t, { autoSelect = true, autoFallback = false } = {}) {
     }
     global.fetch = async (url, options = {}) => {
       const parsed = new URL(url);
-      const provider = { 'api.openai.com': 'openai', 'generativelanguage.googleapis.com': 'gemini', 'api.groq.com': 'groq' }[parsed.hostname];
+      const provider = { 'api.openai.com': 'openai', 'generativelanguage.googleapis.com': 'gemini', 'api.groq.com': 'groq', 'openrouter.ai': 'openrouter' }[parsed.hostname];
       if (!provider) throw new Error('Unexpected provider destination: ' + parsed.hostname);
       if (parsed.pathname.endsWith('/models')) return reply(200, { data: [{ id: provider + '-primary' }] });
       if (!parsed.pathname.endsWith('/chat/completions')) throw new Error('Unexpected provider route: ' + parsed.pathname);
@@ -60,6 +60,10 @@ async function startApp(t, { autoSelect = true, autoFallback = false } = {}) {
           else options.signal?.addEventListener('abort', cancel, { once: true });
         });
       }
+      if (${JSON.stringify(primary)} === 'openrouter' && provider === 'openai' && prompt.startsWith('PRIMARY_')) return rejected(429);
+      if (provider === ${JSON.stringify(primary)} && prompt === 'PRIMARY_TIMEOUT') throw new DOMException('fixture timeout', 'TimeoutError');
+      if (provider === ${JSON.stringify(primary)} && prompt === 'PRIMARY_NETWORK') throw Object.assign(new Error('fixture socket reset'), {code: 'ECONNRESET'});
+      if (provider === ${JSON.stringify(primary)} && prompt === 'PRIMARY_GATEWAY') return rejected(502);
       const allStatus = /^ALL_STATUS_(\\d+)$/.exec(prompt);
       if (allStatus) return rejected(Number(allStatus[1]));
       if (prompt === 'ALL_QUOTA') return rejected(429);
@@ -81,11 +85,11 @@ async function startApp(t, { autoSelect = true, autoFallback = false } = {}) {
     env: {
       ...process.env, HOST: '127.0.0.1', PORT: String(port), NOVA_DATA_DIR: directory, DATABASE_URL: '',
       NOVA_ACCESS_USER: 'owner', NOVA_ACCESS_PASSWORD: 'owner-password-long-enough', NOVA_SUBSCRIBER_DAILY_AI_LIMIT: '5',
-      AI_PROVIDER: 'openai', AI_FALLBACK_PROVIDERS: 'gemini',
+      AI_PROVIDER: primary, AI_FALLBACK_PROVIDERS: primary === 'openrouter' ? 'groq' : 'gemini',
       OPENAI_API_KEY: fixtureKeys[0], OPENAI_MODEL: 'openai-primary',
-      GEMINI_API_KEY: fixtureKeys[1], GEMINI_MODEL: 'gemini-primary',
+      GEMINI_API_KEY: primary === 'openrouter' ? '' : fixtureKeys[1], GEMINI_MODEL: 'gemini-primary',
       GROQ_API_KEY: fixtureKeys[2], GROQ_MODEL: 'groq-primary',
-      ANTHROPIC_API_KEY: '', OPENROUTER_API_KEY: '', MISTRAL_API_KEY: '', DEEPSEEK_API_KEY: '',
+      ANTHROPIC_API_KEY: '', OPENROUTER_API_KEY: primary === 'openrouter' ? 'fixture-openrouter-key' : '', MISTRAL_API_KEY: '', DEEPSEEK_API_KEY: '',
       XAI_API_KEY: '', TOGETHER_API_KEY: '', CUSTOM_OPENAI_API_KEY: ''
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -113,7 +117,7 @@ async function startApp(t, { autoSelect = true, autoFallback = false } = {}) {
   const owner = request(login.headers.get('set-cookie').split(';', 1)[0]);
   const configure = async routes => {
     const response = await owner('/api/settings', {
-      providerId: 'openai', routes: { text: 'openai', image: 'openai', speech: 'openai', autoSelect, autoFallback, ...routes }
+      providerId: primary, routes: { text: primary, image: 'openai', speech: 'openai', autoSelect, autoFallback, ...routes }
     });
     assert.equal(response.status, 200, await response.text());
   };
@@ -220,6 +224,30 @@ test('automatic text quota failover preserves manual routing and subscriber quot
     assert.equal(response.status, 200, await response.clone().text());
     assert.equal((await response.json()).provider, 'gemini');
     assert.deepEqual(app.calls().map(call => call.provider), ['openai', 'gemini']);
+  });
+
+  for (const prompt of ['PRIMARY_TIMEOUT', 'PRIMARY_NETWORK', 'PRIMARY_GATEWAY']) {
+    await t.test('automatic OpenRouter recovery: ' + prompt, async t => {
+      const app = await startApp(t, { primary: 'openrouter' });
+      const before = app.calls().length;
+      const response = await app.chat(app.owner, prompt);
+      const body = await response.json();
+      assert.equal(response.status, 200, JSON.stringify(body));
+      assert.equal(body.provider, 'groq');
+      assert.equal(body.model, 'groq-primary');
+      const attempts = app.calls().slice(before).map(call => call.provider);
+      assert.deepEqual(attempts, prompt === 'PRIMARY_TIMEOUT'
+        ? ['openrouter', 'openai', 'groq'] : ['openrouter', 'openrouter', 'openai', 'groq']);
+      const settings = await (await app.owner('/api/settings', undefined, 'GET')).json();
+      assert.equal(settings.settings.routes.text, 'openrouter', 'recovery must not rewrite the saved route');
+    });
+  }
+
+  await t.test('manual OpenRouter timeout does not change providers without fallback consent', async t => {
+    const app = await startApp(t, { primary: 'openrouter', autoSelect: false });
+    const response = await app.chat(app.owner, 'PRIMARY_TIMEOUT');
+    assert.equal(response.status, 504);
+    assert.deepEqual(app.calls().map(call => call.provider), ['openrouter']);
   });
 
   await t.test('explicit manual fallback retains its existing single alternate and transient-error behavior', async t => {

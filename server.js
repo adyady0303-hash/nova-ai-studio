@@ -1130,9 +1130,12 @@ async function providerChat(model, messages, tools, maxOutputTokens = null, veri
       if (!isTransientProviderError(error)) throw error;
       const quotaLimited = Number(error.status) === 429;
       if (quotaLimited) quotaRejected.add(profile.id);
-      // These providers already belong to the selected automatic pool. Only
-      // explicit quota and service-unavailable responses move within that pool.
-      const serviceUnavailable = error.failureKind === "http" && Number(error.upstreamStatus) === 503;
+      // Automatic mode already authorizes this configured pool. A gateway
+      // failure or timed-out connection must not strand an otherwise usable pool.
+      const serviceUnavailable = error.failureKind === "timeout"
+        || error.failureKind === "network"
+        || ["http", "provider_error"].includes(error.failureKind)
+          && [502, 503, 504].includes(Number(error.status));
       const alternatives = quotaLimited || serviceUnavailable ? [...quotaAlternatives, ...explicitFallback] : explicitFallback;
       const next = alternatives.find(candidate => !attempted.has(candidate.id));
       if (!next) {
