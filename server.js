@@ -838,8 +838,8 @@ async function resolvedImageModel(profile) {
 }
 
 function imageGenerationOptions(model) {
-  if (/dall-?e-?3/i.test(model)) return { size: "1024x1024", quality: "hd", n: 1 };
-  if (/dall-?e-?2/i.test(model)) return { size: "1024x1024", n: 1 };
+  if (/dall-?e-?3/i.test(model)) return { size: "1024x1024", quality: "hd", n: 1, response_format: "b64_json" };
+  if (/dall-?e-?2/i.test(model)) return { size: "1024x1024", n: 1, response_format: "b64_json" };
   if (/gpt-image/i.test(model)) return { size: "1024x1024", quality: "high", n: 1 };
   return { size: "1024x1024", n: 1 };
 }
@@ -854,15 +854,37 @@ function openAiImageCandidates(profile, preferred, { editing = false } = {}) {
   return [...new Set([preferred, ...fallbacks].filter(Boolean))];
 }
 
-async function generateWithAvailableImageModel(profile, prompt, preferred) {
+function imageRequestBudget(profile, options = {}) {
+  const timeout = options.timeout || 300000;
+  const deadline = AbortSignal.timeout(timeout);
+  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+  const started = Date.now();
+  return {
+    signal,
+    remaining() {
+      options.signal?.throwIfAborted();
+      const remaining = timeout - (Date.now() - started);
+      if (deadline.aborted || remaining <= 0) throw Object.assign(new Error("Generarea imaginii a depășit timpul disponibil."), {
+        status: 504, provider: profile.id, failureKind: "timeout"
+      });
+      return remaining;
+    }
+  };
+}
+
+async function generateWithAvailableImageModel(profile, prompt, preferred, options = {}) {
+  const budget = imageRequestBudget(profile, options);
   let lastError;
   for (const model of openAiImageCandidates(profile, preferred)) {
     try {
       const result = await openAiCompatibleJson(profile, "/images/generations", {
-        method: "POST", json: { model, prompt, ...imageGenerationOptions(model) }
-      }, 300000);
+        method: "POST", json: { model, prompt, ...imageGenerationOptions(model) },
+        timeout: budget.remaining(), signal: budget.signal
+      });
+      budget.remaining();
       return { result, model };
     } catch (error) {
+      budget.remaining();
       lastError = error;
       if (!missingImageModel(error)) throw error;
     }
@@ -870,11 +892,16 @@ async function generateWithAvailableImageModel(profile, prompt, preferred) {
   throw lastError;
 }
 
-async function editWithAvailableImageModel(profile, source, prompt, preferred) {
+async function editWithAvailableImageModel(profile, source, prompt, preferred, options = {}) {
+  const budget = imageRequestBudget(profile, options);
   let lastError;
   for (const model of openAiImageCandidates(profile, preferred, { editing: true })) {
-    try { return { result: await openAiCompatibleImageEdit(profile, source, prompt, { model, timeout: 300000 }), model }; }
-    catch (error) {
+    try {
+      const result = await openAiCompatibleImageEdit(profile, source, prompt, { model, timeout: budget.remaining(), signal: budget.signal });
+      budget.remaining();
+      return { result, model };
+    } catch (error) {
+      budget.remaining();
       lastError = error;
       if (!missingImageModel(error)) throw error;
     }
@@ -1100,14 +1127,21 @@ async function chatWithResolvedTextModel(profile, preferredModel, options) {
   }
 }
 
-async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false, signal) {
+async function providerChat(model, messages, tools, maxOutputTokens = null, verifyWeb = false, signal, routing = {}) {
   signal?.throwIfAborted();
-  const automatic = aiConfig.routes.autoSelect === true ? automaticTextProfiles() : [];
-  const primary = automatic[0] || requireRouteProfile("text");
-  const start = automatic.length ? automaticProviderCursor++ % automatic.length : 0;
-  const chosen = automatic[start] || primary;
+  if (!routing.selection) {
+    const automatic = aiConfig.routes.autoSelect === true ? automaticTextProfiles() : [];
+    const primary = automatic[0] || requireRouteProfile("text");
+    const start = automatic.length ? automaticProviderCursor++ % automatic.length : 0;
+    const initial = automatic[start] || primary;
+    routing.selection = { automatic, primary, initial, explicitFallback: configuredFallbackProfiles(initial).slice(0, 1) };
+  }
+  const { automatic, primary, initial, explicitFallback } = routing.selection;
+  // One user action can require several tool rounds. Rotate only between user
+  // actions; keep each tool continuation with the provider and model that issued it.
+  const chosen = routing.active?.profile || initial;
+  const start = Math.max(0, automatic.findIndex(profile => profile.id === chosen.id));
   const quotaAlternatives = [...automatic.slice(start + 1), ...automatic.slice(0, start)];
-  const explicitFallback = configuredFallbackProfiles(chosen).slice(0, 1);
   const candidates = [chosen];
   const attempted = new Set();
   const quotaRejected = new Set();
@@ -1116,8 +1150,37 @@ async function providerChat(model, messages, tools, maxOutputTokens = null, veri
     const profile = candidates[index];
     attempted.add(profile.id);
     try {
-      const result = await chatWithResolvedTextModel(profile, profile.id === primary.id ? model : profile.textModel, {
-        messages,
+      const requestedModel = routing.active?.profile.id === profile.id ? routing.active.model
+        : profile.id === primary.id ? model : profile.textModel;
+      if (routing.active && routing.active.profile.id !== profile.id) {
+        routing.foreignToolIds ||= new Set();
+        for (const message of messages) {
+          for (const call of message.role === "assistant" ? message.tool_calls || [] : []) routing.foreignToolIds.add(call.id);
+        }
+      }
+      let providerMessages = messages;
+      if (routing.foreignToolIds?.size) {
+        const resultIds = new Set(messages.filter(message => message.role === "tool").map(message => message.tool_call_id));
+        // Opaque tool signatures belong to the issuing provider. Preserve completed
+        // work as an explicit transcript when failing over, without inventing signatures
+        // or replaying writes. Future calls from the new provider stay structured.
+        providerMessages = messages.map(message => {
+          const calls = message.role === "assistant" ? message.tool_calls || [] : [];
+          if (calls.some(call => routing.foreignToolIds.has(call.id))) {
+            const transcript = calls.map(call => ({
+              id: call.id, name: call.function?.name, arguments: call.function?.arguments,
+              status: resultIds.has(call.id) ? "rezultat disponibil în mesajele următoare" : "rezultat lipsă; execuția nu este confirmată"
+            }));
+            return { role: "assistant", content: `${message.content || ""}\nUnelte cerute anterior de alt motor (istoric, fără reexecutare automată):\n${JSON.stringify(transcript)}` };
+          }
+          if (message.role === "tool" && routing.foreignToolIds.has(message.tool_call_id)) {
+            return { role: "assistant", content: `Rezultat unealtă anterioară (${message.tool_call_id}):\n${message.content || ""}` };
+          }
+          return message;
+        });
+      }
+      const result = await chatWithResolvedTextModel(profile, requestedModel, {
+        messages: providerMessages,
         tools,
         maxOutputTokens,
         signal,
@@ -1125,6 +1188,7 @@ async function providerChat(model, messages, tools, maxOutputTokens = null, veri
       });
       if (String(result.message?.content || "").trim() || result.message?.tool_calls?.length) providerStatus.success(profile, result);
       else providerStatus.failure(profile, { status: 502, failureKind: "invalid_response" }, friendlyTextProviderError({ status: 502, failureKind: "invalid_response" }, profile, profile.textModel));
+      routing.active = { profile, model: result.model || requestedModel };
       return result;
     } catch (error) {
       signal?.throwIfAborted();
@@ -1554,6 +1618,7 @@ function aiRequestLifecycle(res) {
 }
 
 async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false, signal) {
+  const routing = {};
   verifyWeb = verifyWeb || automaticWebSearch(inputMessages);
   let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
   const taskPrompts = creationPrompts;
@@ -1578,6 +1643,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
   const maxWebCalls = owner ? Infinity : 4;
   let businessCompletionRequested = false;
   let failedToolBatch = null;
+  try {
   for (let round = 0; round < maxRounds; round++) {
     signal?.throwIfAborted();
     if (webCalls >= maxWebCalls && !webLimitNotified) {
@@ -1585,7 +1651,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
       webLimitNotified = true;
     }
     const activeTools = webCalls >= maxWebCalls ? tools.filter(tool => !webTools.some(webTool => webTool.function.name === tool.function.name)) : tools;
-    const response = await providerChat(model, messages, activeTools, owner ? null : 1500, (verifyWeb && round === 0) || retryWeb, signal);
+    const response = await providerChat(model, messages, activeTools, owner ? null : 1500, (verifyWeb && round === 0) || retryWeb, signal, routing);
     retryWeb = false;
     const message = response.message || {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
@@ -1641,8 +1707,13 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     if (missing.length) throw Object.assign(new Error(`Motorul AI nu a creat fișierele obligatorii: ${missing.join(", ")}. Încearcă din nou sau alege alt model text.`), { status: 502 });
   }
   messages.push({ role: "system", content: "Oprește folosirea uneltelor și oferă acum răspunsul final, clar și complet. Folosește informațiile deja obținute, citează numai sursele valide și menționează concis ce nu a putut fi verificat." });
-  const finalResponse = await providerChat(model, messages, [], owner ? null : 1500, false, signal);
+  const finalResponse = await providerChat(model, messages, [], owner ? null : 1500, false, signal, routing);
   return { content: answerWithSources(finalResponse.message?.content || "Nu am putut formula răspunsul final din sursele disponibile.", sources, verifyWeb), events, model: finalResponse.model || model, provider: finalResponse.provider, providerName: finalResponse.providerName };
+  } catch (error) {
+    // A failed final completion must not hide files already saved by this action.
+    if (events.some(event => event.ok && event.tool === "write_file")) error.partialEvents = events;
+    throw error;
+  }
 }
 
 async function probeTextProvider(profile, model, signal, timeout = 15000) {
@@ -1962,6 +2033,7 @@ async function handle(req, res) {
 
   if (req.method === "POST" && url.pathname === "/api/media/image") {
     let profile, imageModel;
+    const lifecycle = aiRequestLifecycle(res);
     try {
       profile = requireRouteProfile("image");
       if (profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă generare de imagini compatibilă.`), { status: 503 });
@@ -1970,17 +2042,19 @@ async function handle(req, res) {
       if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
       imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const generated = await generateWithAvailableImageModel(profile, prompt, imageModel);
+      const generated = await generateWithAvailableImageModel(profile, prompt, imageModel, { signal: lifecycle.signal });
       const result = generated.result; imageModel = generated.model;
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
       const output = providerImageDataUrl(image);
       return json(res, 200, { ...output, model: imageModel, provider: profile.id, providerName: profile.name });
-    } catch (error) { return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Generarea imaginii a eșuat."), providerError: true }); }
+    } catch (error) { if (res.destroyed) return; return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Generarea imaginii a eșuat."), providerError: true }); }
+    finally { lifecycle.dispose(); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/image/edit") {
     let profile, imageModel;
+    const lifecycle = aiRequestLifecycle(res);
     try {
       profile = requireRouteProfile("image");
       if (!profile.capabilities.imageEdit || profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă editare de imagini compatibilă.`), { status: 503 });
@@ -1990,13 +2064,14 @@ async function handle(req, res) {
       const source = uploadedImage(body.image);
       imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const edited = await editWithAvailableImageModel(profile, source, prompt, imageModel);
+      const edited = await editWithAvailableImageModel(profile, source, prompt, imageModel, { signal: lifecycle.signal });
       const result = edited.result; imageModel = edited.model;
       const image = result.data?.[0];
       if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat imaginea modificată.");
       const output = providerImageDataUrl(image);
       return json(res, 200, { ...output, model: imageModel, provider: profile.id, providerName: profile.name, edited: true });
-    } catch (error) { return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Modificarea imaginii a eșuat."), providerError: true }); }
+    } catch (error) { if (res.destroyed) return; return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Modificarea imaginii a eșuat."), providerError: true }); }
+    finally { lifecycle.dispose(); }
   }
 
   if (req.method === "POST" && url.pathname === "/api/media/speech") {
@@ -2265,7 +2340,8 @@ async function handle(req, res) {
       const unavailable = !isProfileConfigured(profile)
         ? `Motorul ${profile.name} nu este configurat complet. Deschide Motoare AI în setările Nova.`
         : friendlyTextProviderError(error, profile, model);
-      return json(res, 503, { error: unavailable, providerError: true });
+      return json(res, 503, { error: unavailable, providerError: true,
+        ...(Array.isArray(error.partialEvents) ? { partial: true, events: error.partialEvents } : {}) });
     } finally { lifecycle.dispose(); }
   }
 
@@ -2355,6 +2431,7 @@ async function handle(req, res) {
             ...messages
           ];
       let result;
+      const routing = {};
       let verifyWeb = task === "auto" && (body.verifyWeb === true || automaticWebSearch(messages));
       let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
       let failedToolBatch = null;
@@ -2369,7 +2446,7 @@ async function handle(req, res) {
           webLimitNotified = true;
         }
         const activeTools = task === "auto" && webCalls < maxWebCalls ? webTools : [];
-        result = await providerChat(model, chatMessages, activeTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb, lifecycle.signal);
+        result = await providerChat(model, chatMessages, activeTools, account.role === "subscriber" ? 1500 : null, (verifyWeb && round === 0) || retryWeb, lifecycle.signal, routing);
         retryWeb = false;
         const message = result.message || {};
         if (task === "auto" && !message.tool_calls?.length && !webAttempted && !verifyWeb && round < maxRounds - 1 && needsWebRetry(message.content)) {
@@ -2404,7 +2481,7 @@ async function handle(req, res) {
       }
       if (result?.message?.tool_calls?.length || result?.message?.content === "Am atins limita de căutări web. Trimite o cerere de continuare.") {
         chatMessages.push({ role: "system", content: "Oprește căutarea și oferă acum răspunsul final, clar și complet, din informațiile deja obținute. Citează numai sursele valide." });
-        result = await providerChat(model, chatMessages, [], account.role === "subscriber" ? 1500 : null, false, lifecycle.signal);
+        result = await providerChat(model, chatMessages, [], account.role === "subscriber" ? 1500 : null, false, lifecycle.signal, routing);
       }
       return json(res, 200, {
         content: answerWithSources(result.message?.content || "Modelul nu a returnat text.", sources, verifyWeb),

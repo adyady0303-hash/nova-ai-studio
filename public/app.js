@@ -30,7 +30,11 @@ async function api(url, options = {}) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401 && !data.providerError) window.location.replace("/?session=expired");
-    throw new Error(data.error || `Cererea a eșuat (${response.status}).`);
+    const error = new Error(data.error || `Cererea a eșuat (${response.status}).`);
+    if (data.partial === true && Array.isArray(data.events)) {
+      error.partial = true; error.events = data.events;
+    }
+    throw error;
   }
   return data;
 }
@@ -1091,29 +1095,49 @@ function addBrowserSpeechButton(node, text) {
 
 async function saveFile(showToast = false) {
   if (!state.project || !state.activePath) return;
-  await api("/api/file", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ project: state.project, path: state.activePath, content: el("editor").value }) });
-  state.dirty = false; el("dirtyMark").hidden = true;
+  const project = state.project, path = state.activePath, content = el("editor").value;
+  const previous = state.fileSaveQueue || Promise.resolve();
+  const pending = previous.catch(() => {}).then(() => api("/api/file", {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ project, path, content })
+  }));
+  state.fileSaveQueue = pending;
+  try { await pending; }
+  finally { if (state.fileSaveQueue === pending) state.fileSaveQueue = null; }
+  if (state.project !== project) return;
+  if (state.activePath === path && el("editor").value === content) {
+    state.dirty = false; el("dirtyMark").hidden = true;
+  }
   await refreshFiles(false);
-  if (showToast) toast("Fișier salvat pe disc");
+  if (showToast && state.project === project) toast("Fișier salvat pe disc");
 }
 
 async function refreshFiles(keepActive = true) {
   if (!state.project) return;
-  const data = await api(`/api/files?project=${encodeURIComponent(state.project)}`);
+  const project = state.project, projectRevision = state.projectLoadRevision;
+  const revision = state.fileListRevision = (state.fileListRevision || 0) + 1;
+  const data = await api(`/api/files?project=${encodeURIComponent(project)}`);
+  if (state.project !== project || state.projectLoadRevision !== projectRevision || state.fileListRevision !== revision) return;
   state.files = data.files;
-  if (!state.files.some(file => file.path === state.activePath)) {
+  if (!state.files.some(file => file.path === state.activePath) && !state.dirty) {
     state.activePath = state.files.find(file => /\.(js|ts|py|gpc|html|css)$/i.test(file.path))?.path || state.files[0]?.path || null;
   }
   renderFiles();
-  if (keepActive && state.activePath) await openFile(state.activePath, true);
+  if (keepActive && state.activePath && !state.dirty) await openFile(state.activePath, true);
 }
 
 async function openFile(name, force = false) {
+  const project = state.project, projectRevision = state.projectLoadRevision;
+  const revision = state.fileOpenRevision = (state.fileOpenRevision || 0) + 1;
   if (!force && state.dirty) {
     if (confirm("Fișierul are modificări nesalvate. Le salvez înainte să deschid altul? Apasă Cancel ca să rămâi aici.")) await saveFile(false);
     else return;
+    if (state.dirty) return;
   }
-  const data = await api(`/api/file?project=${encodeURIComponent(state.project)}&path=${encodeURIComponent(name)}`);
+  if (state.project !== project || state.projectLoadRevision !== projectRevision || state.fileOpenRevision !== revision) return;
+  const draft = el("editor").value;
+  const data = await api(`/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(name)}`);
+  if (state.project !== project || state.projectLoadRevision !== projectRevision || state.fileOpenRevision !== revision
+    || state.dirty && el("editor").value !== draft) return;
   state.activePath = name; writeLocalCache(activeKey(), name);
   el("activeFileName").textContent = name; el("editor").value = data.content;
   const ext = name.split(".").pop().toLowerCase();
@@ -1122,15 +1146,27 @@ async function openFile(name, force = false) {
 }
 
 async function loadProject(id) {
-  if (state.dirty && state.project) await saveFile(false);
-  state.project = id; renderProjects();
+  const revision = state.projectLoadRevision = (state.projectLoadRevision || 0) + 1;
+  if (state.dirty && state.project) {
+    await saveFile(false);
+    if (state.dirty) { renderProjects(); return; }
+  }
+  if (state.projectLoadRevision !== revision) return;
+  state.project = id; state.files = []; state.activePath = null;
+  el("editor").value = ""; el("activeFileName").textContent = "Niciun fișier";
+  state.dirty = false; el("dirtyMark").hidden = true;
+  renderProjects(); renderFiles(); updateLines();
   try { state.chat = JSON.parse(readLocalCache(chatKey()) || "[]"); } catch { state.chat = []; }
   renderChat();
   const savedActive = readLocalCache(activeKey());
-  const data = await api(`/api/files?project=${encodeURIComponent(id)}`); state.files = data.files;
+  const data = await api(`/api/files?project=${encodeURIComponent(id)}`);
+  if (state.project !== id || state.projectLoadRevision !== revision) return;
+  state.files = data.files;
+  if (state.dirty) { renderFiles(); renderHomeProjects(); return; }
   state.activePath = state.files.some(file => file.path === savedActive) ? savedActive : (state.files.find(file => /\.(js|ts|py|gpc|html|css)$/i.test(file.path))?.path || state.files[0]?.path || null);
   renderFiles(); renderHomeProjects();
   if (state.activePath) await openFile(state.activePath, true);
+  if (state.project !== id || state.projectLoadRevision !== revision) return;
   await refreshPublication();
 }
 
@@ -1470,6 +1506,7 @@ async function send() {
       if (state.dirty) toast("Codul a fost creat. Modificările nesalvate din editor au fost păstrate.");
       else {
         if (target) await openFile(target, true);
+        if (state.chat !== chat) return;
         if (task === "code") setWorkspaceOpen(true);
         toast("Agentul a salvat modificările. Folosește Undo pentru a reveni.");
       }
@@ -1479,6 +1516,24 @@ async function send() {
       catch (error) { addBubble("assistant", `Site-ul a fost creat, dar publicarea nu a reușit: ${error.message}`); }
     }
   } catch (error) {
+    if (error.partial === true && Array.isArray(error.events)) {
+      const events = error.events;
+      const content = `Unele fișiere au fost salvate, dar cererea nu s-a finalizat. ${error.message}`;
+      chat.push({ role: "assistant", content, events });
+      writeLocalCache(historyKey, JSON.stringify(chat));
+      if (state.chat !== chat) return;
+      addBubble("assistant", content, events);
+      try {
+        await refreshFiles(false);
+        if (state.chat !== chat || state.dirty) return;
+        const target = events.filter(event => event.ok && event.tool === "write_file")
+          .map(event => event.path).find(path => state.files.some(file => file.path === path));
+        if (target) await openFile(target, true);
+        if (state.chat !== chat) return;
+        if (task === "code") setWorkspaceOpen(true);
+      } catch (refreshError) { toast(refreshError.message); }
+      return;
+    }
     if (!receivedResponse) {
       const index = chat.indexOf(sentTurn);
       if (index !== -1) chat.splice(index, 1);

@@ -483,7 +483,10 @@ async function openAiCompatibleImageEdit(profile, image, prompt, options = {}) {
   form.set("prompt", cleanPrompt);
   form.set("image", new Blob([source.bytes], { type: source.mime }), `nova-input.${source.extension}`);
   form.set("size", cleanField(requestOptions.size || "1024x1024", "size", 40, { allowEmpty: false }));
-  form.set("quality", cleanField(requestOptions.quality || "high", "quality", 40, { allowEmpty: false }));
+  // DALL-E 2 edits reject the GPT-image quality parameter and otherwise
+  // return an expiring URL instead of image bytes suitable for saved history.
+  if (/(?:^|\/)dall-?e-?2$/i.test(model)) form.set("response_format", "b64_json");
+  else form.set("quality", cleanField(requestOptions.quality || "high", "quality", 40, { allowEmpty: false }));
   form.set("n", String(Number.isSafeInteger(requestOptions.n) && requestOptions.n > 0 ? requestOptions.n : 1));
   return openAiCompatibleJson(normalized, "/images/edits", { ...requestOptions, method: "POST", body: form, headers: requestOptions.headers });
 }

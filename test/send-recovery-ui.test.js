@@ -190,3 +190,58 @@ test('code completion preserves edits made while the model was running', async (
   assert.equal(nodes.editor.value, 'const unsaved = true;');
   assert.equal(context.state.dirty, true);
 });
+
+
+test('partial agent failure retains the submitted turn and exposes files already written without automatic publication', async t => {
+  for (const task of ['code', 'business']) await t.test(task, async () => {
+    const {context, nodes, storage, requests, initialChat, bubbles} = sendContext(task);
+    const opened = [], workspace = [];
+    context.state.files.push({path: 'generated.js'});
+    context.respond = async () => {
+      throw Object.assign(new Error('Motorul AI a expirat după salvare.'), {
+        partial: true, events: [{tool: 'write_file', ok: true, path: 'generated.js', summary: 'Fișier salvat'}]
+      });
+    };
+    context.openFile = async path => opened.push(path);
+    context.setWorkspaceOpen = value => workspace.push(value);
+    context.publishProject = async () => assert.fail('an unfinished business must not be automatically published');
+    await context.send();
+    assert.equal(requests.length, 1);
+    assert.equal(context.state.chat.length, initialChat.length + 2);
+    assert.equal(bubbles('user').length, 1);
+    assert.match(context.state.chat.at(-1).content, /fișiere au fost salvate.*nu s-a finalizat/);
+    assert.equal(JSON.parse(storage.get('nova-chat-project-one')).at(-1).events[0].path, 'generated.js');
+    assert.deepEqual(opened, ['generated.js']);
+    assert.deepEqual(workspace, task === 'code' ? [true] : []);
+    assert.equal(nodes.prompt.value, '', 'the already applied instruction must not be restored as an unsubmitted draft');
+    assert.equal(context.state.busy, false);
+  });
+});
+
+test('partial agent failure preserves a newer editor and composer draft', async () => {
+  const {context, nodes} = sendContext('code');
+  context.respond = async () => {
+    nodes.prompt.value = 'A separate next instruction';
+    nodes.editor.value = 'new unsaved code';
+    context.state.dirty = true;
+    throw Object.assign(new Error('Interrupted'), {partial: true, events: [{tool: 'write_file', ok: true, path: 'app.js'}]});
+  };
+  context.openFile = async () => assert.fail('partial completion must not overwrite a newer draft');
+  await context.send();
+  assert.equal(nodes.prompt.value, 'A separate next instruction');
+  assert.equal(nodes.editor.value, 'new unsaved code');
+  assert.equal(context.state.dirty, true);
+  assert.equal(context.state.chat.at(-1).events[0].path, 'app.js');
+});
+
+test('the HTTP wrapper retains partial file events for a failed agent response', async () => {
+  const events = [{tool: 'write_file', ok: true, path: 'app.js'}];
+  const context = vm.createContext({
+    state: {}, window: {location: {replace() {assert.fail('provider failure must not log out the user');}}},
+    fetch: async () => ({status: 503, ok: false, headers: {get: () => null},
+      json: async () => ({error: 'Interrupted', providerError: true, partial: true, events})})
+  });
+  vm.runInContext(source.slice(source.indexOf('async function api('), source.indexOf('function encodeMessageContent(')), context);
+  await assert.rejects(context.api('/api/agent'), error => error.message === 'Interrupted'
+    && error.partial === true && error.events[0].path === 'app.js');
+});
