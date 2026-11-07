@@ -81,7 +81,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     const entry=await connection(owner);let ready=false;
     if(entry&&payments?.config())ready=await payments.ready(entry.id);
     if(entry)await withLock(()=>write(connectFile(owner),{...entry,ready}));
-    return{configured:Boolean(payments?.config()),connected:Boolean(entry),ready,mode:payments?.config()?.mode||null};
+    return{configured:Boolean(payments?.config()),connected:Boolean(entry),ready,mode:payments?.config()?.mode||null,configurationIssue:payments?.configurationIssue?.()||null};
   }
   async function connect(owner,country,acceptedCommission){
     if(acceptedCommission!==true)throw fail(400,'Confirmă comisionul Poftigo de 10% înainte de conectare.');
