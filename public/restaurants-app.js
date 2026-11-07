@@ -11,7 +11,7 @@
     if (!response.ok) throw new Error(value.error || 'Serviciul este indisponibil. Încearcă din nou.');
     return value;
   }
-  function clearCart() { cart.clear(); cartRestaurant = null; lastOrder = null; renderCart(); }
+  function clearCart() { el('pay-online').checked=false; cart.clear(); cartRestaurant = null; lastOrder = null; renderCart(); }
   function invalidate() { revision++; point = null; selected = null; restaurants = []; el('restaurants-list').replaceChildren(); el('menu-section').hidden = true; clearCart(); }
   async function discover(location, label, token) {
     if (token !== revision) return;
@@ -129,18 +129,25 @@
       row.append(controls); list.append(row);
     }
     el('cart-total').textContent = money(total()); el('clear-cart').hidden = !cart.size; el('clear-cart').disabled = sending; el('send-order').disabled = !cart.size || !point || sending;
+    el('pay-online-option').hidden=!cartRestaurant?.cardPaymentsAvailable;el('pay-online').disabled=sending;
+    el('order-payment-description').textContent=el('pay-online').checked&&cartRestaurant?.cardPaymentsAvailable?'Vei continua pe pagina securizată Stripe. Plata nu garantează acceptarea comenzii; refuzul inițiază rambursarea. Totalul reprezintă produsele; costul de livrare se confirmă separat.':'Trimiți o cerere, fără plată online. Restaurantul trebuie să confirme disponibilitatea, livrarea și eventualele costuri de transport. Nu trimitem emailuri automate.';
+    el('send-order').textContent=el('pay-online').checked&&cartRestaurant?.cardPaymentsAvailable?'Plătește online și trimite comanda':'Trimite cererea de comandă';
   }
+  el('pay-online').addEventListener('change',()=>{lastOrder=null;renderCart();});
+  const paymentReturn=new URLSearchParams(location.search).get('payment');
+  if(paymentReturn)el('payment-return-status').textContent=paymentReturn==='cancel'?'Plata a fost anulată. Poți alege din nou preparatele.':'Ai revenit de la Stripe. Plata și comanda sunt confirmate de server prin notificarea Stripe, nu doar prin această pagină. Restaurantul va vedea confirmarea în inbox.';
   el('close-menu').addEventListener('click', () => { selected = null; renderMenu(); });
   el('clear-cart').addEventListener('click', () => { if (!sending) clearCart(); });
   el('order-form').addEventListener('submit', async event => {
     event.preventDefault(); if (sending || !point || !cartRestaurant || !cart.size) return;
     const fields = new FormData(event.currentTarget);
-    const payload = { name: fields.get('name'), email: fields.get('email'), address: fields.get('address'), ...point, items: [...cart].map(([id, quantity]) => ({ id, quantity })), expectedTotalCents: total() };
+    const payload = { name: fields.get('name'), email: fields.get('email'), address: fields.get('address'), ...point, items: [...cart].map(([id, quantity]) => ({ id, quantity })), expectedTotalCents: total(), payOnline:el('pay-online').checked&&Boolean(cartRestaurant.cardPaymentsAvailable) };
     const fingerprint = JSON.stringify(payload), restaurantId = cartRestaurant.id;
     if (!lastOrder || lastOrder.fingerprint !== fingerprint) { const bytes = crypto.getRandomValues(new Uint8Array(12)); lastOrder = { fingerprint, id: [...bytes].map(x => x.toString(16).padStart(2, '0')).join('') }; }
     sending = true; renderCart(); status('order-status', 'Trimitem cererea…');
     try {
       const data = await api(`/api/restaurants/${restaurantId}/orders`, { ...payload, requestId: lastOrder.id });
+      if(data.checkoutUrl){const checkout=new URL(data.checkoutUrl);if(checkout.protocol!=='https:'||checkout.hostname!=='checkout.stripe.com')throw new Error('Adresa de plată nu este validă.');location.assign(checkout.href);return;}
       clearCart(); status('order-status', `Cererea ${data.id} a fost înregistrată pentru ${money(data.totalCents)}. Așteaptă confirmarea restaurantului; nu s-a efectuat nicio plată.`);
     } catch (error) { status('order-status', error.message, true); }
     finally { sending = false; renderCart(); }

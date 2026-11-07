@@ -17,3 +17,13 @@ test('Poftigo banking is owner-only, validated, persisted and separate from Nova
  const nova=await(await app.owner('/api/billing/bank-orders',undefined,'GET')).json();assert.equal(nova.bank,null,'Saving Poftigo bank details must not redirect Nova subscriptions');
  assert.equal((await merchant(route,undefined,'GET')).status,403,'Merchant remains unable to read after saving');
 });
+
+test('Stripe setup is gated when no Poftigo account exists and never exposes credentials',async t=>{
+ const app=await startBusinessFixture(t);
+ assert.equal((await fetch(app.base+'/api/restaurants/admin/payments')).status,401);
+ const status=await(await app.owner('/api/restaurants/admin/payments',undefined,'GET')).json();assert.equal(status.configured,false);assert.equal(status.enabled,false);assert.equal(status.commissionPercent,10);assert.doesNotMatch(JSON.stringify(status),/sk_|whsec_/);
+ const webhook=await app.request()('/api/poftigo/payments/webhook',{type:'checkout.session.completed'});assert.equal(webhook.status,503);
+ const merchantSignup=await app.request()('/api/auth/register',{username:'payment-account-test',password:'pass1234'});const merchant=app.request(merchantSignup.headers.get('set-cookie').split(';',1)[0]);
+ assert.equal((await merchant('/api/restaurants/admin/payments',undefined,'GET')).status,403);
+ const connection=await(await merchant('/api/restaurants/mine/payments',undefined,'GET')).json();assert.equal(connection.configured,false);assert.equal(connection.ready,false);
+});
