@@ -45,3 +45,10 @@ test('the reported incomplete publication upgrades with backups while unrelated 
   const original=await fetch(app.base+'/p/'+other+'/');assert.equal(original.status,200);assert.match(await original.text(),/Original TEST/);
   assert.equal((await app.request()('/p/'+id+'/contact',{name:'Client',email:'client@example.test',message:'Contact TEST'},'POST','null')).status,201);
 });
+
+test('a food keyword finds nearby public map restaurants without any merchant enrollment',async t=>{
+  const app=await startBusinessFixture(t);
+  const response=await fetch(app.base+'/api/restaurants/discover?lat=52.52&lon=13.405&q=pizza');assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.restaurants.length,1);assert.equal(data.restaurants[0].source,'OpenStreetMap');assert.equal(data.restaurants[0].orderable,false);assert.match(data.restaurants[0].name,/Pizzeria/);
+  assert.equal((await fetch(app.base+'/api/restaurants/discover?q=pizza')).status,400);
+});
