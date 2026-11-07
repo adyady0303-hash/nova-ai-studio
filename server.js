@@ -2087,6 +2087,13 @@ async function handle(req, res) {
     });
   }
 
+  // Public Google Search Console ownership verification (must bypass Nova login).
+  if (["GET", "HEAD"].includes(req.method) && url.pathname === "/googlec5010c7af5976cb5.html") {
+    const verification = await fs.promises.readFile(path.join(PUBLIC_DIR, "googlec5010c7af5976cb5.html"), "utf8");
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" });
+    return res.end(req.method === "HEAD" ? "" : verification);
+  }
+  
   if (req.method === "GET" && url.pathname === "/healthz") {
     try { await dataStore.healthCheck(); return json(res, 200, { ok: true }); }
     catch { return json(res, 503, { ok: false, error: "Storage unavailable" }); }
