@@ -6,7 +6,7 @@ const accountId=value=>/^acct_[A-Za-z0-9]+$/.test(value||'');
 function createPoftigoPayments({env=process.env,request=(...args)=>fetch(...args)}={}){
  function configurationIssue(){
   const key=String(env.POFTIGO_STRIPE_SECRET_KEY||'').trim();
-  if(!key)return 'missing_pofigo_secret';
+  if(!key)return 'missing_poftigo_secret';
   if(!/^sk_(test|live)_[A-Za-z0-9_]+$/.test(key))return 'invalid_poftigo_secret';
   try{
    const url=new URL(env.POFTIGO_PUBLIC_URL||'https://www.nova-ai-studio.eu');
