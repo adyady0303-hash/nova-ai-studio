@@ -61,6 +61,11 @@ test('one business idea becomes an isolated working public site with real privat
     const appPage=await fetch(app.base+page.headers.get('location'));assert.match(await appPage.text(),/Nova Local/);
     const files=await app.owner('/api/files?project='+result.project.id,undefined,'GET');assert.equal(files.status,200);
   });
+  await t.test('status polling never observes a partially written publications registry',async()=>{
+    const result=await app.finish(app.owner,'SLOW_PUBLICATION atelier local');
+    assert.equal(result.state,'published',JSON.stringify(result));
+    assert.equal((await fetch(app.base+result.publication.url)).status,200);
+  });
   await t.test('complete valid files can publish even if the final provider summary is unavailable',async()=>{
     const result=await app.finish(app.owner,'LATE_PROVIDER_FAILURE atelier');assert.equal(result.state,'published',JSON.stringify(result));
     assert.equal((await fetch(app.base+result.publication.url)).status,200);

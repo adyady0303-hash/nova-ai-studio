@@ -12,9 +12,9 @@ async function startBusinessFixture(t,{seed}={}){
   if(seed)await seed(directory);
   const callsPath=path.join(directory,'calls.jsonl'),preload=path.join(directory,'provider.cjs');fs.writeFileSync(callsPath,'');
   fs.writeFileSync(preload,`
-    const fs=require('node:fs');let failPublication=false;
+    const fs=require('node:fs');let failPublication=false,slowPublication=false;
     const originalWrite=fs.promises.writeFile.bind(fs.promises);
-    fs.promises.writeFile=async(file,...args)=>{if(failPublication&&String(file).endsWith('published-sites.json')){failPublication=false;throw Object.assign(new Error('fixture publication failure'),{code:'EIO'});}return originalWrite(file,...args);};
+    fs.promises.writeFile=async(file,...args)=>{if(failPublication&&String(file).includes('published-sites.json')){failPublication=false;throw Object.assign(new Error('fixture publication failure'),{code:'EIO'});}if(slowPublication&&String(file).includes('published-sites.json')){slowPublication=false;await originalWrite(file,'',args[1]);await new Promise(resolve=>setTimeout(resolve,80));args[1]={...args[1],flag:'w'};}return originalWrite(file,...args);};
     const record=value=>fs.appendFileSync(${JSON.stringify(callsPath)},JSON.stringify(value)+'\\n');
     const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
     const tool=(id,file,content)=>({id,type:'function',function:{name:'write_file',arguments:JSON.stringify({path:file,content})}});
@@ -30,6 +30,7 @@ async function startBusinessFixture(t,{seed}={}){
       const repair=idea.includes('Corectează problemele de verificare');
       if(used)return reply({choices:[{message:{role:'assistant',content:'Site creat.'}}],model:body.model});
       if(idea.includes('PUBLISH_FAIL'))failPublication=true;
+      if(idea.includes('SLOW_PUBLICATION'))slowPublication=true;
       let files={
         'index.html':'<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Afacere de test</title><link rel="stylesheet" href="./styles.css"></head><body><main><h1>Servicii locale</h1><p>Solicită o ofertă adaptată cererii tale.</p></main><script src="./app.js"></script></body></html>',
         'styles.css':'body{font-family:system-ui;max-width:900px;margin:auto;padding:24px}input,textarea{font:inherit}h1{color:#1767af}',
@@ -58,7 +59,7 @@ async function startBusinessFixture(t,{seed}={}){
   const calls=()=>fs.readFileSync(callsPath,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   async function finish(client,idea,requestId=crypto.randomUUID()){
     const accepted=await client('/api/business',{idea,requestId});assert.ok([200,202].includes(accepted.status),await accepted.clone().text());
-    let result=await accepted.json();for(let n=0;n<350&&result.state==='building';n++){await new Promise(resolve=>setTimeout(resolve,10));const response=await client('/api/business?requestId='+requestId,undefined,'GET');assert.equal(response.status,200);result=await response.json();}
+    let result=await accepted.json();for(let n=0;n<350&&result.state==='building';n++){await new Promise(resolve=>setTimeout(resolve,10));const response=await client('/api/business?requestId='+requestId,undefined,'GET');assert.equal(response.status,200,logs);result=await response.json();}
     assert.notEqual(result.state,'building','Business job must finish');return {...result,requestId};
   }
   return {base,owner,request,cookie,calls,finish};

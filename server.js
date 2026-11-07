@@ -1490,7 +1490,7 @@ async function withPublicationLock(operation) {
 
 async function writePublications(value) {
   await dataFs.promises.mkdir(path.dirname(PUBLICATIONS_FILE), { recursive: true });
-  await dataFs.promises.writeFile(PUBLICATIONS_FILE, JSON.stringify(value), { encoding: "utf8", mode: 0o600 });
+  await writeProjectMetadata(PUBLICATIONS_FILE, value);
 }
 
 async function publicationFor(principal, project) {
@@ -1534,10 +1534,13 @@ async function installRestaurantProject(principal, project) {
   return contents;
 }
 async function markRestaurantProject(principal, project) {
-  const file = path.join(projectRoot(project, principal), ".nova-project.json");
-  const metadata = JSON.parse(await dataFs.promises.readFile(file, "utf8"));
-  metadata.nativeBusinessType = "restaurant-marketplace-v1";
-  await dataFs.promises.writeFile(file, JSON.stringify(metadata), "utf8");
+  return withAccountsLock(async () => {
+    await assertPrincipalActive(principal);
+    const file = path.join(projectRoot(project, principal), ".nova-project.json");
+    const metadata = JSON.parse(await dataFs.promises.readFile(file, "utf8"));
+    metadata.nativeBusinessType = "restaurant-marketplace-v1";
+    await writeProjectMetadata(file, metadata);
+  });
 }
 async function upgradeReportedRestaurantSite() {
   // One-time, scoped repair of the publication explicitly reported by its owner.
