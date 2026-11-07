@@ -12,6 +12,7 @@ const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automa
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 const { createGoogleAuth } = require("./google-auth");
 const { createRestaurantService, isRestaurantMarketplaceIdea } = require("./restaurants");
+const { createPoftigoPayments } = require("./poftigo-payments");
 const {
   PLATFORM_PRESETS,
   createProfilesFromEnv,
@@ -1519,7 +1520,8 @@ async function interpretRestaurantQuery(query) {
   return JSON.parse(content);
 }
 
-const restaurants = createRestaurantService({ filesystem: () => dataFs, root: DATA_DIR, withLock: withPublicationLock, assertPrincipalActive, translateQuery: interpretRestaurantQuery });
+const poftigoPayments = createPoftigoPayments();
+const restaurants = createRestaurantService({ filesystem: () => dataFs, root: DATA_DIR, withLock: withPublicationLock, assertPrincipalActive, payments: poftigoPayments, translateQuery: interpretRestaurantQuery });
 const restaurantRates = new Map();
 function restaurantRate(req, group, maximum) {
   const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim().slice(0, 100);
@@ -2154,6 +2156,7 @@ async function handle(req, res) {
     restaurantRate(req, "search", 120);
     return restaurants.search({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon") });
   });
+  if (req.method === "POST" && url.pathname === "/api/poftigo/payments/webhook") return restaurantResponse(res, async () => restaurants.webhook(await readBody(req, 512 * 1024), req.headers["stripe-signature"]));
   const restaurantOrder = url.pathname.match(/^\/api\/restaurants\/([a-f0-9]{24})\/orders$/);
   if (req.method === "POST" && restaurantOrder) return restaurantResponse(res, async () => {
     if (!sameOrigin(req)) throw Object.assign(new Error("Cererea de comandă a fost respinsă."), { status: 403 });
@@ -2223,17 +2226,24 @@ async function handle(req, res) {
     catch { return json(res, 400, { error: "Confirmarea ștergerii nu este validă." }); }
     if (body.confirmation !== account.username) return json(res, 400, { error: "Scrie exact numele contului pentru confirmare." });
     try {
+      let newlyMarked = false;
       await withAccountsLock(async () => {
         const database = await readAccounts();
         const record = database.users.find(user => user.id === principal);
         if (!record) throw Object.assign(new Error("Contul nu mai există."), { status: 404 });
         if (record.username !== account.username) throw Object.assign(new Error("Confirmarea contului nu mai este validă."), { status: 409 });
         if (!record.deleting) {
+          newlyMarked = true;
           record.deleting = true;
           record.deletion = { ...(record.deletion || {}), startedAt: new Date().toISOString() };
           await writeAccounts(database);
         }
       });
+      try { await restaurants.assertCanRemoveOwner(principal); }
+      catch (error) {
+        if (newlyMarked) await withAccountsLock(async () => { const database = await readAccounts(); const record = database.users.find(user => user.id === principal); if (record) { record.deleting = false; delete record.deletion; await writeAccounts(database); } });
+        throw error;
+      }
       await billing.closeAccount(account);
       await unpublishAllForPrincipal(principal);
       await restaurants.removeOwner(principal);
@@ -2258,13 +2268,24 @@ async function handle(req, res) {
       return json(res, status, { error: status === 503 ? "Contul nu a putut fi șters în siguranță. Reîncearcă." : error.message });
     }
   }
+  if (req.method === "GET" && url.pathname === "/api/restaurants/admin/payments") return restaurantResponse(res, async () => {
+    if (account.role !== "owner") throw Object.assign(new Error("Doar administratorul poate verifica configurarea plăților Poftigo."), { status: 403 });
+    return poftigoPayments.summary();
+  });
+  if (url.pathname === "/api/restaurants/mine/payments") return restaurantResponse(res, async () => {
+    if (req.method === "GET") return restaurants.connectStatus(principal);
+    if (req.method !== "POST" || !sameOrigin(req)) throw Object.assign(new Error("Conectarea Stripe a fost respinsă."), { status: 403 });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) throw Object.assign(new Error("Conectarea Stripe acceptă numai JSON."), { status: 415 });
+    const body = await readJson(req, 4096);
+    return restaurants.connect(principal, body.country, body.acceptedCommission);
+  });
   if (url.pathname === "/api/restaurants/admin/bank-settings") return restaurantResponse(res, async () => {
     if (account.role !== "owner") throw Object.assign(new Error("Această pagină este rezervată administratorului Poftigo."), { status: 403 });
-    if (req.method === "GET") return { bank: await restaurants.adminBank(), automaticPayments: false };
+    if (req.method === "GET") return { bank: await restaurants.adminBank(), automaticPayments: (await poftigoPayments.summary()).enabled && (await poftigoPayments.summary()).platformReady };
     if (req.method !== "PUT") throw Object.assign(new Error("Metodă neacceptată."), { status: 405 });
     if (!sameOrigin(req)) throw Object.assign(new Error("Modificarea datelor bancare a fost respinsă."), { status: 403 });
     if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) throw Object.assign(new Error("Datele bancare acceptă numai JSON."), { status: 415 });
-    return { bank: await restaurants.saveAdminBank(await readJson(req, 16384)), automaticPayments: false };
+    return { bank: await restaurants.saveAdminBank(await readJson(req, 16384)), automaticPayments: (await poftigoPayments.summary()).enabled && (await poftigoPayments.summary()).platformReady };
   });
   if (url.pathname === "/api/restaurants/mine" && req.method === "GET") return restaurantResponse(res, async () => ({ restaurant: await restaurants.mine(principal) }));
   if (url.pathname === "/api/restaurants/mine/orders" && req.method === "GET") return restaurantResponse(res, async () => ({ orders: await restaurants.orders(principal) }));

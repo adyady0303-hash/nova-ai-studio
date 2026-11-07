@@ -82,18 +82,28 @@
       status(data.restaurant.acceptingOrders ? 'Restaurant salvat și activ. Clienții din zona declarată îl pot găsi.' : 'Restaurant salvat ca inactiv. Activează primirea cererilor când meniul este gata.');
     } catch (error) { status(error.message, true); } finally { saving = false; for (const input of form.querySelectorAll('input,button,textarea')) input.disabled = false; }
   });
-  const labels = { pending: 'În așteptare', accepted: 'Acceptată', declined: 'Refuzată', completed: 'Finalizată' };
+  async function paymentStatus(){
+    try{const data=await api('/api/restaurants/mine/payments');el('merchant-payments').hidden=false;el('connect-stripe').disabled=!data.configured;el('merchant-stripe-status').textContent=data.ready?(data.mode==='live'?'Plăți online active.':'Mod TEST activ; nu încasezi bani reali.'):!data.configured?'Administratorul trebuie să conecteze mai întâi Stripe pentru Poftigo.':data.connected?'Restaurant conectat; mai sunt verificări sau setări de activare de completat.':'Conectează contul Stripe al restaurantului.';}catch(error){el('merchant-stripe-status').textContent=error.message;}
+  }
+  el('refresh-stripe').addEventListener('click',paymentStatus);
+  el('connect-stripe').addEventListener('click',async()=>{
+    if(!el('stripe-consent').checked){el('merchant-stripe-status').textContent='Confirmă autorizarea și comisionul înainte de conectare.';return;}
+    const button=el('connect-stripe');button.disabled=true;
+    try{const data=await api('/api/restaurants/mine/payments',{country:el('stripe-country').value.trim().toUpperCase(),acceptedCommission:el('stripe-consent').checked});const url=new URL(data.url);if(url.protocol!=='https:'||url.hostname!=='connect.stripe.com')throw new Error('Adresa Stripe nu este validă.');location.assign(url.href);}catch(error){el('merchant-stripe-status').textContent=error.message;button.disabled=false;}
+  });
+  const labels = { awaiting_payment:'Așteaptă plata', pending: 'În așteptare', accepted: 'Acceptată', declined: 'Refuzată', completed: 'Finalizată' };
   async function loadOrders() {
     el('orders-status').textContent = 'Încărcăm cererile…';
     try {
       const data = await api('/api/restaurants/mine/orders'), list = el('restaurant-orders'); list.replaceChildren(); el('orders-status').textContent = data.orders.length ? 'Ultimele 100 de cereri. Contactează clientul pentru confirmare; emailurile nu sunt trimise automat.' : 'Nu ai primit încă cereri.';
       for (const order of data.orders) {
         const card = node('article', null, 'order-card'); card.append(node('h3', `${labels[order.status]} · ${money(order.totalCents)}`), node('p', `${order.customer.name}\n${order.customer.email}\n${order.customer.address}`), node('p', new Date(order.createdAt).toLocaleString('ro-RO')));
+        if(order.payment)card.append(node('p',(order.payment.mode==='test'?'TEST · fără bani reali · ':'')+'Plată: '+({awaiting_payment:'în așteptare',paid:'confirmată',refunded:'rambursată',refund_pending:'rambursare în curs',expired:'expirată'}[order.payment.status]||order.payment.status)+' · Comision Poftigo: '+money(order.payment.feeCents)));
         const items = node('ul'); for (const item of order.items) items.append(node('li', `${item.quantity} × ${item.name} · ${money(item.priceCents * item.quantity)}`)); card.append(items);
         const actions = node('div', null, 'order-actions');
-        for (const state of order.status === 'pending' ? ['accepted', 'declined'] : order.status === 'accepted' ? ['completed'] : []) {
-          const button = node('button', state === 'accepted' ? 'Acceptă cererea' : state === 'declined' ? 'Refuză cererea' : 'Marchează finalizată', 'secondary'); button.type = 'button';
-          button.addEventListener('click', async () => { button.disabled = true; try { await api(`/api/restaurants/mine/orders/${order.id}`, { status: state }, 'PATCH'); await loadOrders(); } catch (error) { el('orders-status').textContent = error.message; button.disabled = false; } }); actions.append(button);
+        for (const state of order.status === 'pending' ? ['accepted', 'declined'] : order.status === 'awaiting_payment' ? ['declined'] : order.status === 'accepted' ? (order.payment?.status==='paid'?['completed','declined']:['completed']) : order.status==='completed'&&order.payment?.status==='paid'?['declined']:[]) {
+          const button = node('button', state === 'accepted' ? 'Acceptă cererea' : state === 'declined' ? (order.payment?.status==='paid'?'Refuză / rambursează plata':'Refuză cererea') : 'Marchează finalizată', 'secondary'); button.type = 'button';
+          button.addEventListener('click', async () => { if(state==='declined'&&order.payment?.status==='paid'&&!confirm('Confirmi rambursarea plății de '+money(order.totalCents)+' către client?'))return; button.disabled = true; try { await api(`/api/restaurants/mine/orders/${order.id}`, { status: state }, 'PATCH'); await loadOrders(); } catch (error) { el('orders-status').textContent = error.message; button.disabled = false; } }); actions.append(button);
         }
         card.append(actions); list.append(card);
       }
@@ -105,7 +115,7 @@
       const data = await api('/api/restaurants/mine'), restaurant = data.restaurant;
       if (restaurant) { version = restaurant.version; for (const name of ['name', 'address', 'lat', 'lon', 'radiusKm']) form.elements[name].value = restaurant[name]; form.elements.acceptingOrders.checked = restaurant.acceptingOrders; uploadedPhoto = restaurant.photo.startsWith('data:') ? restaurant.photo : ''; form.elements.photo.value = uploadedPhoto ? '' : restaurant.photo; updatePhotoPreview(restaurant.photo); restaurant.menu.forEach(addDish); }
       else addDish();
-      form.hidden = false; el('orders-section').hidden = false; status(restaurant ? 'Datele restaurantului sunt încărcate.' : 'Completează profilul și meniul pentru înscriere.'); await loadOrders();
+      form.hidden = false; el('orders-section').hidden = false; status(restaurant ? 'Datele restaurantului sunt încărcate.' : 'Completează profilul și meniul pentru înscriere.'); await loadOrders(); await paymentStatus();
     } catch (error) { status(error.message, true); }
   })();
 })();

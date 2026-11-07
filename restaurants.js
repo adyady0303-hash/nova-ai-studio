@@ -58,7 +58,7 @@ function isRestaurantMarketplaceIdea(idea) {
   const request = String(idea).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   return /restaurant/.test(request) && /apropiere|locati|adresa|livrar|nearby|location|delivery|address/.test(request);
 }
-function createRestaurantService({ filesystem, root, withLock, assertPrincipalActive = async () => {}, fetchImpl = (...args) => fetch(...args), translateQuery, nominatimEndpoint = process.env.NOVA_NOMINATIM_URL || "https://nominatim.openstreetmap.org/search" }) {
+function createRestaurantService({ filesystem, root, withLock, assertPrincipalActive = async () => {}, fetchImpl = (...args) => fetch(...args), payments, translateQuery, nominatimEndpoint = process.env.NOVA_NOMINATIM_URL || "https://nominatim.openstreetmap.org/search" }) {
   const file = path.join(root, "data", "restaurant-catalog.json");
   const orderFile = id => path.join(root, "data", "restaurant-orders", id + ".json");
   async function read(filePath, initial) {
@@ -75,6 +75,57 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     } finally { await fs.unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
   }
   const catalog = () => read(file, []);
+  const connectFile=owner=>path.join(root,'data','poftigo-connect',crypto.createHash('sha256').update(owner).digest('hex')+'-'+(payments?.config()?.mode||'unconfigured')+'.json');
+  async function connection(owner){return read(connectFile(owner),null);}
+  async function connectStatus(owner){
+    const entry=await connection(owner);let ready=false;
+    if(entry&&payments?.config())ready=await payments.ready(entry.id);
+    if(entry)await withLock(()=>write(connectFile(owner),{...entry,ready}));
+    return{configured:Boolean(payments?.config()),connected:Boolean(entry),ready,mode:payments?.config()?.mode||null};
+  }
+  async function connect(owner,country,acceptedCommission){
+    if(acceptedCommission!==true)throw fail(400,'Confirmă comisionul Poftigo de 10% înainte de conectare.');
+    if(!payments)throw fail(503,'Stripe nu este conectat.');
+    if(!await mine(owner))throw fail(409,'Salvează mai întâi profilul restaurantului.');
+    let id;await withLock(async()=>{await assertPrincipalActive(owner);const previous=await connection(owner);const account=await payments.onboarding(owner,previous?.id,String(country||'').toUpperCase());id=account.id;await write(connectFile(owner),{id,ready:false,commissionPercent:10,acceptedAt:new Date().toISOString()});});
+    return payments.onboardingLink(id);
+  }
+  async function paymentOption(owner){const c=payments?.config(),entry=c&&await connection(owner);return Boolean(c?.enabled&&c.webhook&&entry?.ready&&entry.commissionPercent===10);}
+  async function finishCheckout(restaurant,row,orders){
+    if(row.payment.mode!==payments?.config()?.mode)throw fail(409,'Modul de plată s-a schimbat. Reîncarcă pagina și creează o comandă nouă.');
+    if(row.payment.status!=='awaiting_payment')return{received:true,id:row.id,totalCents:row.totalCents,currency:'EUR',status:row.status,paymentStatus:row.payment.status};
+    if(!row.payment.sessionId){const session=await payments.checkout(restaurant,row,row.payment.destination);row.payment.sessionId=session.id;row.payment.checkoutUrl=session.url;await write(orderFile(restaurant.id),orders);}
+    return{received:true,id:row.id,totalCents:row.totalCents,currency:'EUR',status:row.status,paymentStatus:row.payment.status,checkoutUrl:row.payment.checkoutUrl};
+  }
+  async function verifiedPayment(restaurant,row){
+    const session=await payments.checkoutSession(row.payment.sessionId);
+    if(session.payment_status!=='paid')return false;
+    const pi=await payments.paymentIntent(typeof session.payment_intent==='string'?session.payment_intent:session.payment_intent?.id);
+    if(session.amount_total!==row.totalCents||session.currency!=='eur'||pi.status!=='succeeded'||pi.amount_received!==row.totalCents||pi.currency!=='eur'||pi.application_fee_amount!==row.payment.feeCents||pi.transfer_data?.destination!==row.payment.destination||pi.metadata?.poftigo_order!==row.id||pi.metadata?.poftigo_restaurant!==restaurant.id||Boolean(session.livemode)!==(payments.config().mode==='live'))throw fail(409,'Plata Stripe nu corespunde comenzii.');
+    row.payment.intentId=pi.id;row.payment.status='paid';return true;
+  }
+  async function refundOrder(row){const refund=await payments.refund(row);row.payment.status=refund.status==='succeeded'?'refunded':'refund_pending';row.payment.refundId=refund.id;}
+  async function webhook(raw,signature){
+    if(!payments)throw fail(503,'Stripe nu este conectat.');const event=payments.event(raw,signature),object=event.data?.object||{};
+    if(!['checkout.session.completed','checkout.session.async_payment_succeeded','checkout.session.expired','charge.refunded'].includes(event.type))return{received:true};
+    let restaurantId,orderId;
+    if(event.type==='charge.refunded'){const pi=await payments.paymentIntent(typeof object.payment_intent==='string'?object.payment_intent:object.payment_intent?.id);restaurantId=pi.metadata?.poftigo_restaurant;orderId=pi.metadata?.poftigo_order;}
+    else{restaurantId=object.metadata?.poftigo_restaurant;orderId=object.metadata?.poftigo_order;}
+    if(!ID.test(restaurantId||'')||!ID.test(orderId||''))return{received:true};
+    return withLock(async()=>{
+      const restaurant=(await catalog()).find(row=>row.id===restaurantId);if(!restaurant)return{received:true};
+      const orders=await read(orderFile(restaurantId),[]),row=orders.find(row=>row.id===orderId);if(!row?.payment||row.payment.mode!==payments.config()?.mode)return{received:true};
+      if(event.type.startsWith('checkout.')&&row.payment.sessionId&&row.payment.sessionId!==object.id)return{received:true};
+      if(event.type.startsWith('checkout.')&&!row.payment.sessionId)row.payment.sessionId=object.id;
+      if(event.type==='checkout.session.expired'){const session=await payments.checkoutSession(object.id);if(session.status==='expired'&&row.payment.status==='awaiting_payment'){row.payment.status='expired';row.status='declined';}}
+      else if(event.type==='charge.refunded'){
+        const pi=await payments.paymentIntent(typeof object.payment_intent==='string'?object.payment_intent:object.payment_intent?.id);
+        if(pi.id===row.payment.intentId&&pi.metadata?.poftigo_order===row.id&&object.refunded===true&&object.amount_refunded===row.totalCents){row.payment.status='refunded';row.status='declined';}
+      }else if(!['refunded','refund_pending'].includes(row.payment.status)&&await verifiedPayment(restaurant,row)){if(row.status==='awaiting_payment')row.status='pending';else if(row.status==='declined')await refundOrder(row);}
+      await write(orderFile(restaurantId),orders);return{received:true};
+    });
+  }
+
   const bankFile = path.join(root, 'data', 'poftigo-payment-settings.json');
   async function adminBank() { return read(bankFile, null); }
   async function saveAdminBank(body) {
@@ -108,7 +159,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     for (const row of rows) {
       if (!row.acceptingOrders) continue;
       const distance = distanceKm(point, row);
-      if (distance <= row.radiusKm) restaurants.push({ ...publicRestaurant(row), distanceKm: Math.round(distance * 10) / 10 });
+      if (distance <= row.radiusKm) restaurants.push({ ...publicRestaurant(row), cardPaymentsAvailable: await paymentOption(row.owner), distanceKm: Math.round(distance * 10) / 10 });
     }
     restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
     return { restaurants: restaurants.slice(0, 50), source: "Restaurante înscrise în Poftigo", coverage: "Zona de livrare este declarată de fiecare restaurant." };
@@ -125,10 +176,11 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       if (!restaurant) throw fail(404, "Restaurantul nu există.");
       await assertPrincipalActive(restaurant.owner);
       const orders = await read(orderFile(id), []);
-      const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ customer, items: body.items })).digest("hex");
+      const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ customer, items: body.items, ...(body.payOnline===true?{payOnline:true}:{}) })).digest("hex");
       const previous = orders.find(row => row.requestId === body.requestId);
       if (previous) {
         if (previous.fingerprint !== fingerprint) throw fail(409, "Identificatorul aparține altei comenzi.");
+        if(previous.payment)return finishCheckout(restaurant,previous,orders);
         return { received: true, id: previous.id, totalCents: previous.totalCents, currency: "EUR", status: previous.status };
       }
       if (!restaurant.acceptingOrders) throw fail(409, "Restaurantul nu primește cereri de comandă acum.");
@@ -144,8 +196,13 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       if (body.expectedTotalCents !== totalCents) throw fail(409, "Prețurile s-au schimbat. Reîncarcă restaurantele și verifică totalul înainte de trimitere.");
       if (orders.length >= 5000) throw fail(409, "Inboxul restaurantului este plin. Contactează restaurantul.");
       const row = { id: crypto.randomBytes(12).toString("hex"), requestId: body.requestId, fingerprint, customer, items, totalCents, currency: "EUR", status: "pending", createdAt: new Date().toISOString() };
+      if(body.payOnline===true){
+        if(!payments||!await paymentOption(restaurant.owner))throw fail(409,'Restaurantul nu are plățile online activate.');
+        const entry=await connection(restaurant.owner);row.status='awaiting_payment';row.payment={status:'awaiting_payment',mode:payments.config().mode,feeCents:Math.round(totalCents*.10),destination:entry.id};
+      }
       orders.push(row);
       await write(orderFile(id), orders);
+      if(row.payment)return finishCheckout(restaurant,row,orders);
       return { received: true, id: row.id, totalCents, currency: "EUR", status: row.status };
     });
   }
@@ -162,15 +219,30 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       if (!restaurant) throw fail(404, "Restaurantul nu există.");
       const rows = await read(orderFile(restaurant.id), []), row = rows.find(row => row.id === id);
       if (!row) throw fail(404, "Comanda nu există.");
-      if (row.status !== status && !(row.status === "pending" && ["accepted", "declined"].includes(status)) && !(row.status === "accepted" && status === "completed")) throw fail(409, "Tranziția comenzii nu este permisă.");
+      if (row.status !== status && !(row.status === "pending" && ["accepted", "declined"].includes(status)) && !(row.status === "awaiting_payment" && status === "declined") && !(row.status === "accepted" && status === "completed") && !(row.payment?.status === "paid" && ["accepted", "completed"].includes(row.status) && status === "declined")) throw fail(409, "Tranziția comenzii nu este permisă.");
+      if(row.payment){
+        if(row.payment.mode!==payments?.config()?.mode)throw fail(409,'Această comandă aparține altui mod Stripe. Gestioneaz-o în modul inițial.');
+        if(status==='accepted'&&row.payment.status!=='paid')throw fail(409,'Plata nu este confirmată de Stripe.');
+        if(status==='declined'&&row.status!==status){
+          if(row.payment.status==='awaiting_payment'){
+            if(row.payment.sessionId){const session=await payments.checkoutSession(row.payment.sessionId);if(session.status==='open'){try{await payments.expireCheckout(session.id);}catch(error){if(!await verifiedPayment(restaurant,row))throw error;}}else await verifiedPayment(restaurant,row);}
+            if(row.payment.status==='awaiting_payment')row.payment.status='expired';
+          }
+          if(row.payment.status==='paid')await refundOrder(row);
+        }
+      }
       row.status = status;
       await write(orderFile(restaurant.id), rows);
       return { id: row.id, status };
     });
   }
+  async function assertCanRemoveOwner(owner){
+    return withLock(async()=>{const restaurant=await mine(owner);if(!restaurant)return;const orders=await read(orderFile(restaurant.id),[]);if(orders.some(row=>row.payment?.mode==='live'&&!['refunded','expired'].includes(row.payment.status)))throw fail(409,'Închide sau rambursează tranzacțiile Stripe înainte de ștergerea contului.');});
+  }
   async function removeOwner(owner) {
     return withLock(async () => {
       const rows = await catalog(), mine = rows.filter(row => row.owner === owner);
+      for(const restaurant of mine){const orders=await read(orderFile(restaurant.id),[]);if(orders.some(row=>row.payment?.mode==='live'&&!['refunded','expired'].includes(row.payment.status)))throw fail(409,'Contul are tranzacții Stripe de închis. Contactează administratorul înainte de ștergere.');}
       await write(file, rows.filter(row => row.owner !== owner));
       for (const row of mine) await filesystem().promises.unlink(orderFile(row.id)).catch(error => { if (error.code !== "ENOENT") throw error; });
     });
@@ -267,6 +339,6 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     geocodes.set(query, { at: Date.now(), value });
     return value;
   }
-  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode, discover, adminBank, saveAdminBank };
+  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode, discover, adminBank, saveAdminBank, connectStatus, connect, webhook, assertCanRemoveOwner };
 }
 module.exports = { createRestaurantService, normalizeRestaurant, distanceKm, isRestaurantMarketplaceIdea };
