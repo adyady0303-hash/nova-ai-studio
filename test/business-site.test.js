@@ -27,3 +27,40 @@ test('public customer requests validate contact data and discard unrelated submi
   assert.deepEqual(normalizeBusinessContact({name:' Client ',email:'test@example.com',message:' Mesaj ',principal:'owner',project:'forged'}),{name:'Client',email:'test@example.com',message:'Mesaj'});
   for(const body of [null,{name:'x',email:'invalid',message:'test'},{name:'x',email:'a@example.com',message:'x'.repeat(4001)}])assert.throws(()=>normalizeBusinessContact(body),e=>e.status===400);
 });
+
+test('nearby restaurant request rejects the published timer-only search instead of accepting three valid files',()=>{
+  const files = {
+    'index.html': html.replace('<h1>Servicii</h1>', '<input id="address-input"><div id="restaurants-list"></div><p>Total: €0.00</p>'),
+    'styles.css': 'body{color:blue}',
+    'app.js': `// In reality we would use fetch('/restaurants') and navigator.geolocation.getCurrentPosition here.
+      const list = document.getElementById('restaurants-list');
+      setTimeout(() => { list.innerHTML = '<p>Nu s-au găsit restaurante.</p>'; }, 1500);`
+  };
+  const issues = validateBusinessFiles(files, {idea:'Restaurante din apropierea locației clientului, poze, meniuri și prețuri în euro'});
+  assert.ok(issues.some(issue => issue.includes('sursă de date')));
+  assert.ok(issues.some(issue => issue.includes('localizarea')));
+  assert.ok(issues.some(issue => issue.includes('fotografiilor')));
+  assert.ok(issues.some(issue => issue.includes('meniurilor')));
+  assert.ok(!issues.some(issue => issue.includes('adresei de livrare')));
+});
+
+test('restaurant requirements follow the idea and leave ordinary business pages unaffected',()=>{
+  const files = {'index.html':html,'styles.css':'body{}','app.js':'window.ready=true;'};
+  assert.deepEqual(validateBusinessFiles(files, {idea:'Un restaurant local cu formular de contact'}), []);
+  const issues = validateBusinessFiles(files, {idea:'Restaurante care livrează la adresa clientului cu prețuri în euro'});
+  for (const text of ['sursă de date','localizarea','adresei de livrare','euro']) assert.ok(issues.some(issue => issue.includes(text)),text);
+});
+
+test('source checks accept location and data-request wiring without claiming a provider was tested',()=>{
+  const files = {
+    'index.html':html.replace('<h1>Servicii</h1>', '<input autocomplete="street-address"><img alt="Preparat"><div id="menu"></div><p>EUR</p>'),
+    'styles.css':'body{}',
+    'app.js':`async function search(address) {
+      const response = await fetch('/restaurant-source?address=' + encodeURIComponent(address));
+      if (!response.ok) throw new Error('Serviciu indisponibil');
+      return response.json();
+    }
+    function locate(success, failure) { navigator.geolocation.getCurrentPosition(success, failure); }`
+  };
+  assert.deepEqual(validateBusinessFiles(files,{idea:'Restaurante din apropiere cu poze, meniuri și prețuri în euro'}),[]);
+});

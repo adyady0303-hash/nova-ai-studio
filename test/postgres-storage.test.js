@@ -93,6 +93,18 @@ test('PostgreSQL storage imports disk data and shares projects, sessions and set
   assert.equal(settingsFromOtherInstance.body.settings.apiKeyConfigured, true);
   assert.doesNotMatch(JSON.stringify(settingsFromOtherInstance.body), /test-key-encrypted/);
 
+  const restaurantData = { name: 'Restaurant PostgreSQL TEST', address: 'Berlin TEST', lat: 52.52, lon: 13.405, radiusKm: 3, currency: 'EUR', acceptingOrders: true, photo: 'https://example.test/photo.jpg', menu: [{ name: 'Preparat TEST', price: '8.50' }] };
+  const savedRestaurant = await request(serverA, '/api/restaurants/mine', ownerCookie, { method: 'PUT', body: restaurantData });
+  assert.equal(savedRestaurant.response.status, 200, JSON.stringify(savedRestaurant.body));
+  const crossInstanceRestaurant = await get(serverB, '/api/restaurants/mine', ownerCookie);
+  assert.equal(crossInstanceRestaurant.body.restaurant.id, savedRestaurant.body.restaurant.id);
+  const publicMenu = await get(serverB, '/api/restaurants/search?lat=52.52&lon=13.405', '');
+  assert.equal(publicMenu.body.restaurants.length, 1);
+  const dishId = publicMenu.body.restaurants[0].menu[0].id;
+  const order = await request(serverB, '/api/restaurants/' + savedRestaurant.body.restaurant.id + '/orders', '', { method: 'POST', body: { requestId: 'c'.repeat(24), name: 'Client TEST', email: 'client@example.test', address: 'Berlin TEST', lat: 52.52, lon: 13.405, expectedTotalCents: 850, items: [{ id: dishId, quantity: 1 }] } });
+  assert.equal(order.response.status, 201, JSON.stringify(order.body));
+  assert.equal((await get(serverA, '/api/restaurants/mine/orders', ownerCookie)).body.orders.length, 1);
+
   const deletionRegistration = await post(serverA, '/api/auth/register', { username: 'delete-db-user', password: 'delete12' });
   assert.equal(deletionRegistration.response.status, 201, deletionRegistration.body);
   const deletionAccount = await get(serverA, '/api/auth/me', deletionRegistration.cookie);

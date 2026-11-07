@@ -51,6 +51,21 @@ test('one business idea becomes an isolated working public site with real privat
       const files=await app.owner('/api/files?project='+result.project.id,undefined,'GET');assert.equal(files.status,200);
     }
   });
+  await t.test('nearby restaurant requests use the native marketplace instead of an AI timer-only search',async()=>{
+    const before=app.calls().length;
+    const result=await app.finish(app.owner,'FAKE_RESTAURANTS restaurante din apropierea locației clientului cu poze, meniuri și prețuri în euro');
+    assert.equal(result.state,'published',JSON.stringify(result));
+    assert.equal(app.calls().length,before,'Native implementation must not ask AI to invent a data source');
+    const page=await fetch(app.base+result.publication.url,{redirect:'manual'});
+    assert.equal(page.status,302);assert.equal(page.headers.get('location'),'/restaurants?site='+result.publication.id);
+    const appPage=await fetch(app.base+page.headers.get('location'));assert.match(await appPage.text(),/Nova Local/);
+    const files=await app.owner('/api/files?project='+result.project.id,undefined,'GET');assert.equal(files.status,200);
+  });
+  await t.test('status polling never observes a partially written publications registry',async()=>{
+    const result=await app.finish(app.owner,'SLOW_PUBLICATION atelier local');
+    assert.equal(result.state,'published',JSON.stringify(result));
+    assert.equal((await fetch(app.base+result.publication.url)).status,200);
+  });
   await t.test('complete valid files can publish even if the final provider summary is unavailable',async()=>{
     const result=await app.finish(app.owner,'LATE_PROVIDER_FAILURE atelier');assert.equal(result.state,'published',JSON.stringify(result));
     assert.equal((await fetch(app.base+result.publication.url)).status,200);
@@ -64,6 +79,8 @@ test('one business idea becomes an isolated working public site with real privat
     assert.equal((await visitor('/api/business/leads?project='+built.project.id,undefined,'GET')).status,404);
     const calls=app.calls().length;await app.finish(visitor,'SLOW_BUILD brutărie locală',result.requestId);assert.equal(app.calls().length,calls);
     assert.equal((await(await visitor('/api/auth/me',undefined,'GET')).json()).quotaRemaining,4);
+    const native=await app.finish(visitor,'Restaurante cu livrare la adresa clientului în euro');assert.equal(native.state,'published');
+    assert.equal((await(await visitor('/api/auth/me',undefined,'GET')).json()).quotaRemaining,4,'Native restaurant creation does not consume AI');
   });
   await t.test('malformed ideas are rejected without generating a site',async()=>{
     for(const invalid of [null,[],false])assert.equal((await app.owner('/api/business',invalid)).status,400);

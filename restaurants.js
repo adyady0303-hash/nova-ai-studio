@@ -1,0 +1,187 @@
+"use strict";
+
+const crypto = require("node:crypto");
+const path = require("node:path");
+const fail = (status, message) => Object.assign(new Error(message), { status });
+const ID = /^[a-f0-9]{24}$/;
+function text(value, name, max = 200) {
+  if (typeof value !== "string" || !value.trim() || value.trim().length > max) throw fail(400, `Completează ${name} (maximum ${max} caractere).`);
+  return value.trim();
+}
+function coordinate(value, max) {
+  if (value === "" || value == null || typeof value === "boolean" || !Number.isFinite(Number(value)) || Math.abs(Number(value)) > max) throw fail(400, "Locația nu este validă.");
+  return Number(value);
+}
+function coordinates(value) { return { lat: coordinate(value.lat, 90), lon: coordinate(value.lon, 180) }; }
+function photo(value) {
+  if (!value) return "";
+  if (typeof value !== "string" || value.length > 180000) throw fail(400, "Fotografia este prea mare. Folosește o imagine mai mică sau un URL HTTPS.");
+  if (/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value)) return value;
+  try { const url = new URL(value); if (url.protocol === "https:" && !url.username && !url.password && value.length <= 2048) return url.href; } catch {}
+  throw fail(400, "Fotografia trebuie să fie PNG, JPEG, WebP sau un URL HTTPS.");
+}
+function normalizeRestaurant(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw fail(400, "Datele restaurantului nu sunt valide.");
+  if (body.currency !== "EUR") throw fail(400, "Introdu prețurile efective în euro (EUR).");
+  const point = coordinates(body);
+  const radiusKm = Number(body.radiusKm);
+  if (!Number.isFinite(radiusKm) || radiusKm < 0.1 || radiusKm > 50) throw fail(400, "Zona de livrare trebuie să fie între 0,1 și 50 km.");
+  if (!Array.isArray(body.menu) || body.menu.length > 50) throw fail(400, "Meniul poate avea maximum 50 de preparate.");
+  const ids = new Set();
+  const menu = body.menu.map(item => {
+    if (!item || typeof item !== "object") throw fail(400, "Preparatul nu este valid.");
+    const price = Number(item.price);
+    if (item.price === "" || !Number.isFinite(price) || price <= 0 || price > 10000 || Math.abs(price * 100 - Math.round(price * 100)) > 1e-6) throw fail(400, "Prețul trebuie să fie pozitiv, în euro, cu maximum două zecimale.");
+    const id = ID.test(item.id || "") ? item.id : crypto.randomBytes(12).toString("hex");
+    if (ids.has(id)) throw fail(400, "Preparatele trebuie să aibă identificatori diferiți.");
+    ids.add(id);
+    return { id, name: text(item.name, "numele preparatului", 120), description: typeof item.description === "string" ? item.description.trim().slice(0, 600) : "", priceCents: Math.round(price * 100), photo: photo(item.photo), available: item.available !== false };
+  });
+  const value = { name: text(body.name, "numele restaurantului", 120), address: text(body.address, "adresa restaurantului", 300), ...point, radiusKm, currency: "EUR", photo: photo(body.photo), acceptingOrders: body.acceptingOrders === true, menu };
+  if (value.acceptingOrders && (!menu.some(item => item.available) || !value.photo)) throw fail(400, "Adaugă fotografia restaurantului și cel puțin un preparat disponibil înainte de activare.");
+  if (Buffer.byteLength(JSON.stringify(value)) > 850000) throw fail(413, "Fotografiile și meniul depășesc limita. Redu dimensiunea imaginilor.");
+  return value;
+}
+function distanceKm(a, b) {
+  const rad = x => x * Math.PI / 180;
+  const deltaLat = rad(b.lat - a.lat), deltaLon = rad(b.lon - a.lon);
+  const x = Math.sin(deltaLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(deltaLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(Math.max(0, 1 - x)));
+}
+function publicRestaurant(row) {
+  const { owner, version, ...value } = row;
+  return { ...value, menu: value.menu.filter(item => item.available) };
+}
+function isRestaurantMarketplaceIdea(idea) {
+  const request = String(idea).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return /restaurant/.test(request) && /apropiere|locati|adresa|livrar|nearby|location|delivery|address/.test(request);
+}
+function createRestaurantService({ filesystem, root, withLock, assertPrincipalActive = async () => {}, fetchImpl = (...args) => fetch(...args) }) {
+  const file = path.join(root, "data", "restaurant-catalog.json");
+  const orderFile = id => path.join(root, "data", "restaurant-orders", id + ".json");
+  async function read(filePath, initial) {
+    try { return JSON.parse(await filesystem().promises.readFile(filePath, "utf8")); }
+    catch (error) { if (error.code === "ENOENT") return initial; throw error; }
+  }
+  async function write(filePath, value) {
+    const fs = filesystem().promises;
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const temporary = filePath + "." + crypto.randomBytes(6).toString("hex") + ".tmp";
+    try {
+      await fs.writeFile(temporary, JSON.stringify(value), { encoding: "utf8", mode: 0o600 });
+      await fs.rename(temporary, filePath);
+    } finally { await fs.unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
+  }
+  const catalog = () => read(file, []);
+  async function mine(owner) { return (await catalog()).find(row => row.owner === owner) || null; }
+  async function save(owner, body) {
+    const value = normalizeRestaurant(body);
+    return withLock(async () => {
+      await assertPrincipalActive(owner);
+      const rows = await catalog(), index = rows.findIndex(row => row.owner === owner), previous = rows[index];
+      if (Number(body.version || 0) !== (previous?.version || 0)) throw fail(409, "Restaurantul a fost modificat în altă fereastră. Reîncarcă înainte de salvare.");
+      const row = { ...value, id: previous?.id || crypto.randomBytes(12).toString("hex"), owner, version: (previous?.version || 0) + 1, updatedAt: new Date().toISOString() };
+      if (index >= 0) rows[index] = row; else rows.push(row);
+      await write(file, rows);
+      return row;
+    });
+  }
+  async function search(point) {
+    point = coordinates(point);
+    const rows = await catalog(), restaurants = [];
+    for (const row of rows) {
+      if (!row.acceptingOrders) continue;
+      const distance = distanceKm(point, row);
+      if (distance <= row.radiusKm) restaurants.push({ ...publicRestaurant(row), distanceKm: Math.round(distance * 10) / 10 });
+    }
+    restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
+    return { restaurants: restaurants.slice(0, 50), source: "Restaurante înscrise în Nova", coverage: "Zona de livrare este declarată de fiecare restaurant." };
+  }
+  async function order(id, body) {
+    if (!ID.test(id)) throw fail(404, "Restaurantul nu există.");
+    if (!body || typeof body !== "object") throw fail(400, "Comanda nu este validă.");
+    const customer = { name: text(body.name, "numele", 120), email: text(body.email, "emailul", 254), address: text(body.address, "adresa de livrare", 300), ...coordinates(body) };
+    if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(customer.email)) throw fail(400, "Adresa de email nu este validă.");
+    if (!ID.test(body.requestId || "")) throw fail(400, "Identificatorul comenzii nu este valid.");
+    if (!Array.isArray(body.items) || !body.items.length || body.items.length > 50) throw fail(400, "Alege cel puțin un preparat.");
+    return withLock(async () => {
+      const restaurant = (await catalog()).find(row => row.id === id);
+      if (!restaurant) throw fail(404, "Restaurantul nu există.");
+      await assertPrincipalActive(restaurant.owner);
+      const orders = await read(orderFile(id), []);
+      const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ customer, items: body.items })).digest("hex");
+      const previous = orders.find(row => row.requestId === body.requestId);
+      if (previous) {
+        if (previous.fingerprint !== fingerprint) throw fail(409, "Identificatorul aparține altei comenzi.");
+        return { received: true, id: previous.id, totalCents: previous.totalCents, currency: "EUR", status: previous.status };
+      }
+      if (!restaurant.acceptingOrders) throw fail(409, "Restaurantul nu primește cereri de comandă acum.");
+      if (distanceKm(customer, restaurant) > restaurant.radiusKm) throw fail(409, "Adresa este în afara zonei de livrare declarate.");
+      const selected = new Set();
+      const items = body.items.map(item => {
+        const dish = restaurant.menu.find(dish => dish.id === item.id && dish.available);
+        if (!dish || selected.has(item.id) || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 30) throw fail(409, "Meniul sau cantitatea s-a schimbat. Verifică din nou coșul.");
+        selected.add(item.id);
+        return { id: dish.id, name: dish.name, quantity: item.quantity, priceCents: dish.priceCents };
+      });
+      const totalCents = items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+      if (body.expectedTotalCents !== totalCents) throw fail(409, "Prețurile s-au schimbat. Reîncarcă restaurantele și verifică totalul înainte de trimitere.");
+      if (orders.length >= 5000) throw fail(409, "Inboxul restaurantului este plin. Contactează restaurantul.");
+      const row = { id: crypto.randomBytes(12).toString("hex"), requestId: body.requestId, fingerprint, customer, items, totalCents, currency: "EUR", status: "pending", createdAt: new Date().toISOString() };
+      orders.push(row);
+      await write(orderFile(id), orders);
+      return { received: true, id: row.id, totalCents, currency: "EUR", status: row.status };
+    });
+  }
+  async function orders(owner) {
+    const restaurant = await mine(owner);
+    if (!restaurant) return [];
+    return (await read(orderFile(restaurant.id), [])).slice(-100).reverse().map(({ fingerprint, requestId, ...row }) => row);
+  }
+  async function updateOrder(owner, id, status) {
+    if (!["accepted", "declined", "completed"].includes(status)) throw fail(400, "Starea comenzii nu este validă.");
+    return withLock(async () => {
+      await assertPrincipalActive(owner);
+      const restaurant = await mine(owner);
+      if (!restaurant) throw fail(404, "Restaurantul nu există.");
+      const rows = await read(orderFile(restaurant.id), []), row = rows.find(row => row.id === id);
+      if (!row) throw fail(404, "Comanda nu există.");
+      if (row.status !== status && !(row.status === "pending" && ["accepted", "declined"].includes(status)) && !(row.status === "accepted" && status === "completed")) throw fail(409, "Tranziția comenzii nu este permisă.");
+      row.status = status;
+      await write(orderFile(restaurant.id), rows);
+      return { id: row.id, status };
+    });
+  }
+  async function removeOwner(owner) {
+    return withLock(async () => {
+      const rows = await catalog(), mine = rows.filter(row => row.owner === owner);
+      await write(file, rows.filter(row => row.owner !== owner));
+      for (const row of mine) await filesystem().promises.unlink(orderFile(row.id)).catch(error => { if (error.code !== "ENOENT") throw error; });
+    });
+  }
+  let lastGeocode = 0;
+  const geocodes = new Map();
+  async function geocode(query) {
+    query = text(query, "adresa de căutat", 240);
+    if (query.length < 4) throw fail(400, "Introdu strada, numărul și localitatea.");
+    const cached = geocodes.get(query);
+    if (cached && Date.now() - cached.at < 3600000) return cached.value;
+    if (Date.now() - lastGeocode < 1100) throw fail(429, "Căutarea adreselor este ocupată. Încearcă din nou peste câteva secunde.");
+    lastGeocode = Date.now();
+    const url = new URL("https://nominatim.openstreetmap.org/search");
+    url.search = new URLSearchParams({ q: query, format: "jsonv2", limit: "5" }).toString();
+    let response;
+    try { response = await fetchImpl(url, { headers: { "User-Agent": "NovaAIStudio/2.7.5 (https://www.nova-ai-studio.eu/about)", "Accept": "application/json" }, signal: AbortSignal.timeout(10000) }); }
+    catch { throw fail(503, "Serviciul de adrese este indisponibil. Încearcă localizarea sau revino mai târziu."); }
+    if (!response.ok) throw fail(503, "Serviciul de adrese este indisponibil. Încearcă localizarea sau revino mai târziu.");
+    let data;
+    try { data = await response.json(); } catch { throw fail(503, "Serviciul de adrese a returnat un răspuns invalid."); }
+    if (!Array.isArray(data)) throw fail(503, "Serviciul de adrese a returnat un răspuns invalid.");
+    const value = { results: data.slice(0, 5).filter(row => Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)) && typeof row.display_name === "string").map(row => ({ ...coordinates(row), label: row.display_name.slice(0, 500) })), attribution: "© OpenStreetMap contributors" };
+    if (geocodes.size >= 500) geocodes.delete(geocodes.keys().next().value);
+    geocodes.set(query, { at: Date.now(), value });
+    return value;
+  }
+  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode };
+}
+module.exports = { createRestaurantService, normalizeRestaurant, distanceKm, isRestaurantMarketplaceIdea };
