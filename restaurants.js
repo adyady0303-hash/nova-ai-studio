@@ -56,7 +56,7 @@ function isRestaurantMarketplaceIdea(idea) {
   const request = String(idea).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   return /restaurant/.test(request) && /apropiere|locati|adresa|livrar|nearby|location|delivery|address/.test(request);
 }
-function createRestaurantService({ filesystem, root, withLock, assertPrincipalActive = async () => {}, fetchImpl = (...args) => fetch(...args) }) {
+function createRestaurantService({ filesystem, root, withLock, assertPrincipalActive = async () => {}, fetchImpl = (...args) => fetch(...args), nominatimEndpoint = process.env.NOVA_NOMINATIM_URL || "https://nominatim.openstreetmap.org/search" }) {
   const file = path.join(root, "data", "restaurant-catalog.json");
   const orderFile = id => path.join(root, "data", "restaurant-orders", id + ".json");
   async function read(filePath, initial) {
@@ -159,29 +159,105 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       for (const row of mine) await filesystem().promises.unlink(orderFile(row.id)).catch(error => { if (error.code !== "ENOENT") throw error; });
     });
   }
-  let lastGeocode = 0;
+  let lastNominatim = 0, pendingNominatim = 0, nominatimQueue = Promise.resolve();
+  async function nominatim(url) {
+    if (pendingNominatim >= 4) throw fail(429, "Căutarea este ocupată. Încearcă din nou în câteva secunde.");
+    pendingNominatim++;
+    const operation = nominatimQueue.catch(() => {}).then(async () => {
+      const wait = 1100 - (Date.now() - lastNominatim);
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
+      lastNominatim = Date.now();
+      let response;
+      try { response = await fetchImpl(url, { headers: { "User-Agent": "NovaLocal/2.7.6 (https://www.nova-ai-studio.eu/about)", "Accept": "application/json" }, signal: AbortSignal.timeout(10000) }); }
+      catch { throw fail(503, "Serviciul OpenStreetMap este indisponibil temporar. Încearcă din nou."); }
+      if (!response.ok) throw fail(503, "Serviciul OpenStreetMap este indisponibil temporar. Încearcă din nou.");
+      let data;
+      try { data = await response.json(); } catch { throw fail(503, "Serviciul OpenStreetMap a returnat un răspuns invalid."); }
+      if (!Array.isArray(data)) throw fail(503, "Serviciul OpenStreetMap a returnat un răspuns invalid.");
+      return data;
+    });
+    nominatimQueue = operation;
+    try { return await operation; } finally { pendingNominatim--; }
+  }
+  const nearbyCache = new Map(), nearbyInFlight = new Map();
+  const normalizeQuery = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  function foodQuery(value) {
+    const query = normalizeQuery(value);
+    if (query.length > 80) throw fail(400, "Caută un preparat sau restaurant folosind maximum 80 de caractere.");
+    if (/^(pizza|pizzeri[aei]|pizzerii)$/.test(query)) return { query, lookup: 'pizzeria', match: /pizza|pizzer/ };
+    if (/^(burger|burgers|hamburger|hamburgeri)$/.test(query)) return { query, lookup: 'burger', match: /burger/ };
+    if (/^(shaorma|shawarma|kebab|doner)$/.test(query)) return { query, lookup: 'kebab', match: /kebab|doner|shawarma|shaorma/ };
+    return { query, lookup: query || '[amenity=restaurant]', match: null };
+  }
+  function matchesFood(value, query) { return !query.query || (query.match ? query.match.test(normalizeQuery(value)) : normalizeQuery(value).includes(query.query)); }
+  function publicLink(value) {
+    try { const url = new URL(value); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return url.href; } catch {}
+    return '';
+  }
+  async function nearby(point, query) {
+    const center = { lat: Number(point.lat.toFixed(4)), lon: Number(point.lon.toFixed(4)) };
+    const key = center.lat + ':' + center.lon + ':' + query.lookup;
+    const cached = nearbyCache.get(key);
+    if (cached && Date.now() - cached.at < 15 * 60000) return cached.rows;
+    if (nearbyInFlight.has(key)) return nearbyInFlight.get(key);
+    const operation = (async () => {
+      const latDelta = 5.2 / 111.2, lonDelta = 5.2 / (111.2 * Math.max(.01, Math.cos(center.lat * Math.PI / 180)));
+      const box = [Math.max(-180, center.lon - lonDelta), Math.min(90, center.lat + latDelta), Math.min(180, center.lon + lonDelta), Math.max(-90, center.lat - latDelta)].join(',');
+      const url = new URL(nominatimEndpoint);
+      url.search = new URLSearchParams({ q: query.lookup, format: 'jsonv2', limit: '30', extratags: '1', addressdetails: '1', bounded: '1', viewbox: box }).toString();
+      const data = await nominatim(url), rows = [], seen = new Set();
+      for (const item of data) {
+        if (!item || !['restaurant', 'fast_food', 'cafe', 'food_court', 'pub', 'bar', 'biergarten'].includes(item.type) || !['node', 'way', 'relation'].includes(item.osm_type) || !Number.isSafeInteger(Number(item.osm_id)) || !item.name) continue;
+        let location; try { location = coordinates(item); } catch { continue; }
+        const tags = item.extratags || {}, cuisine = String(tags.cuisine || '');
+        if (!matchesFood(item.name + ' ' + cuisine + ' ' + (tags.brand || ''), query)) continue;
+        const id = 'osm-' + item.osm_type + '-' + item.osm_id;
+        if (seen.has(id)) continue; seen.add(id);
+        const address = item.address || {};
+        const website = publicLink(tags.website || tags['contact:website']);
+        const menuUrl = publicLink(tags['website:menu'] || tags['contact:menu'] || tags.menu);
+        const photoUrl = publicLink(tags.image);
+        rows.push({ id, name: String(item.name).slice(0, 200), ...location, address: [address.road, address.house_number, address.city || address.town || address.village].filter(Boolean).join(', ') || String(item.display_name || '').slice(0, 400), cuisine, photo: photoUrl.startsWith('https:') ? photoUrl : '', menu: [], orderable: false, source: 'OpenStreetMap', website, menuUrl, mapUrl: 'https://www.openstreetmap.org/' + item.osm_type + '/' + item.osm_id });
+      }
+      if (nearbyCache.size >= 500) nearbyCache.delete(nearbyCache.keys().next().value);
+      nearbyCache.set(key, { rows, at: Date.now() });
+      return rows;
+    })();
+    nearbyInFlight.set(key, operation);
+    try { return await operation; } finally { nearbyInFlight.delete(key); }
+  }
+  async function discover(input) {
+    const point = coordinates(input), query = foodQuery(input.q);
+    const local = (await search(point)).restaurants.filter(row => matchesFood(row.name + ' ' + row.menu.map(item => item.name + ' ' + item.description).join(' '), query)).map(row => ({ ...row, orderable: true, source: 'Nova' }));
+    let external, warning = '';
+    try { external = await nearby(point, query); }
+    catch (error) {
+      if (!local.length) throw error;
+      external = []; warning = 'Căutarea pe hartă este indisponibilă temporar. Afișăm doar rezultatele înscrise în Nova.';
+    }
+    const restaurants = [...local];
+    for (const row of external) {
+      const distance = distanceKm(point, row);
+      if (distance > 5 || local.some(local => normalizeQuery(local.name) === normalizeQuery(row.name) && distanceKm(local, row) < .2)) continue;
+      restaurants.push({ ...row, distanceKm: Math.round(distance * 10) / 10 });
+    }
+    restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
+    return { restaurants: restaurants.slice(0, 50), query: query.query, radiusKm: 5, warning, source: 'Nova și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
+  }
   const geocodes = new Map();
   async function geocode(query) {
     query = text(query, "adresa de căutat", 240);
     if (query.length < 4) throw fail(400, "Introdu strada, numărul și localitatea.");
     const cached = geocodes.get(query);
     if (cached && Date.now() - cached.at < 3600000) return cached.value;
-    if (Date.now() - lastGeocode < 1100) throw fail(429, "Căutarea adreselor este ocupată. Încearcă din nou peste câteva secunde.");
-    lastGeocode = Date.now();
-    const url = new URL("https://nominatim.openstreetmap.org/search");
+    const url = new URL(nominatimEndpoint);
     url.search = new URLSearchParams({ q: query, format: "jsonv2", limit: "5" }).toString();
-    let response;
-    try { response = await fetchImpl(url, { headers: { "User-Agent": "NovaAIStudio/2.7.5 (https://www.nova-ai-studio.eu/about)", "Accept": "application/json" }, signal: AbortSignal.timeout(10000) }); }
-    catch { throw fail(503, "Serviciul de adrese este indisponibil. Încearcă localizarea sau revino mai târziu."); }
-    if (!response.ok) throw fail(503, "Serviciul de adrese este indisponibil. Încearcă localizarea sau revino mai târziu.");
-    let data;
-    try { data = await response.json(); } catch { throw fail(503, "Serviciul de adrese a returnat un răspuns invalid."); }
-    if (!Array.isArray(data)) throw fail(503, "Serviciul de adrese a returnat un răspuns invalid.");
+    const data = await nominatim(url);
     const value = { results: data.slice(0, 5).filter(row => Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lon)) && typeof row.display_name === "string").map(row => ({ ...coordinates(row), label: row.display_name.slice(0, 500) })), attribution: "© OpenStreetMap contributors" };
     if (geocodes.size >= 500) geocodes.delete(geocodes.keys().next().value);
     geocodes.set(query, { at: Date.now(), value });
     return value;
   }
-  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode };
+  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode, discover };
 }
 module.exports = { createRestaurantService, normalizeRestaurant, distanceKm, isRestaurantMarketplaceIdea };

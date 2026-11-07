@@ -51,3 +51,34 @@ test('geocoding distinguishes an upstream outage from a genuine empty result and
   const empty=service(t,{fetchImpl:async()=>new Response('[]')}).app;
   assert.deepEqual((await empty.geocode('Adresă TEST')).results,[]);
 });
+
+test('pizza discovery includes real nearby map places without enrollment, filters and deduplicates',async t=>{
+  let calls=0;
+  const {app}=service(t,{fetchImpl:async url=>{
+    calls++;assert.equal(url.hostname,'nominatim.openstreetmap.org');assert.equal(url.searchParams.get('q'),'pizzeria');assert.equal(url.searchParams.get('bounded'),'1');assert.ok(url.searchParams.has('viewbox'));
+    return new Response(JSON.stringify([
+      {osm_type:'node',osm_id:1,name:'Pizzeria din zonă TEST',type:'restaurant',lat:'52.521',lon:'13.406',extratags:{cuisine:'pizza',website:'https://example.test/restaurant'}},
+      {osm_type:'node',osm_id:1,name:'Pizzeria duplicat TEST',type:'restaurant',lat:'52.521',lon:'13.406'},
+      {osm_type:'node',osm_id:2,name:'Pizzeria departe TEST',type:'restaurant',lat:'53',lon:'13.4'},
+      {osm_type:'node',osm_id:3,name:'Sushi TEST',type:'restaurant',lat:'52.521',lon:'13.406',extratags:{cuisine:'sushi'}},
+      {osm_type:'node',osm_id:4,name:'Pizzeria link invalid TEST',type:'restaurant',lat:'52.522',lon:'13.406',extratags:{website:'javascript:alert(1)'}},
+      {osm_type:'node',osm_id:5,name:'Restaurant TEST',type:'restaurant',lat:'52.52',lon:'13.405',extratags:{cuisine:'pizza'}}
+    ]));
+  }});
+  await app.save('merchant',restaurant());
+  const [one,two]=await Promise.all([app.discover({lat:52.52,lon:13.405,q:'pizza'}),app.discover({lat:52.52,lon:13.405,q:'pizza'})]);
+  assert.equal(calls,1);assert.equal(one.restaurants.length,3);assert.deepEqual(one,two);
+  assert.equal(one.restaurants.filter(row=>row.orderable).length,1);
+  const places=one.restaurants.filter(row=>!row.orderable);assert.equal(places.length,2);assert.ok(places.every(row=>!row.owner&&row.menu.length===0));
+  assert.equal(places.find(row=>row.id==='osm-node-4').website,'');
+  assert.ok(places.every(row=>row.distanceKm<=5));assert.match(one.attribution,/OpenStreetMap/);
+  await app.discover({lat:52.52,lon:13.405,q:'pizza'});assert.equal(calls,1);
+});
+test('map outage never masquerades as no nearby restaurants, with honest local fallback',async t=>{
+  const {app}=service(t,{fetchImpl:async()=>new Response('unavailable',{status:503})});
+  await assert.rejects(()=>app.discover({lat:52.52,lon:13.405,q:'pizza'}),{status:503});
+  await app.save('merchant',restaurant());
+  const result=await app.discover({lat:52.52,lon:13.405,q:'pizza'});assert.equal(result.restaurants.length,1);assert.match(result.warning,/indisponibilă/);
+  await assert.rejects(()=>app.discover({lat:'',lon:13.405,q:'pizza'}),{status:400});
+  await assert.rejects(()=>app.discover({lat:52.52,lon:13.405,q:'a'.repeat(81)}),{status:400});
+});

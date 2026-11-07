@@ -4,7 +4,7 @@
   const money = cents => new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'EUR' }).format(cents / 100);
   const node = (tag, text, cls) => { const element = document.createElement(tag); if (text != null) element.textContent = text; if (cls) element.className = cls; return element; };
   const status = (id, message, error = false) => { el(id).textContent = message; el(id).className = error ? 'error' : ''; };
-  let point = null, restaurants = [], selected = null, cartRestaurant = null, cart = new Map(), revision = 0, sending = false, lastOrder = null;
+  let locationLabel = "", point = null, restaurants = [], selected = null, cartRestaurant = null, cart = new Map(), revision = 0, sending = false, lastOrder = null;
   async function api(route, body) {
     const response = await fetch(route, { credentials: 'same-origin', ...(body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {}) });
     const value = await response.json();
@@ -15,16 +15,24 @@
   function invalidate() { revision++; point = null; selected = null; restaurants = []; el('restaurants-list').replaceChildren(); el('menu-section').hidden = true; clearCart(); }
   async function discover(location, label, token) {
     if (token !== revision) return;
-    status('search-status', 'Căutăm restaurante înscrise în zona selectată…');
+    point = location; locationLabel = label; el('selected-address').textContent = label;
+    status('search-status', 'Căutăm restaurante în apropiere…');
     try {
-      const data = await api('/api/restaurants/search?' + new URLSearchParams(location));
+      const query = el('food-query').value.trim();
+      const data = await api('/api/restaurants/discover?' + new URLSearchParams({ ...location, q: query }));
       if (token !== revision) return;
-      point = location; restaurants = data.restaurants;
+      point = location; locationLabel = label; restaurants = data.restaurants;
       el('selected-address').textContent = label;
-      status('search-status', restaurants.length ? `${restaurants.length} restaurante în zona ta.` : 'Nu există încă restaurante înscrise care livrează în această zonă.');
+      status('search-status', data.warning || (restaurants.length ? `${restaurants.length} rezultate${query ? ' pentru „' + query + '”' : ''} în apropiere.` : 'Nu am găsit rezultate pentru această căutare în apropiere. Încearcă alt preparat sau schimbă adresa.'), Boolean(data.warning));
       renderRestaurants();
     } catch (error) { if (token === revision) status('search-status', error.message, true); }
   }
+  el('food-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if (point) { const previous = point, label = locationLabel; invalidate(); discover(previous, label, revision); }
+    else el('locate').click();
+  });
+  document.querySelectorAll('[data-food]').forEach(button => button.addEventListener('click', () => { el('food-query').value = button.dataset.food; el('food-form').requestSubmit(); }));
   el('address-form').addEventListener('submit', async event => {
     event.preventDefault(); invalidate(); const token = revision;
     el('address-results').replaceChildren(); status('search-status', 'Căutăm adresa…');
@@ -46,7 +54,7 @@
   el('address-input').addEventListener('input', () => { invalidate(); el('address-results').replaceChildren(); el('selected-address').textContent = 'Confirmă noua adresă înainte de alegerea preparatelor.'; });
   el('locate').addEventListener('click', () => {
     invalidate(); const token = revision; el('address-results').replaceChildren();
-    if (!navigator.geolocation) return status('search-status', 'Localizarea nu este disponibilă. Introdu adresa manual.', true);
+    if (!navigator.geolocation) { el('manual-location').open = true; return status('search-status', 'Localizarea nu este disponibilă. Introdu adresa manual.', true); }
     status('search-status', 'Așteptăm acordul pentru localizare…');
     navigator.geolocation.getCurrentPosition(position => {
       if (token !== revision) return;
@@ -55,6 +63,7 @@
       discover(location, 'Locația curentă. Completează adresa exactă în formularul comenzii.', token);
     }, error => {
       if (token !== revision) return;
+      el('manual-location').open = true;
       status('search-status', error.code === 1 ? 'Localizarea a fost refuzată. Poți introduce adresa manual.' : 'Locația nu a putut fi stabilită. Introdu adresa manual.', true);
     }, { timeout: 12000, maximumAge: 60000, enableHighAccuracy: false });
   });
@@ -66,11 +75,22 @@
   }
   function renderRestaurants() {
     const list = el('restaurants-list'); list.replaceChildren();
-    if (!restaurants.length) { list.append(node('p', 'Zona este pregătită pentru înscrierea restaurantelor locale. Dacă ai un restaurant, adaugă meniul și activează primirea cererilor.', 'empty')); return; }
+    if (!restaurants.length) { list.append(node('p', 'Încearcă un preparat precum pizza, burger sau sushi, ori verifică adresa selectată. Rezultatele depind de datele disponibile în OpenStreetMap.', 'empty')); return; }
     for (const restaurant of restaurants) {
       const card = node('article', null, 'restaurant-card'), cover = image(restaurant.photo, restaurant.name), body = node('div', null, 'card-body');
       if (cover) card.append(cover);
-      body.append(node('h3', restaurant.name), node('p', restaurant.address), node('p', `${restaurant.distanceKm} km · ${restaurant.menu.length} preparate · EUR`));
+      body.append(node('h3', restaurant.name), node('p', restaurant.address));
+      if (restaurant.orderable === false) {
+        body.append(node('p', `${restaurant.distanceKm} km · OpenStreetMap`), node('p', 'Consultă restaurantul pentru meniu, prețuri și livrare.'));
+        for (const [url, label] of [[restaurant.menuUrl, 'Meniu pe site-ul restaurantului'], [restaurant.website, 'Site-ul restaurantului'], [restaurant.mapUrl, 'Vezi pe hartă ↗']]) {
+          if (!url) continue;
+          let parsed; try { parsed = new URL(url); } catch { continue; }
+          if (!['http:', 'https:'].includes(parsed.protocol)) continue;
+          const link = node('a', label, 'external-place-link'); link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; body.append(link);
+        }
+        card.append(body); list.append(card); continue;
+      }
+      body.append(node('p', `${restaurant.distanceKm} km · ${restaurant.menu.length} preparate · EUR · Comandă prin Nova`));
       const button = node('button', 'Vezi meniul'); button.type = 'button';
       button.addEventListener('click', () => { selected = restaurant; renderMenu(); el('menu-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
       body.append(button); card.append(body); list.append(card);

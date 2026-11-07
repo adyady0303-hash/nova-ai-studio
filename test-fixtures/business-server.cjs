@@ -19,6 +19,7 @@ async function startBusinessFixture(t,{seed}={}){
     const reply=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
     const tool=(id,file,content)=>({id,type:'function',function:{name:'write_file',arguments:JSON.stringify({path:file,content})}});
     global.fetch=async(url,options={})=>{
+      if(String(url).startsWith('https://nominatim.openstreetmap.org/search'))return reply([{osm_type:'node',osm_id:123,name:'Pizzeria publică TEST',type:'restaurant',lat:'52.521',lon:'13.406',display_name:'Adresă TEST',extratags:{cuisine:'pizza',website:'https://example.test/pizza'}}]);
       if(String(url).endsWith('/models'))return reply({data:[{id:'fixture-business'}]});
       const body=JSON.parse(options.body),idea=body.messages.filter(m=>m.role==='user').at(-1).content;
       record({model:body.model,idea,messages:body.messages});

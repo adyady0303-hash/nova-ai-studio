@@ -2131,6 +2131,10 @@ async function handle(req, res) {
     restaurantRate(req, "geocode", 20);
     return restaurants.geocode(url.searchParams.get("q"));
   });
+  if (req.method === "GET" && url.pathname === "/api/restaurants/discover") return restaurantResponse(res, async () => {
+    restaurantRate(req, "discover", 30);
+    return restaurants.discover({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon"), q: url.searchParams.get("q") || "" });
+  });
   if (req.method === "GET" && url.pathname === "/api/restaurants/search") return restaurantResponse(res, async () => {
     restaurantRate(req, "search", 120);
     return restaurants.search({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon") });
