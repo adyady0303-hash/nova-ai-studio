@@ -23,6 +23,7 @@ async function startBusinessFixture(t,{seed}={}){
       if(String(url).endsWith('/models'))return reply({data:[{id:'fixture-business'}]});
       const body=JSON.parse(options.body),idea=body.messages.filter(m=>m.role==='user').at(-1).content;
       record({model:body.model,idea,messages:body.messages});
+      if(body.messages[0]?.content?.startsWith('Interpret a restaurant-search query'))return reply({choices:[{message:{role:'assistant',content:JSON.stringify({kind:'food',term:'pizza'})}}],model:body.model});
       if(idea.includes('SLOW_BUILD'))await new Promise(resolve=>setTimeout(resolve,80));
       const used=body.messages.some(m=>m.role==='assistant'&&m.tool_calls?.length);
       if(used&&idea.includes('LATE_PROVIDER_FAILURE'))return reply({error:{message:'fixture unavailable'}},503);
