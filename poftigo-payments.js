@@ -4,6 +4,16 @@ const {verifyWebhook}=require('./billing');
 const fail=(message,status=503)=>Object.assign(new Error(message),{status});
 const accountId=value=>/^acct_[A-Za-z0-9]+$/.test(value||'');
 function createPoftigoPayments({env=process.env,request=(...args)=>fetch(...args)}={}){
+ function configurationIssue(){
+  const key=String(env.POFTIGO_STRIPE_SECRET_KEY||'').trim();
+  if(!key)return 'missing_pofigo_secret';
+  if(!/^sk_(test|live)_[A-Za-z0-9_]+$/.test(key))return 'invalid_poftigo_secret';
+  try{
+   const url=new URL(env.POFTIGO_PUBLIC_URL||'https://www.nova-ai-studio.eu');
+   if(url.protocol!=='https:'||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error();
+  }catch{return 'invalid_public_url';}
+  return null;
+ }
  function config(){
   const key=String(env.POFTIGO_STRIPE_SECRET_KEY||'').trim(),webhook=String(env.POFTIGO_STRIPE_WEBHOOK_SECRET||'').trim();
   let origin;try{const u=new URL(env.POFTIGO_PUBLIC_URL||'https://www.nova-ai-studio.eu');if(u.protocol!=='https:'||u.username||u.password||u.pathname!=='/'||u.search||u.hash)throw Error();origin=u.origin;}catch{return null;}
@@ -19,9 +29,9 @@ function createPoftigoPayments({env=process.env,request=(...args)=>fetch(...args
  let platformCache;
  async function platform(){const c=config();if(!c)return null;if(platformCache&&platformCache.mode===c.mode&&Date.now()-platformCache.at<30000)return platformCache.account;const account=await stripe('/account');platformCache={mode:c.mode,at:Date.now(),account};return account;}
  async function summary(){
-  const c=config();if(!c)return{configured:false,enabled:false,mode:null,commissionPercent:10,webhookConfigured:false,platformReady:false};
+  const c=config();if(!c)return{configured:false,enabled:false,mode:null,commissionPercent:10,webhookConfigured:false,platformReady:false,configurationIssue:configurationIssue()};
   let ready=false,connectionError=false;try{const a=await platform();ready=Boolean(a.charges_enabled&&a.payouts_enabled);}catch{connectionError=true;}
-  return{configured:true,enabled:Boolean(c.enabled&&c.webhook&&ready),requestedEnabled:c.enabled,mode:c.mode,commissionPercent:10,webhookConfigured:Boolean(c.webhook),platformReady:ready,connectionError};
+  return{configured:true,enabled:Boolean(c.enabled&&c.webhook&&ready),requestedEnabled:c.enabled,mode:c.mode,commissionPercent:10,webhookConfigured:Boolean(c.webhook),platformReady:ready,connectionError,configurationIssue:null};
  }
  async function ensureEnabled(){const s=await summary();if(!s.configured||!s.enabled||!s.webhookConfigured||!s.platformReady)throw fail('Plățile Poftigo nu sunt activate sau contul Stripe nu este verificat.');return config();}
  async function connected(id){if(!accountId(id))throw fail('Restaurantul nu este conectat la Stripe.',409);return stripe('/accounts/'+id);}
@@ -49,6 +59,6 @@ function createPoftigoPayments({env=process.env,request=(...args)=>fetch(...args
   return stripe('/refunds',{payment_intent:row.payment.intentId,reverse_transfer:'true',refund_application_fee:'true'},'poftigo-refund-'+config()?.mode+'-'+row.id);
  }
  function event(raw,signature){const c=config();return verifyWebhook(raw,signature,c?.webhook);}
- return{config,summary,connected,onboarding,onboardingLink,ready,checkout,paymentIntent,checkoutSession,refund,event,expireCheckout};
+ return{config,configurationIssue,summary,connected,onboarding,onboardingLink,ready,checkout,paymentIntent,checkoutSession,refund,event,expireCheckout};
 }
 module.exports={createPoftigoPayments};
