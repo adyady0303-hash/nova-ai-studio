@@ -75,6 +75,7 @@ let aiConfig = {
     image: firstMediaPlatform("image", initialPlatform),
     speech: firstMediaPlatform("speech", initialPlatform),
     autoSelect: true,
+    autoImageSelect: process.env.AI_IMAGE_AUTO_SELECT !== "false",
     autoFallback: parseFallbackPlatforms(process.env.AI_FALLBACK_PROVIDERS).length > 0,
     fallbacks: parseFallbackPlatforms(process.env.AI_FALLBACK_PROVIDERS)
   },
@@ -567,8 +568,10 @@ function publicProviderSettings(role = "owner") {
       image: aiConfig.routes.image,
       speech: aiConfig.routes.speech,
       autoSelect: aiConfig.routes.autoSelect === true,
+      autoImageSelect: aiConfig.routes.autoImageSelect === true,
       autoFallback: aiConfig.routes.autoFallback === true
     },
+    imageRoutingReady: { image: imageRoutingProfiles(false).length > 0, imageEdit: imageRoutingProfiles(true).length > 0 },
     search: {
       provider: aiConfig.search.provider,
       providers: [
@@ -672,6 +675,8 @@ function normalizedAiConfig(value) {
   }
   next.routes.autoFallback = value?.routes?.autoFallback === true;
   next.routes.autoSelect = value?.routes?.autoSelect !== false;
+  next.routes.autoImageSelect = typeof value?.routes?.autoImageSelect === "boolean"
+    ? value.routes.autoImageSelect : process.env.AI_IMAGE_AUTO_SELECT !== "false" && next.routes.image === "openai";
   next.routes.fallbacks = [...new Set((Array.isArray(value?.routes?.fallbacks) ? value.routes.fallbacks : [])
     .map(id => String(id || "")).filter(id => next.profiles[id]?.capabilities?.text && id !== next.routes.text))];
   const searchProvider = String(value?.search?.provider || "").toLowerCase();
@@ -915,8 +920,77 @@ async function editWithAvailableImageModel(profile, source, prompt, preferred, o
   throw lastError;
 }
 
+function imageRoutingProfiles(editing = false) {
+  const selected = aiConfig.profiles[aiConfig.routes.image];
+  const automatic = aiConfig.routes.autoImageSelect === true;
+  return [selected, ...(automatic ? Object.values(aiConfig.profiles) : [])]
+    .filter((profile, index, profiles) => profile && profiles.findIndex(item => item?.id === profile.id) === index)
+    .filter(profile => profile.baseUrl && profile.capabilities?.image && (!editing || profile.capabilities.imageEdit)
+      && (profile.apiKey || profile.id === selected?.id && !profile.requiresKey && localProviderUrl(profile))
+      && (automatic || profile.imageModel));
+}
+
+async function routedImage(prompt, source, candidates, signal) {
+  const budget = imageRequestBudget(candidates[0], { signal });
+  const automatic = aiConfig.routes.autoImageSelect === true;
+  const failures = [];
+  let lastError;
+  for (let index = 0; index < candidates.length; index++) {
+    const profile = candidates[index];
+    const remaining = () => {
+      try { return budget.remaining(); }
+      catch (error) { error.provider = profile.id; throw error; }
+    };
+    // Leave time for later providers instead of giving a stalled first provider
+    // the entire operation deadline.
+    const attempt = automatic ? imageRequestBudget(profile, {
+      signal: budget.signal, timeout: Math.max(1, Math.floor(remaining() / (candidates.length - index)))
+    }) : budget;
+    try {
+      let model = profile.imageModel;
+      if (!model) {
+        const models = await listProfileImageModels(profile, {
+          timeout: Math.min(10000, attempt.remaining()), signal: attempt.signal, imageEdit: Boolean(source)
+        });
+        model = models.find(value => !/(preview|experimental|exp-)/i.test(value)) || models[0];
+        if (!model) throw Object.assign(new Error(`Nu există modele de imagini disponibile la ${profile.name}.`), { status: 503 });
+      }
+      const options = { signal: attempt.signal, timeout: attempt.remaining() };
+      const generated = source
+        ? await editWithAvailableImageModel(profile, source, prompt, model, options)
+        : await generateWithAvailableImageModel(profile, prompt, model, options);
+      const image = generated.result?.data?.[0];
+      if (!image?.b64_json && !image?.url) throw Object.assign(new Error("Serviciul nu a returnat o imagine."), { status: 502, failureKind: "invalid_response" });
+      const output = providerImageDataUrl(image);
+      attempt.remaining();
+      remaining();
+      return { ...output, model: generated.model, provider: profile.id, providerName: profile.name, ...(source ? { edited: true } : {}) };
+    } catch (error) {
+      remaining();
+      if (attempt.signal.aborted) error = Object.assign(new Error("Motorul de imagini nu a răspuns în timpul disponibil."), {
+        status: 504, failureKind: "timeout", provider: profile.id
+      });
+      error.provider ||= profile.id;
+      lastError = error;
+      failures.push({ provider: profile.id, name: profile.name, status: Number(error.status) || 502 });
+      // Authentication, invalid prompts and content-policy refusals need a direct
+      // correction; automatic recovery is limited to quota and availability.
+      const retryable = [402, 404, 408, 429].includes(Number(error.status))
+        || Number(error.status) >= 500 && Number(error.status) <= 599;
+      if (!automatic || !retryable) throw error;
+    }
+  }
+  if (lastError) { lastError.imageFailures = failures; throw lastError; }
+  throw Object.assign(new Error("Nu există un motor de imagini configurat."), { status: 503 });
+}
+
 function friendlyImageProviderError(error, profile, model) {
   const message = String(error?.message || "");
+  if (error.imageFailures?.length > 1) {
+    const detail = error.imageFailures.map(item => `${item.name}: ${[402, 429].includes(item.status) ? "cotă API" : item.status === 504 ? "timp expirat" : `HTTP ${item.status}`}`).join("; ");
+    return `Niciun motor de imagini încercat nu a putut răspunde. ${detail}.`;
+  }
+
   if ([401, 403].includes(Number(error?.status))) return `${profile.name} a respins cheia sau accesul la modelul de imagini. Verifică profilul din Motoare AI.`;
   if ([402, 429].includes(Number(error?.status))) return `${profile.name} nu are credit sau cotă API disponibilă pentru imagini. Verifică facturarea furnizorului sau alege altă rută de imagini.`;
   if (Number(error?.status) === 504) return `Generarea imaginii la ${profile.name} a depășit timpul disponibil. Încearcă din nou.`;
@@ -2007,10 +2081,15 @@ async function handle(req, res) {
 
     const requestedRoutes = body.routes && typeof body.routes === "object" && !Array.isArray(body.routes) ? body.routes : null;
     if (requestedRoutes) {
+      if (typeof requestedRoutes.autoImageSelect === "boolean") next.routes.autoImageSelect = requestedRoutes.autoImageSelect;
+      if (body.selectForImages === true) next.routes.autoImageSelect = false;
       for (const capability of ["text", "image", "speech"]) {
-        const id = aliases[String(capability === "text" && body.selectForChat === true ? providerId : requestedRoutes[capability] || "").trim().toLowerCase()] || String(capability === "text" && body.selectForChat === true ? providerId : requestedRoutes[capability] || "").trim().toLowerCase();
+        const selected = capability === "text" && body.selectForChat === true || capability === "image" && body.selectForImages === true;
+        const requested = String(selected ? providerId : requestedRoutes[capability] || "").trim().toLowerCase();
+        const id = aliases[requested] || requested;
         if (!next.profiles[id]?.capabilities?.[capability]) return json(res, 400, { error: `Ruta pentru ${capability} nu este compatibilă cu motorul ales.` });
-        if (!routeProfileConfigured(next.profiles[id], capability) && !(capability !== "text" && id === aiConfig.routes[capability])) {
+        if (!routeProfileConfigured(next.profiles[id], capability) && !(capability !== "text" && id === aiConfig.routes[capability])
+          && !(capability === "image" && next.routes.autoImageSelect && next.profiles[id].apiKey)) {
           const label = capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text";
           return json(res, 400, { error: `Motorul ${next.profiles[id].name} nu este configurat complet pentru ${label}.` });
         }
@@ -2022,6 +2101,11 @@ async function handle(req, res) {
       next.routes.text = providerId;
       if (routeProfileConfigured(updatedProfile, "image")) next.routes.image = providerId;
       if (routeProfileConfigured(updatedProfile, "speech")) next.routes.speech = providerId;
+    }
+    if (body.selectForImages === true) {
+      if (!routeProfileConfigured(updatedProfile, "image")) return json(res, 400, { error: "Configurează cheia și modelul pentru motorul de imagini ales." });
+      next.routes.image = providerId;
+      next.routes.autoImageSelect = false;
     }
     if (body.selectForChat === true) {
       if (!routeProfileConfigured(updatedProfile, "text")) return json(res, 400, { error: "Configurează cheia și modelul motorului ales pentru chat." });
@@ -2052,20 +2136,15 @@ async function handle(req, res) {
     let profile, imageModel;
     const lifecycle = aiRequestLifecycle(res);
     try {
-      profile = requireRouteProfile("image");
-      if (profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă generare de imagini compatibilă.`), { status: 503 });
+      profile = routeProfile("image");
+      const candidates = imageRoutingProfiles(false);
+      if (!candidates.length) throw Object.assign(new Error("Configurează o cheie și un motor de imagini în Motoare AI."), { status: 503 });
       const body = await readJson(req);
       const prompt = typeof body.prompt === "string" ? (account.role === "owner" ? body.prompt.trim() : body.prompt.trim().slice(0, 4000)) : "";
       if (!prompt) return json(res, 400, { error: "Descrie imaginea pe care vrei să o creezi." });
-      imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const generated = await generateWithAvailableImageModel(profile, prompt, imageModel, { signal: lifecycle.signal });
-      const result = generated.result; imageModel = generated.model;
-      const image = result.data?.[0];
-      if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat o imagine.");
-      const output = providerImageDataUrl(image);
-      return json(res, 200, { ...output, model: imageModel, provider: profile.id, providerName: profile.name });
-    } catch (error) { if (res.destroyed) return; return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Generarea imaginii a eșuat."), providerError: true }); }
+      return json(res, 200, await routedImage(prompt, null, candidates, lifecycle.signal));
+    } catch (error) { if (res.destroyed) return; profile = aiConfig.profiles[error.provider] || profile; return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Generarea imaginii a eșuat."), providerError: true }); }
     finally { lifecycle.dispose(); }
   }
 
@@ -2073,21 +2152,16 @@ async function handle(req, res) {
     let profile, imageModel;
     const lifecycle = aiRequestLifecycle(res);
     try {
-      profile = requireRouteProfile("image");
-      if (!profile.capabilities.imageEdit || profile.protocol !== "openai") throw Object.assign(new Error(`Motorul ${profile.name} nu oferă editare de imagini compatibilă.`), { status: 503 });
+      profile = routeProfile("image");
+      const candidates = imageRoutingProfiles(true);
+      if (!candidates.length) throw Object.assign(new Error("Configurează o cheie și un motor de imagini în Motoare AI."), { status: 503 });
       const body = await readJson(req, MAX_IMAGE_EDIT_BODY);
       const prompt = typeof body.prompt === "string" ? (account.role === "owner" ? body.prompt.trim() : body.prompt.trim().slice(0, 4000)) : "";
       if (!prompt) return json(res, 400, { error: "Descrie schimbarea pe care o dorești în fotografie." });
       const source = uploadedImage(body.image);
-      imageModel = await resolvedImageModel(profile);
       if (!await consumeAiQuota(req, res)) return;
-      const edited = await editWithAvailableImageModel(profile, source, prompt, imageModel, { signal: lifecycle.signal });
-      const result = edited.result; imageModel = edited.model;
-      const image = result.data?.[0];
-      if (!image?.b64_json && !image?.url) throw new Error("Serviciul nu a returnat imaginea modificată.");
-      const output = providerImageDataUrl(image);
-      return json(res, 200, { ...output, model: imageModel, provider: profile.id, providerName: profile.name, edited: true });
-    } catch (error) { if (res.destroyed) return; return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Modificarea imaginii a eșuat."), providerError: true }); }
+      return json(res, 200, await routedImage(prompt, source, candidates, lifecycle.signal));
+    } catch (error) { if (res.destroyed) return; profile = aiConfig.profiles[error.provider] || profile; return json(res, error.status || 502, { error: profile ? friendlyImageProviderError(error, profile, imageModel || profile.imageModel) : (error.message || "Modificarea imaginii a eșuat."), providerError: true }); }
     finally { lifecycle.dispose(); }
   }
 

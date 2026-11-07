@@ -39,11 +39,12 @@ test('the image catalog selects an available image model without changing the te
 
 test('use images saves only the intended image selection and restores the saved chat route',async()=>{
   const {context,el}=setup();
-  el('imageModel').value='gemini-fixture-image';let selected;
+  el('imageModel').value='gemini-fixture-image';el('autoImageSelect').checked=true;let selected;
   context.saveProviderSettings=async()=>{selected={image:el('routeImage').value,text:el('routeText').value,auto:el('autoSelectProvider').checked,fallback:el('autoFallback').checked,chatSelection:context.state.chatProviderSelection};};
   await context.useSelectedProviderForImages();
   assert.deepEqual(selected,{image:'gemini',text:'openai',auto:true,fallback:true,chatSelection:null});
   assert.equal(context.state.imageProviderSelection,'gemini');
+  assert.equal(el('autoImageSelect').checked,false);
 });
 
 test('image model discovery never overwrites a model typed during the request or another selected profile',async()=>{

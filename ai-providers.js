@@ -601,7 +601,8 @@ async function listProfileImageModels(profileInput, options = {}) {
   if (profile.id === "openrouter") {
     const payload = await openAiCompatibleJson(profile, "/images/models", request);
     if (!Array.isArray(payload.data)) throw providerError("OpenRouter nu a returnat un catalog de imagini valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
-    return uniqueModelIds(payload.data.filter(item => !Array.isArray(item?.architecture?.output_modalities) || item.architecture.output_modalities.includes("image")), ["id"]);
+    return uniqueModelIds(payload.data.filter(item => (!Array.isArray(item?.architecture?.output_modalities) || item.architecture.output_modalities.includes("image"))
+      && (!options.imageEdit || !Array.isArray(item?.architecture?.input_modalities) || item.architecture.input_modalities.includes("image"))), ["id"]);
   }
   return (await listProfileModels(profile, { ...request, fallback: false })).filter(model => /(gpt-image|dall-?e|imagen|flux|stable[-_. ]?diffusion|image[-_. ]?(?:gen|generation))/i.test(model));
 }

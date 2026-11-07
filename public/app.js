@@ -237,6 +237,13 @@ function routeProfile(capability) {
 
 function routeSupports(capability) {
   const profiles = providerProfiles();
+  if (["image", "imageEdit"].includes(capability) && state.settings?.routes?.autoImageSelect === true) {
+    const ready = state.settings.imageRoutingReady?.[capability];
+    if (typeof ready === "boolean") return ready;
+    return profiles.some(profile => profile.capabilities?.[capability] && profile.apiKeyConfigured
+      && (profile.ready?.image || ["gemini", "openrouter"].includes(profile.id)));
+  }
+
   if (!profiles.length) return true;
   const profile = routeProfile(capability);
   if (!profile) return false;
@@ -392,7 +399,11 @@ function renderRouteOptions(selectId, capability, selectedProviderId) {
     return provider.capabilities[capability] === true;
   });
   select.replaceChildren();
-  capable.forEach(provider => select.add(new Option(`${providerLabel(provider)}${(provider.ready?.[capability] ?? provider.configured) ? "" : " · neconfigurat"}`, provider.id)));
+  capable.forEach(provider => {
+    const ready = provider.ready?.[capability] ?? provider.configured;
+    const discover = capability === "image" && state.settings?.routes?.autoImageSelect === true && provider.apiKeyConfigured;
+    select.add(new Option(`${providerLabel(provider)}${ready ? "" : discover ? " · model automat" : " · neconfigurat"}`, provider.id));
+  });
   if (!capable.length) select.add(new Option("Nicio rută disponibilă", ""));
   if (capable.some(provider => provider.id === selectedProviderId)) select.value = selectedProviderId;
 }
@@ -404,6 +415,7 @@ function renderRoutes(settings) {
   renderRouteOptions("routeSpeech", "speech", routes.speech);
   el("autoSelectProvider").checked = routes.autoSelect !== false;
   el("autoFallback").checked = routes.autoFallback === true;
+  el("autoImageSelect").checked = routes.autoImageSelect !== false;
 }
 
 function searchProfiles(settings = state.settings) {
@@ -599,6 +611,7 @@ async function useSelectedProviderForImages() {
   }
   state.chatProviderSelection = null;
   state.imageProviderSelection = id;
+  el("autoImageSelect").checked = false;
   el("routeImage").value = id;
   await saveProviderSettings();
 }
@@ -635,6 +648,7 @@ async function saveProviderSettings() {
   const selectForChat = state.chatProviderSelection === el("providerSelect").value;
   const settings = {
     selectForChat,
+    selectForImages: state.imageProviderSelection === el("providerSelect").value,
     providerId: el("providerSelect").value,
     baseUrl: el("apiBaseUrl").value.trim(),
     apiKey: el("apiKey").value,
@@ -648,6 +662,7 @@ async function saveProviderSettings() {
       image: el("routeImage").value,
       speech: el("routeSpeech").value,
       autoSelect: el("autoSelectProvider").checked,
+      autoImageSelect: el("autoImageSelect").checked,
       autoFallback: el("autoFallback").checked
     },
     search: {
@@ -663,7 +678,7 @@ async function saveProviderSettings() {
   }
   const result = await api("/api/settings", jsonBody(settings));
   if (selectForChat && (result.settings?.routes?.text !== settings.providerId || result.settings.routes.autoSelect || result.settings.routes.autoFallback)) throw new Error("Motorul ales nu a fost confirmat de server. Setările au rămas deschise.");
-  if (state.imageProviderSelection && result.settings?.routes?.image !== state.imageProviderSelection) throw new Error("Ruta de imagini nu a fost confirmată de server.");
+  if (state.imageProviderSelection && (result.settings?.routes?.image !== state.imageProviderSelection || result.settings?.routes?.autoImageSelect === true)) throw new Error("Ruta de imagini nu a fost confirmată de server.");
   state.imageProviderSelection = null;
   state.chatProviderSelection = null;
   state.settings = result.settings; el("apiKey").value = ""; el("searchApiKey").value = "";
@@ -1677,10 +1692,10 @@ el("searchProvider").addEventListener("change", event => {
 });
 el("providerFields").addEventListener("input", () => { providerDraftDirty = true; });
 el("providerFields").addEventListener("change", () => { providerDraftDirty = true; });
-["routeText", "routeImage", "routeSpeech", "autoSelectProvider", "autoFallback"].forEach(id => {
+["routeText", "routeImage", "routeSpeech", "autoSelectProvider", "autoImageSelect", "autoFallback"].forEach(id => {
   el(id).addEventListener("change", () => {
     providerDraftDirty = true;
-    if (id === "routeImage") state.imageProviderSelection = null;
+    if (id === "routeImage") { state.imageProviderSelection = null; el("autoImageSelect").checked = false; }
     if (["routeText", "autoSelectProvider", "autoFallback"].includes(id)) state.chatProviderSelection = null;
   });
 });

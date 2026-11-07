@@ -589,6 +589,8 @@ body {background:#080b13;}
         <div class="provider-section-head"><div><h3 id="routesTitle">Rute pe capabilități</h3><p>Poți folosi motoare diferite pentru text, imagini și voce.</p></div></div>
         <div class="provider-row"><div><label for="routeText">Text și programare</label><select id="routeText"></select></div><div><label for="routeImage">Imagini</label><select id="routeImage"></select></div></div>
         <div class="provider-row"><div><label for="routeSpeech">Voce</label><select id="routeSpeech"></select></div><div></div></div>
+        <label class="provider-clear"><input type="checkbox" id="autoImageSelect"> Recuperează automat imaginile cu alte motoare configurate</label>
+        <div class="provider-note">Dacă ruta de imagini refuză cererea din cauza cotei sau a indisponibilității, Nova încearcă celelalte motoare cu cheie salvată. Dacă modelul de imagini lipsește, îl caută în catalog. Descrierea și fotografia pot fi trimise altui furnizor, care poate factura separat. Rezultatul arată motorul și modelul folosite. Alegerea explicită a unui motor pentru imagini dezactivează acest mod.</div>
         <label class="provider-clear"><input type="checkbox" id="autoSelectProvider"> Folosește automat toate motoarele de text configurate, pe rând</label>
         <div class="provider-note">În modul automat, conversațiile sunt distribuite între furnizorii care au cheie și model. Dacă un motor atinge cota API, conexiunea expiră sau serviciul returnează 502, 503 ori 504, Nova încearcă celelalte motoare din acest grup, câte o dată. Același lucru se aplică întreruperilor de rețea. Răspunsul arată furnizorul și modelul folosite; fiecare furnizor poate factura separat.</div>
         <label class="provider-clear"><input type="checkbox" id="autoFallback"> Folosește automat un motor de rezervă compatibil când ruta principală nu este disponibilă</label>
@@ -666,7 +668,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=2.7.4-gemini-openrouter-images"></script>
+  <script src="./app.js?v=2.7.4-image-auto-recovery"></script>
 </body>
 </html>
 

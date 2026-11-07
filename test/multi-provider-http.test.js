@@ -131,7 +131,7 @@ test('multi-provider routing keeps secrets server-side, constrains subscribers a
   for (const secret of ['custom-secret-not-real', 'openai-secret-not-real', 'gemini-secret-not-real']) {
     assert.doesNotMatch(serializedSettings, new RegExp(secret));
   }
-  assert.deepEqual(ownerSettings.settings.routes, { text: 'custom', image: 'openai', speech: 'openai', autoSelect: false, autoFallback: true });
+  assert.deepEqual(ownerSettings.settings.routes, { text: 'custom', image: 'openai', speech: 'openai', autoSelect: false, autoImageSelect: true, autoFallback: true });
   assert.equal(ownerSettings.settings.providers.find(provider => provider.id === 'custom').apiKeyConfigured, true);
 
   const ownerHealth = await (await fetch(base + '/api/health', { headers: { cookie: ownerCookie } })).json();
