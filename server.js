@@ -2150,7 +2150,7 @@ async function handle(req, res) {
   });
   if (req.method === "GET" && url.pathname === "/api/restaurants/discover") return restaurantResponse(res, async () => {
     restaurantRate(req, "discover", 30);
-    return restaurants.discover({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon"), q: url.searchParams.get("q") || "" });
+    return restaurants.discover({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon"), q: url.searchParams.get("q") || "", radiusKm: url.searchParams.get("radiusKm") || "5" });
   });
   if (req.method === "GET" && url.pathname === "/api/restaurants/search") return restaurantResponse(res, async () => {
     restaurantRate(req, "search", 120);
