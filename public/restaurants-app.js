@@ -19,7 +19,7 @@
     status('search-status', 'Căutăm restaurante în apropiere…');
     try {
       const query = el('food-query').value.trim();
-      const data = await api('/api/restaurants/discover?' + new URLSearchParams({ ...location, q: query }));
+      const data = await api('/api/restaurants/discover?' + new URLSearchParams({ ...location, q: query, radiusKm: el('search-radius').value }));
       if (token !== revision) return;
       point = location; locationLabel = label; restaurants = data.restaurants;
       el('selected-address').textContent = label;
@@ -28,6 +28,7 @@
       renderRestaurants();
     } catch (error) { if (token === revision) status('search-status', error.message, true); }
   }
+  el('search-radius').addEventListener('change', () => { if (point) { const previous = point, label = locationLabel; invalidate(); discover(previous, label, revision); } });
   el('food-form').addEventListener('submit', event => {
     event.preventDefault();
     if (point) { const previous = point, label = locationLabel; invalidate(); discover(previous, label, revision); }
@@ -89,6 +90,13 @@
           if (!['http:', 'https:'].includes(parsed.protocol)) continue;
           const link = node('a', label, 'external-place-link'); link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; body.append(link);
         }
+        const invite = node('button', 'Pregătește cerere de ofertă'); invite.type = 'button';
+        invite.addEventListener('click', async () => {
+          const message = `Bună ziua, echipa ${restaurant.name}!\n\nVă invităm să analizați o colaborare cu Poftigo: vizibilitate în căutările locale și posibilitatea de a primi comenzi online după înscrierea și aprobarea restaurantului. Comisionul propus este de 10% brut din comenzile plătite prin Poftigo; taxele Stripe se aplică separat.\n\nPentru a vedea condițiile și a vă înscrie voluntar: https://www.nova-ai-studio.eu/restaurants/manage\n\nVă rugăm să confirmați dacă doriți să primiți o ofertă detaliată. Aceasta este o invitație, nu o înscriere automată.`;
+          try { await navigator.clipboard.writeText(message); invite.textContent = 'Cerere copiată · trimite-o restaurantului'; }
+          catch { window.prompt('Copiază cererea și trimite-o printr-un canal oficial al restaurantului:', message); }
+        });
+        body.append(invite);
         card.append(body); list.append(card); continue;
       }
       body.append(node('p', `${restaurant.distanceKm} km · ${restaurant.menu.length} preparate · EUR · Comandă prin Poftigo`));
