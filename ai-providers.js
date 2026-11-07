@@ -19,6 +19,7 @@ function deepFreeze(value) {
 }
 
 const TEXT_ONLY = { text: true, image: false, imageEdit: false, speech: false };
+const IMAGE_MEDIA = { text: true, image: true, imageEdit: true, speech: false };
 const ALL_MEDIA = { text: true, image: true, imageEdit: true, speech: true };
 
 const PLATFORM_PRESETS = deepFreeze({
@@ -30,7 +31,7 @@ const PLATFORM_PRESETS = deepFreeze({
   gemini: {
     id: "gemini", name: "Google Gemini", protocol: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     textModel: "gemini-2.5-flash", imageModel: "", speechModel: "", voice: "",
-    capabilities: TEXT_ONLY, requiresKey: true, outputTokenField: "max_tokens"
+    capabilities: IMAGE_MEDIA, requiresKey: true, outputTokenField: "max_tokens"
   },
   anthropic: {
     id: "anthropic", name: "Anthropic", protocol: "anthropic", baseUrl: "https://api.anthropic.com/v1",
@@ -40,7 +41,7 @@ const PLATFORM_PRESETS = deepFreeze({
   openrouter: {
     id: "openrouter", name: "OpenRouter", protocol: "openai", baseUrl: "https://openrouter.ai/api/v1",
     textModel: "openai/gpt-4.1-mini", imageModel: "", speechModel: "", voice: "",
-    capabilities: TEXT_ONLY, requiresKey: true, outputTokenField: "max_tokens"
+    capabilities: IMAGE_MEDIA, requiresKey: true, outputTokenField: "max_tokens"
   },
   groq: {
     id: "groq", name: "Groq", protocol: "openai", baseUrl: "https://api.groq.com/openai/v1",
@@ -92,9 +93,9 @@ const PLATFORM_ALIASES = deepFreeze({
 
 const ENVIRONMENT_FIELDS = deepFreeze({
   openai: { apiKey: ["OPENAI_API_KEY"], textModel: ["OPENAI_MODEL"], imageModel: ["OPENAI_IMAGE_MODEL"], speechModel: ["OPENAI_SPEECH_MODEL"], voice: ["OPENAI_VOICE"] },
-  gemini: { apiKey: ["GEMINI_API_KEY", "GOOGLE_GEMINI_API_KEY", "GOOGLE_API_KEY"], textModel: ["GEMINI_MODEL", "GOOGLE_GEMINI_MODEL"] },
+  gemini: { apiKey: ["GEMINI_API_KEY", "GOOGLE_GEMINI_API_KEY", "GOOGLE_API_KEY"], textModel: ["GEMINI_MODEL", "GOOGLE_GEMINI_MODEL"], imageModel: ["GEMINI_IMAGE_MODEL"] },
   anthropic: { apiKey: ["ANTHROPIC_API_KEY"], textModel: ["ANTHROPIC_MODEL"] },
-  openrouter: { apiKey: ["OPENROUTER_API_KEY"], textModel: ["OPENROUTER_MODEL"] },
+  openrouter: { apiKey: ["OPENROUTER_API_KEY"], textModel: ["OPENROUTER_MODEL"], imageModel: ["OPENROUTER_IMAGE_MODEL"] },
   groq: { apiKey: ["GROQ_API_KEY"], textModel: ["GROQ_MODEL"] },
   mistral: { apiKey: ["MISTRAL_API_KEY"], textModel: ["MISTRAL_MODEL"] },
   deepseek: { apiKey: ["DEEPSEEK_API_KEY"], textModel: ["DEEPSEEK_MODEL"] },
@@ -210,7 +211,7 @@ function sanitizeProfileUpdate(update, currentProfile = {}) {
     baseUrl,
     apiKey,
     textModel: normalizedProviderModelId(id, cleanField(valueFromUpdate(update, current, "textModel", preset.textModel, ["model"]), "textModel", 240)),
-    imageModel: cleanField(valueFromUpdate(update, current, "imageModel", preset.imageModel), "imageModel", 240),
+    imageModel: normalizedProviderModelId(id, cleanField(valueFromUpdate(update, current, "imageModel", preset.imageModel), "imageModel", 240)),
     speechModel: cleanField(valueFromUpdate(update, current, "speechModel", preset.speechModel), "speechModel", 240),
     voice: cleanField(valueFromUpdate(update, current, "voice", preset.voice), "voice", 80),
     capabilities: { ...preset.capabilities },
@@ -283,7 +284,7 @@ function safeExtraHeaders(headers) {
   const entries = headers instanceof Headers ? headers.entries() : Object.entries(headers);
   for (const [rawName, rawValue] of entries) {
     const name = String(rawName).trim().toLowerCase();
-    if (!/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name) || ["authorization", "proxy-authorization", "x-api-key", "host", "cookie", "set-cookie"].includes(name)) {
+    if (!/^[a-z0-9!#$%&'*+.^_`|~-]+$/.test(name) || ["authorization", "proxy-authorization", "x-api-key", "x-goog-api-key", "host", "cookie", "set-cookie"].includes(name)) {
       throw providerError("Un antet rezervat nu poate fi suprascris.", 400);
     }
     result[name] = cleanField(String(rawValue), `header ${name}`, 2000);
@@ -291,9 +292,10 @@ function safeExtraHeaders(headers) {
   return result;
 }
 
-function authHeaders(profile) {
+function authHeaders(profile, geminiNative = false) {
   if (profile.requiresKey && !profile.apiKey) throw providerError(`Cheia API pentru ${profile.name} lipsește.`, 400, { provider: profile.id });
   if (!profile.apiKey) return {};
+  if (geminiNative && profile.id === "gemini") return { "x-goog-api-key": profile.apiKey };
   if (profile.protocol === "anthropic") return { "x-api-key": profile.apiKey, "anthropic-version": ANTHROPIC_VERSION };
   return { authorization: `Bearer ${profile.apiKey}` };
 }
@@ -353,9 +355,11 @@ async function performRequest(profileInput, route, options = {}, fallbackTimeout
   const headers = {
     ...safeExtraHeaders(options.headers),
     ...(options.contentType ? { "content-type": options.contentType } : {}),
-    ...authHeaders(profile)
+    ...authHeaders(profile, options.geminiNative === true)
   };
-  const url = requestUrl(profile, route);
+  const target = profile.id === "gemini" && options.geminiNative === true
+    ? { ...profile, baseUrl: "https://generativelanguage.googleapis.com/v1beta" } : profile;
+  const url = requestUrl(target, route);
   let response;
   try {
     response = await fetchImpl(url, {
@@ -521,10 +525,85 @@ async function listProfileModels(profileInput, options = {}) {
   } else {
     payload = await openAiCompatibleJson(profile, "/models", { ...requestOptions, method: "GET", timeout: requestOptions.timeout || MODEL_LIST_TIMEOUT });
     if (!Array.isArray(payload.data)) throw providerError("Furnizorul nu a returnat un catalog de modele valid.", 502, { provider: profile.id });
-    items = uniqueModelIds(payload.data, ["id", "model", "name"]);
+    const entries = profile.id === "openrouter" ? payload.data.filter(item =>
+      !Array.isArray(item?.architecture?.output_modalities) || item.architecture.output_modalities.includes("text")) : payload.data;
+    items = uniqueModelIds(entries, ["id", "model", "name"]);
   }
   if (!items.length && requestOptions.fallback !== false && profile.textModel) return [profile.textModel];
   return [...new Set(items.map(item => normalizedProviderModelId(profile.id, item)).filter(Boolean))];
+}
+
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+function normalizedImageOutput(profile, base64, mime = "image/png") {
+  if (!IMAGE_MIMES.has(mime) || typeof base64 !== "string" || !base64
+    || base64.length > 32 * 1024 * 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    throw providerError("Motorul a returnat date de imagine invalide sau un format neacceptat.", 502, { provider: profile.id, failureKind: "invalid_response" });
+  }
+  return { b64_json: base64, output_format: mime.slice(6) };
+}
+
+async function generateProfileImage(profileInput, prompt, options = {}) {
+  const profile = sanitizeProfileUpdate(profileInput);
+  if (!["gemini", "openrouter"].includes(profile.id)) throw providerError("Motorul nu folosește această integrare de imagini.", 400, { provider: profile.id });
+  if (!profile.apiKey) throw providerError(`Cheia API pentru ${profile.name} lipsește.`, 400, { provider: profile.id });
+  const model = normalizedProviderModelId(profile.id, cleanField(options.model || profile.imageModel, "imageModel", 240, { allowEmpty: false }));
+  const text = cleanField(prompt, "prompt", Infinity, { allowEmpty: false });
+  const source = options.image == null ? null : imageBytes(options.image);
+  const request = { method: "POST", timeout: options.timeout || 300000, signal: options.signal, fetchImpl: options.fetchImpl };
+  if (profile.id === "openrouter") {
+    const payload = await openAiCompatibleJson(profile, "/images", { ...request, json: {
+      model, prompt: text, n: 1,
+      ...(source ? { input_references: [{ type: "image_url", image_url: { url: `data:${source.mime};base64,${Buffer.from(source.bytes).toString("base64")}` } }] } : {})
+    } });
+    const image = payload.data?.[0];
+    if (!image?.b64_json) throw providerError("Modelul OpenRouter nu a returnat o imagine. Alege un model de generare a imaginilor.", 502, { provider: profile.id, failureKind: "invalid_response" });
+    return { data: [normalizedImageOutput(profile, image.b64_json, image.media_type || "image/png")] };
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(model)) throw providerError("Identificatorul modelului Gemini pentru imagini este invalid.", 400, { provider: profile.id });
+  const payload = await jsonRequest(profile, `/models/${encodeURIComponent(model)}:generateContent`, {
+    ...request, geminiNative: true, contentType: "application/json", body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text }, ...(source ? [{ inlineData: { mimeType: source.mime, data: Buffer.from(source.bytes).toString("base64") } }] : [])] }],
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+    })
+  });
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+  const parts = candidates.flatMap(candidate => Array.isArray(candidate?.content?.parts) ? candidate.content.parts : []);
+  const image = parts.find(part => part?.thought !== true && (part?.inlineData?.data || part?.inline_data?.data));
+  if (!image) {
+    const blocked = payload.promptFeedback?.blockReason || candidates.some(candidate => /SAFETY|PROHIBITED|BLOCKLIST|RECITATION/.test(candidate?.finishReason || ""));
+    throw providerError(blocked ? "Gemini a refuzat generarea acestei imagini. Reformulează descrierea." : "Modelul Gemini nu a returnat o imagine. Alege un model Gemini cu generare de imagini.",
+      blocked ? 422 : 502, { provider: profile.id, failureKind: blocked ? "content_filter" : "invalid_response" });
+  }
+  const inline = image.inlineData || image.inline_data;
+  return { data: [normalizedImageOutput(profile, inline.data, inline.mimeType || inline.mime_type || "image/png")] };
+}
+
+async function listProfileImageModels(profileInput, options = {}) {
+  const profile = sanitizeProfileUpdate(profileInput);
+  if (!profile.capabilities.image) return [];
+  const request = { ...normalizedRequestOptions(options), method: "GET", timeout: options.timeout || MODEL_LIST_TIMEOUT };
+  if (profile.id === "gemini") {
+    const signal = combineSignal(options.signal, request.timeout), models = [], tokens = new Set();
+    let token = "";
+    do {
+      signal.throwIfAborted();
+      const payload = await jsonRequest(profile, `/models?pageSize=1000${token ? `&pageToken=${encodeURIComponent(token)}` : ""}`, { ...request, signal, geminiNative: true });
+      if (!Array.isArray(payload.models)) throw providerError("Gemini nu a returnat un catalog de modele valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
+      models.push(...uniqueModelIds(payload.models.filter(item => /^models\/gemini-.*image/i.test(item?.name || "")
+        && (!Array.isArray(item.supportedGenerationMethods) || item.supportedGenerationMethods.includes("generateContent"))), ["name"]));
+      token = typeof payload.nextPageToken === "string" ? payload.nextPageToken : "";
+      if (token && tokens.has(token)) throw providerError("Catalogul Gemini a repetat pagina de modele.", 502, { provider: profile.id, failureKind: "invalid_response" });
+      tokens.add(token);
+    } while (token);
+    return [...new Set(models.map(model => normalizedProviderModelId(profile.id, model)))];
+  }
+  if (profile.id === "openrouter") {
+    const payload = await openAiCompatibleJson(profile, "/images/models", request);
+    if (!Array.isArray(payload.data)) throw providerError("OpenRouter nu a returnat un catalog de imagini valid.", 502, { provider: profile.id, failureKind: "invalid_response" });
+    return uniqueModelIds(payload.data.filter(item => !Array.isArray(item?.architecture?.output_modalities) || item.architecture.output_modalities.includes("image")), ["id"]);
+  }
+  return (await listProfileModels(profile, { ...request, fallback: false })).filter(model => /(gpt-image|dall-?e|imagen|flux|stable[-_. ]?diffusion|image[-_. ]?(?:gen|generation))/i.test(model));
 }
 
 function requestedModel(profile, model) {
@@ -818,6 +897,8 @@ module.exports = {
   validateAndSanitizeProfileUpdate: sanitizeProfileUpdate,
   isProfileConfigured,
   listProfileModels,
+  listProfileImageModels,
+  generateProfileImage,
   chatWithProfile,
   openAiCompatibleJson,
   openAiCompatibleBytes,

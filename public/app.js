@@ -342,6 +342,17 @@ function renderProviderProfile(providerId) {
   el("apiBaseUrl").readOnly = !["custom", "ollama"].includes(profile.id);
   el("textModel").value = profile.textModel || "";
   el("imageModel").value = profile.imageModel || "";
+  state.imageCatalogRevision = (state.imageCatalogRevision || 0) + 1;
+  state.imageCatalogModels = [];
+  state.imageProviderSelection = null;
+  el("providerImageModelCatalog").replaceChildren(new Option("Încarcă modelele de imagini", ""));
+  el("providerImageModelCatalog").disabled = true;
+  el("loadProviderImageModels").disabled = !profile.capabilities?.image;
+  el("useProviderForImages").disabled = !profile.capabilities?.image;
+  el("providerImageModelsStatus").textContent = profile.capabilities?.image
+    ? "Textul și imaginile folosesc modele separate. Încarcă modelele de imagini, apoi salvează ruta."
+    : "Acest motor nu are integrare pentru generarea imaginilor.";
+
   el("speechModel").value = profile.speechModel || "";
   el("voiceSelect").value = profile.voice || "";
   el("apiKey").value = "";
@@ -381,7 +392,7 @@ function renderRouteOptions(selectId, capability, selectedProviderId) {
     return provider.capabilities[capability] === true;
   });
   select.replaceChildren();
-  capable.forEach(provider => select.add(new Option(`${providerLabel(provider)}${provider.configured ? "" : " · neconfigurat"}`, provider.id)));
+  capable.forEach(provider => select.add(new Option(`${providerLabel(provider)}${(provider.ready?.[capability] ?? provider.configured) ? "" : " · neconfigurat"}`, provider.id)));
   if (!capable.length) select.add(new Option("Nicio rută disponibilă", ""));
   if (capable.some(provider => provider.id === selectedProviderId)) select.value = selectedProviderId;
 }
@@ -541,6 +552,57 @@ function chooseProviderModel() {
   el("providerModelsStatus").textContent = "Model selectat. Salvează profilul pentru a-l folosi.";
 }
 
+async function loadSavedProviderImageModels() {
+  if (state.account?.role !== "owner") return;
+  const profile = providerProfile(editingProviderId);
+  const button = el("loadProviderImageModels"), notice = el("providerImageModelsStatus"), select = el("providerImageModelCatalog");
+  if (!profile?.capabilities?.image || button.disabled) return;
+  if (el("apiKey").value.trim() || el("clearApiKey").checked || el("apiBaseUrl").value.trim() !== profile.baseUrl) {
+    notice.textContent = "Salvează mai întâi cheia și adresa API. Catalogul folosește cheia salvată pe server."; return;
+  }
+  const providerId = profile.id, draft = el("imageModel").value;
+  const revision = state.imageCatalogRevision = (state.imageCatalogRevision || 0) + 1;
+  button.disabled = true; notice.textContent = "Se încarcă modelele de imagini…";
+  try {
+    const data = await api(`/api/ai/models?provider=${encodeURIComponent(providerId)}&capability=image`);
+    if (revision !== state.imageCatalogRevision || providerId !== editingProviderId) return;
+    state.imageCatalogModels = [...new Set((Array.isArray(data.models) ? data.models : []).filter(model => typeof model === "string" && model))];
+    select.replaceChildren(new Option("Alege un model de imagini", ""));
+    state.imageCatalogModels.forEach(model => select.add(new Option(model, model)));
+    select.disabled = !state.imageCatalogModels.length;
+    if (!draft.trim() && el("imageModel").value === draft && state.imageCatalogModels.includes(data.recommendedModel)) {
+      el("imageModel").value = data.recommendedModel; providerDraftDirty = true;
+    }
+    select.value = state.imageCatalogModels.includes(el("imageModel").value) ? el("imageModel").value : "";
+    notice.textContent = state.imageCatalogModels.length
+      ? `${state.imageCatalogModels.length} modele de imagini disponibile. Apasă „Folosește acest motor pentru imagini” pentru a salva ruta. Pentru editare, modelul trebuie să accepte și fotografii de intrare.`
+      : "Furnizorul nu a returnat modele de generare a imaginilor. Modelul introdus a fost păstrat.";
+  } catch (error) { if (revision === state.imageCatalogRevision) notice.textContent = `Catalogul de imagini nu a putut fi încărcat: ${error.message}`; }
+  finally { if (revision === state.imageCatalogRevision) button.disabled = false; }
+}
+
+function chooseProviderImageModel() {
+  const model = el("providerImageModelCatalog").value;
+  if (!state.imageCatalogModels?.includes(model)) return;
+  el("imageModel").value = model; providerDraftDirty = true;
+}
+
+async function useSelectedProviderForImages() {
+  const id = el("providerSelect").value;
+  if (!providerProfile(id)?.capabilities?.image) throw new Error("Motorul ales nu acceptă imagini în Nova.");
+  if (!el("imageModel").value.trim()) throw new Error("Încarcă și alege un model de imagini înainte de a salva ruta.");
+  const saved = state.settings?.routes;
+  if (saved) {
+    el("routeText").value = saved.text;
+    el("autoSelectProvider").checked = saved.autoSelect;
+    el("autoFallback").checked = saved.autoFallback;
+  }
+  state.chatProviderSelection = null;
+  state.imageProviderSelection = id;
+  el("routeImage").value = id;
+  await saveProviderSettings();
+}
+
 async function testWebConnection() {
   const button = el("testWebConnection"), status = el("webConnectionStatus");
   if (searchDraftDirty || el("searchProvider").value !== state.settings?.search?.provider) {
@@ -601,6 +663,8 @@ async function saveProviderSettings() {
   }
   const result = await api("/api/settings", jsonBody(settings));
   if (selectForChat && (result.settings?.routes?.text !== settings.providerId || result.settings.routes.autoSelect || result.settings.routes.autoFallback)) throw new Error("Motorul ales nu a fost confirmat de server. Setările au rămas deschise.");
+  if (state.imageProviderSelection && result.settings?.routes?.image !== state.imageProviderSelection) throw new Error("Ruta de imagini nu a fost confirmată de server.");
+  state.imageProviderSelection = null;
   state.chatProviderSelection = null;
   state.settings = result.settings; el("apiKey").value = ""; el("searchApiKey").value = "";
   providerDraftDirty = false; searchDraftDirty = false;
@@ -1616,6 +1680,7 @@ el("providerFields").addEventListener("change", () => { providerDraftDirty = tru
 ["routeText", "routeImage", "routeSpeech", "autoSelectProvider", "autoFallback"].forEach(id => {
   el(id).addEventListener("change", () => {
     providerDraftDirty = true;
+    if (id === "routeImage") state.imageProviderSelection = null;
     if (["routeText", "autoSelectProvider", "autoFallback"].includes(id)) state.chatProviderSelection = null;
   });
 });
@@ -1633,6 +1698,10 @@ el("runProviderDiagnostics").addEventListener("click", runProviderDiagnostics);
 el("copyProviderReport").addEventListener("click", copyProviderReport);
 el("loadProviderModels").addEventListener("click", loadSavedProviderModels);
 el("providerModelCatalog").addEventListener("change", chooseProviderModel);
+el("loadProviderImageModels").addEventListener("click", loadSavedProviderImageModels);
+el("providerImageModelCatalog").addEventListener("change", chooseProviderImageModel);
+el("useProviderForImages").addEventListener("click", () => useSelectedProviderForImages().catch(error => toast(error.message)));
+
 el("providerForm").addEventListener("submit", event => {
   event.preventDefault();
   if (event.submitter?.value === "cancel") {

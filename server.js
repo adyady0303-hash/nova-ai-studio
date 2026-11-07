@@ -16,6 +16,8 @@ const {
   sanitizeProfileUpdate,
   isProfileConfigured,
   listProfileModels,
+  listProfileImageModels,
+  generateProfileImage,
   chatWithProfile,
   openAiCompatibleJson,
   openAiCompatibleBytes,
@@ -57,9 +59,9 @@ function parseFallbackPlatforms(value) {
 }
 
 function firstMediaPlatform(capability, preferred) {
-  for (const id of [preferred, "openai", "custom"]) {
+  for (const id of [preferred, "openai", "gemini", "openrouter", "custom"]) {
     const profile = environmentProfileMap[id];
-    if (profile?.capabilities?.[capability] && isProfileConfigured(profile)) return id;
+    if (routeProfileConfigured(profile, capability)) return id;
   }
   return "openai";
 }
@@ -849,7 +851,7 @@ function missingImageModel(error) {
 }
 
 function openAiImageCandidates(profile, preferred, { editing = false } = {}) {
-  if (profile.id !== "openai" && !/^gpt-image-/i.test(preferred || "")) return [preferred];
+  if (["gemini", "openrouter"].includes(profile.id) || profile.id !== "openai" && !/^gpt-image-/i.test(preferred || "")) return [preferred];
   const fallbacks = editing ? ["gpt-image-1.5", "gpt-image-1"] : ["gpt-image-1.5", "gpt-image-1", "dall-e-3"];
   return [...new Set([preferred, ...fallbacks].filter(Boolean))];
 }
@@ -877,10 +879,12 @@ async function generateWithAvailableImageModel(profile, prompt, preferred, optio
   let lastError;
   for (const model of openAiImageCandidates(profile, preferred)) {
     try {
-      const result = await openAiCompatibleJson(profile, "/images/generations", {
-        method: "POST", json: { model, prompt, ...imageGenerationOptions(model) },
-        timeout: budget.remaining(), signal: budget.signal
-      });
+      const result = ["gemini", "openrouter"].includes(profile.id)
+        ? await generateProfileImage(profile, prompt, { model, timeout: budget.remaining(), signal: budget.signal })
+        : await openAiCompatibleJson(profile, "/images/generations", {
+          method: "POST", json: { model, prompt, ...imageGenerationOptions(model) },
+          timeout: budget.remaining(), signal: budget.signal
+        });
       budget.remaining();
       return { result, model };
     } catch (error) {
@@ -897,7 +901,9 @@ async function editWithAvailableImageModel(profile, source, prompt, preferred, o
   let lastError;
   for (const model of openAiImageCandidates(profile, preferred, { editing: true })) {
     try {
-      const result = await openAiCompatibleImageEdit(profile, source, prompt, { model, timeout: budget.remaining(), signal: budget.signal });
+      const result = ["gemini", "openrouter"].includes(profile.id)
+        ? await generateProfileImage(profile, prompt, { model, image: source, timeout: budget.remaining(), signal: budget.signal })
+        : await openAiCompatibleImageEdit(profile, source, prompt, { model, timeout: budget.remaining(), signal: budget.signal });
       budget.remaining();
       return { result, model };
     } catch (error) {
@@ -911,6 +917,10 @@ async function editWithAvailableImageModel(profile, source, prompt, preferred, o
 
 function friendlyImageProviderError(error, profile, model) {
   const message = String(error?.message || "");
+  if ([401, 403].includes(Number(error?.status))) return `${profile.name} a respins cheia sau accesul la modelul de imagini. Verifică profilul din Motoare AI.`;
+  if ([402, 429].includes(Number(error?.status))) return `${profile.name} nu are credit sau cotă API disponibilă pentru imagini. Verifică facturarea furnizorului sau alege altă rută de imagini.`;
+  if (Number(error?.status) === 504) return `Generarea imaginii la ${profile.name} a depășit timpul disponibil. Încearcă din nou.`;
+
   if (missingImageModel(error)) {
     return `Modelul de imagine „${model}” nu este disponibil la ${profile.name}. Deschide Motoare AI și alege o rută de imagini oferită de furnizor.`;
   }
@@ -1915,15 +1925,22 @@ async function handle(req, res) {
     const id = url.searchParams.get("provider");
     const profile = Object.hasOwn(aiConfig.profiles, id || "") ? aiConfig.profiles[id] : null;
     if (!profile) return json(res, 400, { error: "Alege un profil AI valid." });
-    if (!profile.baseUrl || !profile.capabilities?.text || ((profile.requiresKey || profile.id === "custom" && !localProviderUrl(profile)) && !profile.apiKey)) return json(res, 503, { error: `Configurează mai întâi profilul ${profile.name} pentru text.` });
+    const capability = url.searchParams.get("capability") || "text";
+    if (!["text", "image"].includes(capability)) return json(res, 400, { error: "Capabilitatea solicitată nu este validă." });
+    if (!profile.baseUrl || !profile.capabilities?.[capability] || ((profile.requiresKey || profile.id === "custom" && !localProviderUrl(profile)) && !profile.apiKey)) return json(res, 503, { error: `Configurează mai întâi cheia și profilul ${profile.name} pentru ${capability === "image" ? "imagini" : "text"}.` });
     const lifecycle = aiRequestLifecycle(res);
     try {
+      if (capability === "image") {
+        const models = await listProfileImageModels(profile, { timeout: 10000, signal: lifecycle.signal });
+        return json(res, 200, { provider: id, capability, models,
+          recommendedModel: models.includes(profile.imageModel) ? profile.imageModel : models[0] || "", configuredModel: profile.imageModel });
+      }
       const catalog = await listProfileModels(profile, { timeout: 10000, signal: lifecycle.signal, fallback: false });
       const models = profile.id === "openai" ? availableOpenAiChatModels(catalog, "")
         : catalog.filter(model => !/(embed|embedding|imagen|image|dall|tts|speech|whisper|moderation|rerank|realtime|audio|robotics)/i.test(model));
       return json(res, 200, { provider: id, models, recommendedModel: models.length ? recommendedChatModel(profile, models) : "", configuredModel: profile.textModel });
     } catch (error) {
-      return json(res, 502, { error: friendlyTextProviderError(error, profile, profile.textModel), providerError: true });
+      return json(res, 502, { error: capability === "image" ? friendlyImageProviderError(error, profile, profile.imageModel) : friendlyTextProviderError(error, profile, profile.textModel), providerError: true });
     } finally { lifecycle.dispose(); }
   }
 
@@ -1993,7 +2010,7 @@ async function handle(req, res) {
       for (const capability of ["text", "image", "speech"]) {
         const id = aliases[String(capability === "text" && body.selectForChat === true ? providerId : requestedRoutes[capability] || "").trim().toLowerCase()] || String(capability === "text" && body.selectForChat === true ? providerId : requestedRoutes[capability] || "").trim().toLowerCase();
         if (!next.profiles[id]?.capabilities?.[capability]) return json(res, 400, { error: `Ruta pentru ${capability} nu este compatibilă cu motorul ales.` });
-        if (!routeProfileConfigured(next.profiles[id], capability)) {
+        if (!routeProfileConfigured(next.profiles[id], capability) && !(capability !== "text" && id === aiConfig.routes[capability])) {
           const label = capability === "image" ? "imagini" : capability === "speech" ? "voce" : "text";
           return json(res, 400, { error: `Motorul ${next.profiles[id].name} nu este configurat complet pentru ${label}.` });
         }

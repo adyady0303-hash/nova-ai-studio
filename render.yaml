@@ -32,9 +32,13 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: GEMINI_IMAGE_MODEL
+        sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_IMAGE_MODEL
         sync: false
       - key: GROQ_API_KEY
         sync: false

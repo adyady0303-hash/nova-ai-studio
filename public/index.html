@@ -578,6 +578,9 @@ body {background:#080b13;}
           <div class="provider-catalog-actions"><button class="btn" type="button" id="loadProviderModels">Încarcă modelele</button><label for="providerModelCatalog">Modele disponibile</label><select id="providerModelCatalog" disabled><option value="">Încarcă modelele disponibile</option></select></div>
           <div class="provider-note" id="providerModelsStatus" role="status" aria-live="polite">Catalogul se încarcă pentru profilul salvat. Alegerea unui model trebuie salvată.</div>
           <label for="imageModel">Model imagini</label><input id="imageModel" autocomplete="off" spellcheck="false">
+          <div class="provider-catalog-actions"><button class="btn" type="button" id="loadProviderImageModels">Încarcă modelele de imagini</button><label for="providerImageModelCatalog">Modele de imagini disponibile</label><select id="providerImageModelCatalog" disabled><option value="">Încarcă modelele de imagini</option></select></div>
+          <div class="provider-note" id="providerImageModelsStatus" role="status" aria-live="polite">Textul și imaginile folosesc modele separate.</div>
+          <button class="btn" type="button" id="useProviderForImages">Folosește acest motor pentru imagini</button>
           <div class="provider-row"><div><label for="speechModel">Model voce</label><input id="speechModel" autocomplete="off" spellcheck="false"></div><div><label for="voiceSelect">Voce implicită</label><input id="voiceSelect" autocomplete="off" spellcheck="false" placeholder="Vocea acceptată de motor"></div></div>
           <label class="provider-clear"><input type="checkbox" id="clearApiKey"> Șterge cheia API salvată pentru acest profil</label>
         </div>
@@ -663,7 +666,7 @@ body {background:#080b13;}
     </form>
   </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=2.7.4-generation-recovery"></script>
+  <script src="./app.js?v=2.7.4-gemini-openrouter-images"></script>
 </body>
 </html>
 
