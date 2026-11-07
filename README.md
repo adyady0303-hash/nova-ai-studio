@@ -1,5 +1,11 @@
 # Nova AI Studio
 
+### Verificarea site-urilor cu restaurante din apropiere
+
+Publicarea automată verifică și cerințele din ideea inițială: pentru restaurante după locația clientului caută în sursă apelul către date, localizarea și alternativa cu adresă manuală; verifică și moneda, imaginile și meniurile când sunt cerute. O pagină cu trei fișiere valide și o căutare simulată cu temporizator intră în reparare și nu primește link de succes dacă rămâne incompletă. Aceleași cerințe se aplică după reparare și la recuperarea după o eroare a furnizorului AI.
+
+Aceste verificări sunt statice: nu certifică accesul la furnizor, actualitatea meniurilor sau acoperirea pentru livrare. O cerere `fetch` în cod nu dovedește o integrare funcțională. Restaurantele, fotografiile, meniurile și prețurile reale necesită o sursă conectată și o verificare separată a răspunsurilor acesteia. Modificarea generatorului nu repară automat proiectele publicate anterior.
+
 Nova AI Studio pune chatul, programarea, imaginile, versurile, voice-over-ul și proiectele Business în același spațiu. Agentul poate citi și scrie fișierele proiectului când îi activezi explicit permisiunea.
 
 ## Ce poate genera

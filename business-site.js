@@ -8,7 +8,9 @@ function businessProjectName(idea) {
   return `Afacere · ${String(idea).replace(/\s+/g, " ").trim()}`.slice(0, 80);
 }
 
-function validateBusinessFiles(files) {
+// These are source-level checks, not proof that a remote provider is working.
+// Keep the original idea through repair and partial-provider recovery as well.
+function validateBusinessFiles(files, { idea = "" } = {}) {
   const issues = requiredFiles.filter(name => typeof files[name] !== "string" || !files[name].trim())
     .map(name => `Fișierul ${name} lipsește sau este gol.`);
   const html = files["index.html"] || "";
@@ -18,6 +20,21 @@ function validateBusinessFiles(files) {
   if (files["app.js"]?.trim()) {
     try { new vm.Script(files["app.js"], { filename: "app.js" }); }
     catch { issues.push("app.js conține JavaScript invalid sau importuri care necesită un build."); }
+  }
+  const request = String(idea).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const nearbyRestaurants = /restaurant/.test(request)
+    && /apropiere|locati|adresa|livrar|nearby|location|delivery|address/.test(request);
+  if (nearbyRestaurants) {
+    const script = files["app.js"] || "";
+    // Check executable source, not comments describing future integrations.
+    const executable = script.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const dataRequest = /\bfetch\s*\(|\bXMLHttpRequest\b/.test(executable);
+    if (!dataRequest) issues.push("Căutarea restaurantelor nu are o cerere către o sursă de date. Nu simula căutarea cu setTimeout sau rezultate goale. Conectează sursa reală; dacă lipsește, nu declara site-ul finalizat.");
+    if (!/\bgeolocation\s*(?:\?\.|\.)/.test(executable)) issues.push("Lipsește localizarea clientului cu acordul lui și tratarea refuzului sau erorii de localizare.");
+    if (!/<input\b[^>]*(?:name|id|autocomplete)\s*=\s*["'][^"']*(?:address|adresa|street-address)[^"']*["']/i.test(html)) issues.push("Lipsește introducerea manuală a adresei de livrare, ca alternativă la localizare.");
+    if (/euro|\beur\b|€/.test(request) && !/€|\bEUR\b/.test(html + script)) issues.push("Prețurile și totalul trebuie afișate în euro (EUR).");
+    if (/poze|fotograf|photos|pictures/.test(request) && !/<img\b|createElement\s*\(\s*["']img["']|background-image/i.test(html + script + (files["styles.css"] || ""))) issues.push("Lipsește afișarea fotografiilor restaurantelor sau preparatelor din sursa conectată.");
+    if (/meniuri|meniu|menus?/.test(request) && !/menu|meniu|preparate|dish|meal/i.test(html + executable)) issues.push("Lipsește afișarea meniurilor restaurantelor din sursa conectată.");
   }
   return issues;
 }

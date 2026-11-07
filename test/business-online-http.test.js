@@ -51,6 +51,17 @@ test('one business idea becomes an isolated working public site with real privat
       const files=await app.owner('/api/files?project='+result.project.id,undefined,'GET');assert.equal(files.status,200);
     }
   });
+  await t.test('a timer-only nearby restaurant search cannot publish after an inadequate repair',async()=>{
+    const result=await app.finish(app.owner,'FAKE_RESTAURANTS restaurante din apropierea locației clientului cu poze, meniuri și prețuri în euro');
+    assert.equal(result.state,'failed',JSON.stringify(result));
+    assert.equal(result.publication,undefined);
+    assert.match(result.error,/sursă de date/);
+    const repair=app.calls().find(call=>call.idea.includes('Corectează problemele de verificare')&&call.idea.includes('FAKE_RESTAURANTS'));
+    assert.ok(repair,'Missing functionality must enter the repair pass');
+    assert.match(repair.idea,/Nu folosi setTimeout/);
+    const files=await app.owner('/api/files?project='+result.project.id,undefined,'GET');
+    assert.equal(files.status,200,'Keep the project available for a real repair');
+  });
   await t.test('complete valid files can publish even if the final provider summary is unavailable',async()=>{
     const result=await app.finish(app.owner,'LATE_PROVIDER_FAILURE atelier');assert.equal(result.state,'published',JSON.stringify(result));
     assert.equal((await fetch(app.base+result.publication.url)).status,200);

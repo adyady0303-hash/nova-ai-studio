@@ -1874,21 +1874,21 @@ async function runBusinessBuild(principal, project, requestId, idea, model) {
     try { generated = await runAgent(model, [{ role: "user", content: idea }], project.id, "build", true, "business", principal, false, signal, guard); }
     catch (error) {
       const files = await businessFiles(project, principal);
-      if (!error.partialEvents?.some(event => event.ok && event.tool === "write_file") || validateBusinessFiles(files).length) throw error;
+      if (!error.partialEvents?.some(event => event.ok && event.tool === "write_file") || validateBusinessFiles(files, { idea }).length) throw error;
       generated = { events: error.partialEvents };
     }
     await guard();
     phase = "verificare";
     await updateBusinessProject(principal, project, requestId, { businessPhase: phase });
     let files = await businessFiles(project, principal);
-    let issues = validateBusinessFiles(files);
+    let issues = validateBusinessFiles(files, { idea });
     if (issues.length) {
       phase = "reparare";
       await updateBusinessProject(principal, project, requestId, { businessPhase: phase });
-      const fixed = await runAgent(model, [{ role: "user", content: `Finalizează site-ul pentru ideea: ${idea}\nCorectează problemele de verificare: ${issues.join(" ")} Nu pune întrebări. Citește fișierele și salvează corecțiile cu write_file.` }], project.id, "build", true, "code", principal, false, signal, guard);
+      const fixed = await runAgent(model, [{ role: "user", content: `Finalizează site-ul pentru ideea: ${idea}\n${creationPrompts.business}\nCorectează problemele de verificare: ${issues.join(" ")} Nu pune întrebări. Nu înlocui integrările reale cu simulări sau mesaje de succes. Păstrează funcțiile existente, citește fișierele și salvează corecțiile cu write_file.` }], project.id, "build", true, "code", principal, false, signal, guard);
       generated.events = [...(generated.events || []), ...(fixed.events || [])];
       files = await businessFiles(project, principal);
-      issues = validateBusinessFiles(files);
+      issues = validateBusinessFiles(files, { idea });
     }
     if (issues.length) throw Object.assign(new Error("Site-ul nu a trecut verificarea fișierelor: " + issues.join(" ")), { businessValidation: true });
     await guard();

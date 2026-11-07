@@ -36,6 +36,7 @@ async function startBusinessFixture(t){
       };
       if(idea.includes('INVALID_JS')&&!repair)files['app.js']='const broken = ;';
       if(idea.includes('ALWAYS_INVALID'))files['app.js']='const broken = ;';
+      if(idea.includes('FAKE_RESTAURANTS'))files['app.js']="setTimeout(() => { document.body.textContent = 'Nu s-au găsit restaurante.'; },1500);";
       if(repair)files={'app.js':idea.includes('ALWAYS_INVALID')?'const broken = ;':'window.businessReady=true;'};
       if(idea.includes('INCOMPLETE_PROVIDER_FAILURE'))files={'index.html':files['index.html']};
       return reply({choices:[{message:{role:'assistant',content:null,tool_calls:Object.entries(files).map(([file,content],i)=>tool('write-'+i,file,content))}}],model:body.model});
