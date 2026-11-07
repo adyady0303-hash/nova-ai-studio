@@ -2091,7 +2091,7 @@ async function handle(req, res) {
   }
 
   if (["GET", "HEAD"].includes(req.method) && url.pathname === "/robots.txt") {
-    const body = "User-agent: *\nAllow: /\nAllow: /about\nAllow: /plans.html\nDisallow: /api/\nDisallow: /admin.html\nDisallow: /preview-orbit\nDisallow: /p/\nSitemap: https://www.nova-ai-studio.eu/sitemap.xml\n";
+    const body = "User-agent: *\nAllow: /\nAllow: /about\nAllow: /plans.html\nDisallow: /api/\nDisallow: /admin.html\nDisallow: /restaurants/admin\nDisallow: /preview-orbit\nDisallow: /p/\nSitemap: https://www.nova-ai-studio.eu/sitemap.xml\n";
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" });
     return res.end(req.method === "HEAD" ? "" : body);
   }
@@ -2132,6 +2132,8 @@ async function handle(req, res) {
     "/restaurants": ["restaurants.html", "text/html; charset=utf-8"],
     "/restaurants/": ["restaurants.html", "text/html; charset=utf-8"],
     "/restaurants/manage": ["restaurant-manage.html", "text/html; charset=utf-8"],
+    "/restaurants/admin": ["poftigo-admin.html", "text/html; charset=utf-8"],
+    "/poftigo-admin.js": ["poftigo-admin.js", "text/javascript; charset=utf-8"],
     "/restaurants.css": ["restaurants.css", "text/css; charset=utf-8"],
     "/restaurants-app.js": ["restaurants-app.js", "text/javascript; charset=utf-8"],
     "/restaurant-manage.js": ["restaurant-manage.js", "text/javascript; charset=utf-8"]
@@ -2256,6 +2258,14 @@ async function handle(req, res) {
       return json(res, status, { error: status === 503 ? "Contul nu a putut fi șters în siguranță. Reîncearcă." : error.message });
     }
   }
+  if (url.pathname === "/api/restaurants/admin/bank-settings") return restaurantResponse(res, async () => {
+    if (account.role !== "owner") throw Object.assign(new Error("Această pagină este rezervată administratorului Poftigo."), { status: 403 });
+    if (req.method === "GET") return { bank: await restaurants.adminBank(), automaticPayments: false };
+    if (req.method !== "PUT") throw Object.assign(new Error("Metodă neacceptată."), { status: 405 });
+    if (!sameOrigin(req)) throw Object.assign(new Error("Modificarea datelor bancare a fost respinsă."), { status: 403 });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) throw Object.assign(new Error("Datele bancare acceptă numai JSON."), { status: 415 });
+    return { bank: await restaurants.saveAdminBank(await readJson(req, 16384)), automaticPayments: false };
+  });
   if (url.pathname === "/api/restaurants/mine" && req.method === "GET") return restaurantResponse(res, async () => ({ restaurant: await restaurants.mine(principal) }));
   if (url.pathname === "/api/restaurants/mine/orders" && req.method === "GET") return restaurantResponse(res, async () => ({ orders: await restaurants.orders(principal) }));
   const merchantOrder = url.pathname.match(/^\/api\/restaurants\/mine\/orders\/([a-f0-9]{24})$/);

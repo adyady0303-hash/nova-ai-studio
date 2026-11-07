@@ -93,6 +93,12 @@ test('PostgreSQL storage imports disk data and shares projects, sessions and set
   assert.equal(settingsFromOtherInstance.body.settings.apiKeyConfigured, true);
   assert.doesNotMatch(JSON.stringify(settingsFromOtherInstance.body), /test-key-encrypted/);
 
+  const poftigoBank = await request(serverA, '/api/restaurants/admin/bank-settings', ownerCookie, { method: 'PUT', body: { beneficiary: 'Poftigo PostgreSQL TEST', iban: 'DE89370400440532013000' } });
+  assert.equal(poftigoBank.response.status, 200, JSON.stringify(poftigoBank.body));
+  const bankOnOtherInstance = await get(serverB, '/api/restaurants/admin/bank-settings', ownerCookie);
+  assert.equal(bankOnOtherInstance.body.bank.iban, 'DE89370400440532013000');
+  assert.equal(bankOnOtherInstance.body.automaticPayments, false);
+
   const restaurantData = { name: 'Restaurant PostgreSQL TEST', address: 'Berlin TEST', lat: 52.52, lon: 13.405, radiusKm: 3, currency: 'EUR', acceptingOrders: true, photo: 'https://example.test/photo.jpg', menu: [{ name: 'Preparat TEST', price: '8.50' }] };
   const savedRestaurant = await request(serverA, '/api/restaurants/mine', ownerCookie, { method: 'PUT', body: restaurantData });
   assert.equal(savedRestaurant.response.status, 200, JSON.stringify(savedRestaurant.body));
