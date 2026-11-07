@@ -3065,6 +3065,18 @@ async function startNova() {
   await dataFs.promises.mkdir(PROJECT_TRASH_DIR, { recursive: true });
   await initializeAiEncryption();
   await refreshAiSettings(true);
+  // Safe operational diagnostics: record only statuses, never Stripe keys.
+  void poftigoPayments.summary().then(state => {
+    console.info("Poftigo Stripe diagnostics:", JSON.stringify({
+      configurationIssue: state.configurationIssue || null,
+      configured: state.configured,
+      mode: state.mode,
+      requestedEnabled: Boolean(state.requestedEnabled),
+      webhookConfigured: state.webhookConfigured,
+      platformReady: state.platformReady,
+      connectionError: Boolean(state.connectionError)
+    }));
+  }).catch(() => console.error("Poftigo Stripe diagnostic check unavailable."));
   await upgradeReportedRestaurantSite().catch(error => console.error("Nova restaurant publication repair failed:", { code: error.code || "repair_failed" }));
   appServer.listen(PORT, HOST, () => {
     console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
