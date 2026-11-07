@@ -33,7 +33,7 @@ function validateBusinessFiles(files, { idea = "" } = {}) {
     if (!/\bgeolocation\s*(?:\?\.|\.)/.test(executable)) issues.push("Lipsește localizarea clientului cu acordul lui și tratarea refuzului sau erorii de localizare.");
     if (!/<input\b[^>]*(?:name|id|autocomplete)\s*=\s*["'][^"']*(?:address|adresa|street-address)[^"']*["']/i.test(html)) issues.push("Lipsește introducerea manuală a adresei de livrare, ca alternativă la localizare.");
     if (/euro|\beur\b|€/.test(request) && !/€|\bEUR\b/.test(html + script)) issues.push("Prețurile și totalul trebuie afișate în euro (EUR).");
-    if (/poze|fotograf|photos|pictures/.test(request) && !/<img\b|createElement\s*\(\s*["']img["']|background-image/i.test(html + script + (files["styles.css"] || ""))) issues.push("Lipsește afișarea fotografiilor restaurantelor sau preparatelor din sursa conectată.");
+    if (/poze|fotograf|photos|pictures/.test(request) && !/<img\b|(?:createElement|node)\s*\(\s*["']img["']|background-image/i.test(html + script + (files["styles.css"] || ""))) issues.push("Lipsește afișarea fotografiilor restaurantelor sau preparatelor din sursa conectată.");
     if (/meniuri|meniu|menus?/.test(request) && !/menu|meniu|preparate|dish|meal/i.test(html + executable)) issues.push("Lipsește afișarea meniurilor restaurantelor din sursa conectată.");
   }
   return issues;

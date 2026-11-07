@@ -11,6 +11,7 @@ const { requiredFiles: requiredBusinessFiles, businessProjectName, validateBusin
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 const { createGoogleAuth } = require("./google-auth");
+const { createRestaurantService, isRestaurantMarketplaceIdea } = require("./restaurants");
 const {
   PLATFORM_PRESETS,
   createProfilesFromEnv,
@@ -1505,6 +1506,56 @@ async function assertPrincipalActive(principal) {
   if (record.deleting) throw Object.assign(new Error("Ștergerea contului este în curs."), { status: 423 });
 }
 
+const restaurants = createRestaurantService({ filesystem: () => dataFs, root: DATA_DIR, withLock: withPublicationLock, assertPrincipalActive });
+const restaurantRates = new Map();
+function restaurantRate(req, group, maximum) {
+  const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim().slice(0, 100);
+  const key = group + ":" + ip, now = Date.now();
+  if (restaurantRates.size > 5000) for (const [key, value] of restaurantRates) if (value.until <= now) restaurantRates.delete(key);
+  if (restaurantRates.size > 5000) throw Object.assign(new Error("Serviciul este ocupat. Încearcă mai târziu."), { status: 429 });
+  const previous = restaurantRates.get(key);
+  const value = previous && previous.until > now ? previous : { count: 0, until: now + 60000 };
+  if (++value.count > maximum) throw Object.assign(new Error("Prea multe cereri. Încearcă din nou peste un minut."), { status: 429 });
+  restaurantRates.set(key, value);
+}
+async function restaurantResponse(res, operation, status = 200) {
+  try { return json(res, status, await operation()); }
+  catch (error) {
+    const status = Number.isInteger(error.status) && error.status >= 400 && error.status <= 503 ? error.status : 500;
+    return json(res, status, { error: status === 500 ? "Serviciul restaurantelor nu este disponibil. Încearcă din nou." : error.message });
+  }
+}
+async function installRestaurantProject(principal, project) {
+  const contents = {};
+  for (const [target, source] of [["app.js", "restaurants-app.js"], ["styles.css", "restaurants.css"], ["index.html", "restaurants.html"]]) {
+    contents[target] = (await fs.promises.readFile(path.join(PUBLIC_DIR, source), "utf8")).replaceAll('/restaurants.css', './styles.css').replaceAll('/restaurants-app.js', './app.js');
+  }
+  for (const [name, content] of Object.entries(contents)) await writeProjectFile(project, name, content, principal);
+  return contents;
+}
+async function markRestaurantProject(principal, project) {
+  const file = path.join(projectRoot(project, principal), ".nova-project.json");
+  const metadata = JSON.parse(await dataFs.promises.readFile(file, "utf8"));
+  metadata.nativeBusinessType = "restaurant-marketplace-v1";
+  await dataFs.promises.writeFile(file, JSON.stringify(metadata), "utf8");
+}
+async function upgradeReportedRestaurantSite() {
+  // One-time, scoped repair of the publication explicitly reported by its owner.
+  // Existing writeProjectFile backups preserve the old files; do not migrate unrelated sites.
+  const id = "e90b8660cff0e648a383bda3";
+  const site = (await readPublications()).sites[id];
+  if (!site) return;
+  const metadataPath = path.join(projectRoot(site.project, site.principal), ".nova-project.json");
+  const metadata = JSON.parse(await dataFs.promises.readFile(metadataPath, "utf8"));
+  if (metadata.nativeBusinessType) return;
+  const html = await readProjectFile(site.project, "index.html", site.principal);
+  const script = await readProjectFile(site.project, "app.js", site.principal);
+  if (!html.includes('<title>Nova Delivery</title>') || !script.includes('setTimeout') || !script.includes('restaurantsList.innerHTML')) return;
+  await installRestaurantProject(site.principal, site.project);
+  await markRestaurantProject(site.principal, site.project);
+  console.log("Nova: reported restaurant publication upgraded with file backups.");
+}
+
 async function publishProject(principal, project) {
   try { await readProjectFile(project, "index.html", principal); }
   catch (error) {
@@ -1553,6 +1604,15 @@ async function servePublishedSite(req, res, id, requestedPath) {
   const site = publications.sites[id];
   if (!site || !(site.principal === "owner" || /^[a-f0-9]{32}$/.test(site.principal)) || !validProjectId(site.project)) {
     return json(res, 404, { error: "Site-ul publicat nu există." });
+  }
+  if (["", "index.html"].includes(requestedPath)) {
+    let metadata = {};
+    try { metadata = JSON.parse(await dataFs.promises.readFile(path.join(projectRoot(site.project, site.principal), ".nova-project.json"), "utf8")); }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (metadata.nativeBusinessType === "restaurant-marketplace-v1") {
+      res.writeHead(302, { location: `/restaurants?site=${id}`, "cache-control": "no-store" });
+      return res.end();
+    }
   }
   let relative;
   try { relative = decodeURIComponent(requestedPath || "index.html").replace(/\\/g, "/"); }
@@ -1871,7 +1931,12 @@ async function runBusinessBuild(principal, project, requestId, idea, model) {
   };
   try {
     let generated;
-    try { generated = await runAgent(model, [{ role: "user", content: idea }], project.id, "build", true, "business", principal, false, signal, guard); }
+    const nativeRestaurant = isRestaurantMarketplaceIdea(idea);
+    if (nativeRestaurant) {
+      await guard();
+      await installRestaurantProject(principal, project.id);
+      generated = { events: requiredBusinessFiles.map(path => ({ tool: "write_file", ok: true, path })), providerName: "Nova Local" };
+    } else try { generated = await runAgent(model, [{ role: "user", content: idea }], project.id, "build", true, "business", principal, false, signal, guard); }
     catch (error) {
       const files = await businessFiles(project, principal);
       if (!error.partialEvents?.some(event => event.ok && event.tool === "write_file") || validateBusinessFiles(files, { idea }).length) throw error;
@@ -1894,6 +1959,7 @@ async function runBusinessBuild(principal, project, requestId, idea, model) {
     await guard();
     await writeProjectFile(project.id, "index.html", addBusinessContact(files["index.html"]), principal);
     await writeProjectFile(project.id, "nova-contact.js", businessContactScript, principal);
+    if (nativeRestaurant) await markRestaurantProject(principal, project.id);
     await guard();
     phase = "publicare";
     await updateBusinessProject(principal, project, requestId, { businessPhase: phase });
@@ -1923,10 +1989,11 @@ async function claimBusinessBuild(req, res, principal, account, idea, requestId)
       if (existing.metadata.businessIdeaHash !== ideaHash) throw Object.assign(new Error("Această cerere aparține altei idei."), { status: 409 });
       return { ...existing, start: false };
     }
+    const nativeRestaurant = isRestaurantMarketplaceIdea(idea);
     const profile = activeTextProfile();
-    if (!isProfileConfigured(profile)) throw Object.assign(new Error("Configurează un motor AI pentru a crea afacerea."), { status: 503 });
+    if (!nativeRestaurant && !isProfileConfigured(profile)) throw Object.assign(new Error("Configurează un motor AI pentru a crea afacerea."), { status: 503 });
     let database, quota;
-    if (account.role === "subscriber") {
+    if (account.role === "subscriber" && !nativeRestaurant) {
       database = await readAccounts();
       const record = database.users.find(user => user.id === principal);
       if (!record || record.deleting) throw Object.assign(new Error("Contul nu este disponibil."), { status: 401 });
@@ -2045,6 +2112,34 @@ async function handle(req, res) {
     return res.end(req.method === "HEAD" ? undefined : page);
   }
 
+  const restaurantAsset = {
+    "/restaurants": ["restaurants.html", "text/html; charset=utf-8"],
+    "/restaurants/": ["restaurants.html", "text/html; charset=utf-8"],
+    "/restaurants/manage": ["restaurant-manage.html", "text/html; charset=utf-8"],
+    "/restaurants.css": ["restaurants.css", "text/css; charset=utf-8"],
+    "/restaurants-app.js": ["restaurants-app.js", "text/javascript; charset=utf-8"],
+    "/restaurant-manage.js": ["restaurant-manage.js", "text/javascript; charset=utf-8"]
+  }[url.pathname];
+  if (["GET", "HEAD"].includes(req.method) && restaurantAsset) {
+    res.writeHead(200, { "content-type": restaurantAsset[1], "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "permissions-policy": "geolocation=(self)", "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https: blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'self'" });
+    return res.end(req.method === "HEAD" ? undefined : await fs.promises.readFile(path.join(PUBLIC_DIR, restaurantAsset[0])));
+  }
+  if (req.method === "GET" && url.pathname === "/api/restaurants/geocode") return restaurantResponse(res, async () => {
+    restaurantRate(req, "geocode", 20);
+    return restaurants.geocode(url.searchParams.get("q"));
+  });
+  if (req.method === "GET" && url.pathname === "/api/restaurants/search") return restaurantResponse(res, async () => {
+    restaurantRate(req, "search", 120);
+    return restaurants.search({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon") });
+  });
+  const restaurantOrder = url.pathname.match(/^\/api\/restaurants\/([a-f0-9]{24})\/orders$/);
+  if (req.method === "POST" && restaurantOrder) return restaurantResponse(res, async () => {
+    if (!sameOrigin(req)) throw Object.assign(new Error("Cererea de comandă a fost respinsă."), { status: 403 });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) throw Object.assign(new Error("Comanda acceptă numai JSON."), { status: 415 });
+    restaurantRate(req, "order", 10);
+    return restaurants.order(restaurantOrder[1], await readJson(req));
+  }, 201);
+
   const businessContact = url.pathname.match(/^\/p\/([a-f0-9]{24})\/contact$/);
   if (businessContact) return receiveBusinessContact(req, res, businessContact[1]);
 
@@ -2119,6 +2214,7 @@ async function handle(req, res) {
       });
       await billing.closeAccount(account);
       await unpublishAllForPrincipal(principal);
+      await restaurants.removeOwner(principal);
       await dataStore.deleteUserData(principal);
       await withAccountsLock(async () => {
         const database = await readAccounts();
@@ -2140,6 +2236,16 @@ async function handle(req, res) {
       return json(res, status, { error: status === 503 ? "Contul nu a putut fi șters în siguranță. Reîncearcă." : error.message });
     }
   }
+  if (url.pathname === "/api/restaurants/mine" && req.method === "GET") return restaurantResponse(res, async () => ({ restaurant: await restaurants.mine(principal) }));
+  if (url.pathname === "/api/restaurants/mine/orders" && req.method === "GET") return restaurantResponse(res, async () => ({ orders: await restaurants.orders(principal) }));
+  const merchantOrder = url.pathname.match(/^\/api\/restaurants\/mine\/orders\/([a-f0-9]{24})$/);
+  if (url.pathname === "/api/restaurants/mine" && req.method === "PUT" || merchantOrder && req.method === "PATCH") return restaurantResponse(res, async () => {
+    if (!sameOrigin(req)) throw Object.assign(new Error("Modificarea restaurantului a fost respinsă."), { status: 403 });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) throw Object.assign(new Error("Modificarea acceptă numai JSON."), { status: 415 });
+    const body = await readJson(req);
+    if (merchantOrder) return restaurants.updateOrder(principal, merchantOrder[1], body.status);
+    return { restaurant: await restaurants.save(principal, body) };
+  });
   if (req.method === "GET" && url.pathname === "/api/billing/bank-orders") return json(res, 200, await billing.bankOrders(account));
   if (req.method === "POST" && ["/api/billing/bank-transfer", "/api/billing/bank-confirm", "/api/billing/bank-settings"].includes(url.pathname)) {
     if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de plată respinsă." });
@@ -2884,6 +2990,7 @@ async function startNova() {
   await dataFs.promises.mkdir(PROJECT_TRASH_DIR, { recursive: true });
   await initializeAiEncryption();
   await refreshAiSettings(true);
+  await upgradeReportedRestaurantSite().catch(error => console.error("Nova restaurant publication repair failed:", { code: error.code || "repair_failed" }));
   appServer.listen(PORT, HOST, () => {
     console.log(`Nova AI Studio rulează la http://${HOST}:${PORT}`);
     console.log(`Ollama: ${OLLAMA}`);

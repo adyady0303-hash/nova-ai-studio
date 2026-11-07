@@ -7,8 +7,9 @@ const crypto=require('node:crypto');
 const {spawn}=require('node:child_process');
 const {once}=require('node:events');
 
-async function startBusinessFixture(t){
+async function startBusinessFixture(t,{seed}={}){
   const directory=fs.mkdtempSync(path.join(os.tmpdir(),'nova-business-online-'));
+  if(seed)await seed(directory);
   const callsPath=path.join(directory,'calls.jsonl'),preload=path.join(directory,'provider.cjs');fs.writeFileSync(callsPath,'');
   fs.writeFileSync(preload,`
     const fs=require('node:fs');let failPublication=false;

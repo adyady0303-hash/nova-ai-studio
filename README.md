@@ -1,10 +1,19 @@
 # Nova AI Studio
 
-### Verificarea site-urilor cu restaurante din apropiere
+### Restaurante și comenzi locale
 
-Publicarea automată verifică și cerințele din ideea inițială: pentru restaurante după locația clientului caută în sursă apelul către date, localizarea și alternativa cu adresă manuală; verifică și moneda, imaginile și meniurile când sunt cerute. O pagină cu trei fișiere valide și o căutare simulată cu temporizator intră în reparare și nu primește link de succes dacă rămâne incompletă. Aceleași cerințe se aplică după reparare și la recuperarea după o eroare a furnizorului AI.
+`/restaurants` este aplicația publică Nova Local. Clientul poate permite localizarea sau poate căuta și confirma adresa manual (OpenStreetMap / Nominatim, fără autocompletare, cu cache și limitare la cel mult o cerere pe secundă). Catalogul conține exclusiv restaurante înscrise în Nova, cu raza de livrare declarată de fiecare restaurant. Un răspuns gol real și indisponibilitatea serviciului au stări distincte.
 
-Aceste verificări sunt statice: nu certifică accesul la furnizor, actualitatea meniurilor sau acoperirea pentru livrare. O cerere `fetch` în cod nu dovedește o integrare funcțională. Restaurantele, fotografiile, meniurile și prețurile reale necesită o sursă conectată și o verificare separată a răspunsurilor acesteia. Modificarea generatorului nu repară automat proiectele publicate anterior.
+În `/restaurants/manage`, orice cont Nova poate administra propriul restaurant, fotografiile încărcate sau URL-uri HTTPS, preparatele, prețurile efective în EUR, disponibilitatea și raza de livrare. Restaurantul poate fi oprit fără ștergerea datelor. Înscrierea și administrarea nu consumă cereri AI. Fiecare cont administrează un restaurant; restaurantul este responsabil pentru corectitudinea datelor și drepturile asupra imaginilor.
+
+Coșul acceptă preparate de la un singur restaurant. Serverul verifică zona, disponibilitatea, cantitățile și prețurile în cenți; schimbarea prețului necesită reconfirmare, iar repetarea aceleiași cereri nu dublează comanda. Cererile ajung în inboxul privat al restaurantului, unde pot fi acceptate, refuzate sau finalizate. Nu se efectuează plăți, nu se garantează livrarea și nu se trimit emailuri automate. Totalul afișat reprezintă produsele; costul de transport se confirmă separat cu restaurantul.
+
+Catalogul și comenzile folosesc depozitul persistent existent (PostgreSQL sau fișiere locale), sub blocarea de scriere existentă. La ștergerea unui cont sunt eliminate restaurantul și cererile sale. Inboxul afișează ultimele 100 de cereri și stochează maximum 5000 pentru fiecare restaurant. Imaginile și meniul unui restaurant sunt limitate la 850 KB; pentru trafic mare, geocodarea publică Nominatim și catalogul JSON trebuie înlocuite cu servicii dimensionate adecvat.
+
+Cererile Afaceri pentru restaurante după locație sau adresă folosesc această aplicație verificată, fără a cere modelului AI să inventeze integrări. Publicarea trimite către pagina Nova Local cu păstrarea formularului de contact al proiectului. Pagina generată continuă să fie izolată; numai aplicația nativă rulează pe ruta proprie. La pornire, migrarea v1 repară exclusiv publicația raportată `e90b8660cff0e648a383bda3`, numai dacă încă are titlul și căutarea simulată cunoscute, păstrând copii ale fișierelor vechi. Celelalte proiecte nu sunt migrate.
+
+Pentru alte pagini generate, validarea statică verifică existența fișierelor, sintaxa și elementele cerute pentru restaurante. Aceste verificări nu certifică funcționarea unui furnizor extern. Testele HTTP și testul în browser verifică separat catalogul nativ și traseul comandă → inbox privat.
+
 
 Nova AI Studio pune chatul, programarea, imaginile, versurile, voice-over-ul și proiectele Business în același spațiu. Agentul poate citi și scrie fișierele proiectului când îi activezi explicit permisiunea.
 
