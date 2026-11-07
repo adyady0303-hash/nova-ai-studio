@@ -91,7 +91,7 @@
         }
         card.append(body); list.append(card); continue;
       }
-      body.append(node('p', `${restaurant.distanceKm} km · ${restaurant.menu.length} preparate · EUR · Comandă prin Nova`));
+      body.append(node('p', `${restaurant.distanceKm} km · ${restaurant.menu.length} preparate · EUR · Comandă prin Poftigo`));
       const button = node('button', 'Vezi meniul'); button.type = 'button';
       button.addEventListener('click', () => { selected = restaurant; renderMenu(); el('menu-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
       body.append(button); card.append(body); list.append(card);

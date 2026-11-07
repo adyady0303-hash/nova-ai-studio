@@ -58,7 +58,7 @@ test('one business idea becomes an isolated working public site with real privat
     assert.equal(app.calls().length,before,'Native implementation must not ask AI to invent a data source');
     const page=await fetch(app.base+result.publication.url,{redirect:'manual'});
     assert.equal(page.status,302);assert.equal(page.headers.get('location'),'/restaurants?site='+result.publication.id);
-    const appPage=await fetch(app.base+page.headers.get('location'));assert.match(await appPage.text(),/Nova Local/);
+    const appPage=await fetch(app.base+page.headers.get('location'));assert.match(await appPage.text(),/Poftigo/);
     const files=await app.owner('/api/files?project='+result.project.id,undefined,'GET');assert.equal(files.status,200);
   });
   await t.test('status polling never observes a partially written publications registry',async()=>{

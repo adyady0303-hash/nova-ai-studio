@@ -1951,7 +1951,7 @@ async function runBusinessBuild(principal, project, requestId, idea, model) {
     if (nativeRestaurant) {
       await guard();
       await installRestaurantProject(principal, project.id);
-      generated = { events: requiredBusinessFiles.map(path => ({ tool: "write_file", ok: true, path })), providerName: "Nova Local" };
+      generated = { events: requiredBusinessFiles.map(path => ({ tool: "write_file", ok: true, path })), providerName: "Poftigo" };
     } else try { generated = await runAgent(model, [{ role: "user", content: idea }], project.id, "build", true, "business", principal, false, signal, guard); }
     catch (error) {
       const files = await businessFiles(project, principal);
