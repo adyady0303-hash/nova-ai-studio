@@ -13,6 +13,7 @@ const { createBilling, quotaFor, consumeQuota } = require("./billing");
 const { createGoogleAuth } = require("./google-auth");
 const { createRestaurantService, isRestaurantMarketplaceIdea } = require("./restaurants");
 const { createPoftigoPayments } = require("./poftigo-payments");
+const { createPoftigoInvitations } = require("./poftigo-invitations");
 const {
   PLATFORM_PRESETS,
   createProfilesFromEnv,
@@ -1522,6 +1523,9 @@ async function interpretRestaurantQuery(query) {
 
 const poftigoPayments = createPoftigoPayments();
 const restaurants = createRestaurantService({ filesystem: () => dataFs, root: DATA_DIR, withLock: withPublicationLock, assertPrincipalActive, payments: poftigoPayments, translateQuery: interpretRestaurantQuery });
+const invitations = createPoftigoInvitations({ filesystem: () => dataFs, root: DATA_DIR, withLock: withPublicationLock });
+const invitationTimer = setInterval(() => invitations.dispatchDue().catch(error => console.error("Poftigo invitation dispatcher:", error.message)), 60_000);
+invitationTimer.unref();
 const restaurantRates = new Map();
 function restaurantRate(req, group, maximum) {
   const ip = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim().slice(0, 100);
@@ -2144,13 +2148,25 @@ async function handle(req, res) {
     res.writeHead(200, { "content-type": restaurantAsset[1], "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "permissions-policy": "geolocation=(self)", "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https: blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'self'" });
     return res.end(req.method === "HEAD" ? undefined : await fs.promises.readFile(path.join(PUBLIC_DIR, restaurantAsset[0])));
   }
+  if (url.pathname === "/api/poftigo/invitations/unsubscribe") {
+    const token = url.searchParams.get("token") || "";
+    const valid = await invitations.validToken(token);
+    if (!valid) return json(res, 404, { error: "Link de dezabonare invalid." });
+    if (req.method === "POST") await invitations.unsubscribe(token);
+    else if (req.method !== "GET") return json(res, 405, { error: "Metodă neacceptată." });
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "no-referrer", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" });
+    const html = '<!doctype html><html lang="ro"><meta charset="utf-8"><meta name="robots" content="noindex"><title>Poftigo · Dezabonare</title><main style="max-width:560px;margin:6rem auto;font:18px system-ui;padding:20px"><h1>Invitații Poftigo</h1>' +
+      (req.method === "POST" ? '<p>Adresa a fost exclusă din invitațiile viitoare.</p>' : '<p>Nu mai dorești invitații de colaborare de la Poftigo?</p><form method="post" action="/api/poftigo/invitations/unsubscribe?token=' + token + '"><button type="submit">Dezabonează-mă</button></form>') +
+      '</main></html>';
+    return res.end(html);
+  }
   if (req.method === "GET" && url.pathname === "/api/restaurants/geocode") return restaurantResponse(res, async () => {
     restaurantRate(req, "geocode", 20);
     return restaurants.geocode(url.searchParams.get("q"));
   });
   if (req.method === "GET" && url.pathname === "/api/restaurants/discover") return restaurantResponse(res, async () => {
     restaurantRate(req, "discover", 30);
-    return restaurants.discover({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon"), q: url.searchParams.get("q") || "" });
+    return restaurants.discover({ lat: url.searchParams.get("lat"), lon: url.searchParams.get("lon"), q: url.searchParams.get("q") || "", radiusKm: url.searchParams.get("radiusKm") || "5" });
   });
   if (req.method === "GET" && url.pathname === "/api/restaurants/search") return restaurantResponse(res, async () => {
     restaurantRate(req, "search", 120);
@@ -2268,6 +2284,23 @@ async function handle(req, res) {
       return json(res, status, { error: status === 503 ? "Contul nu a putut fi șters în siguranță. Reîncearcă." : error.message });
     }
   }
+  if (url.pathname === "/api/restaurants/admin/invitations" || /^\/api\/restaurants\/admin\/invitations\/[a-f0-9]{24}$/.test(url.pathname)) return restaurantResponse(res, async () => {
+    if (account.role !== "owner") throw Object.assign(new Error("Doar administratorul Poftigo poate gestiona invitațiile."), { status: 403 });
+    if (req.method === "GET" && url.pathname === "/api/restaurants/admin/invitations") return invitations.list();
+    if (!sameOrigin(req)) throw Object.assign(new Error("Cerere neautorizată."), { status: 403 });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) throw Object.assign(new Error("Trimite date JSON."), { status: 415 });
+    if (req.method === "POST" && url.pathname === "/api/restaurants/admin/invitations") {
+      restaurantRate(req, "invite-admin", 15);
+      return invitations.add(await readJson(req, 4096));
+    }
+    if (req.method === "PATCH") {
+      const id = url.pathname.split("/").pop();
+      const action = (await readJson(req, 4096)).action;
+      if (!["cancel", "suppress"].includes(action)) throw Object.assign(new Error("Acțiune invalidă."), { status: 400 });
+      return invitations.cancel(id, action === "suppress");
+    }
+    throw Object.assign(new Error("Metodă neacceptată."), { status: 405 });
+  });
   if (req.method === "GET" && url.pathname === "/api/restaurants/admin/payments") return restaurantResponse(res, async () => {
     if (account.role !== "owner") throw Object.assign(new Error("Doar administratorul poate verifica configurarea plăților Poftigo."), { status: 403 });
     return poftigoPayments.summary();
