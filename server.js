@@ -2100,14 +2100,31 @@ async function handle(req, res) {
   }
 
   if (["GET", "HEAD"].includes(req.method) && url.pathname === "/robots.txt") {
-    const body = "User-agent: *\nAllow: /\nAllow: /about\nAllow: /plans.html\nDisallow: /api/\nDisallow: /admin.html\nDisallow: /restaurants/admin\nDisallow: /preview-orbit\nDisallow: /p/\nSitemap: https://www.nova-ai-studio.eu/sitemap.xml\n";
+    const body = "User-agent: *\nAllow: /\nAllow: /about\nAllow: /plans.html\nDisallow: /api/\nDisallow: /admin.html\nDisallow: /restaurants/admin\nDisallow: /preview-orbit\nDisallow: /p/\nSitemap: https://www.nova-ai-studio.eu/sitemap.xml\nSitemap: https://www.nova-ai-studio.eu/poftigo-sitemap.xml\n";
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" });
     return res.end(req.method === "HEAD" ? "" : body);
   }
-  if (["GET", "HEAD"].includes(req.method) && url.pathname === "/sitemap.xml") {
-    const body = '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://www.nova-ai-studio.eu/</loc></url><url><loc>https://www.nova-ai-studio.eu/about</loc></url><url><loc>https://www.nova-ai-studio.eu/plans.html</loc></url><url><loc>https://www.nova-ai-studio.eu/restaurants</loc></url><url><loc>https://www.nova-ai-studio.eu/restaurants/manage</loc></url></urlset>';
-    res.writeHead(200, { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" });
-    return res.end(req.method === "HEAD" ? "" : body);
+  if (["GET", "HEAD"].includes(req.method) && ["/sitemap.xml", "/poftigo-sitemap.xml"].includes(url.pathname)) {
+    // Public XML endpoints, before the login guard. A separate Poftigo sitemap
+    // avoids stale Google Search Console reports for the original sitemap URL.
+    const origin = "https://www.nova-ai-studio.eu";
+    const paths = url.pathname === "/poftigo-sitemap.xml"
+      ? ["/restaurants", "/restaurants/manage"]
+      : ["/", "/about", "/plans.html", "/restaurants", "/restaurants/manage"];
+    const body = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+      ...paths.map(item => '  <url><loc>' + origin + item + '</loc></url>'),
+      '</urlset>',
+      ''
+    ].join("\n");
+    res.writeHead(200, {
+      "content-type": "application/xml; charset=utf-8",
+      "content-length": Buffer.byteLength(body, "utf8"),
+      "cache-control": "public, max-age=300, must-revalidate",
+      "x-content-type-options": "nosniff"
+    });
+    return res.end(req.method === "HEAD" ? undefined : body);
   }
   if (["GET", "HEAD"].includes(req.method) && url.pathname === "/share-image.png") {
     const image = await fs.promises.readFile(path.join(__dirname, "site", "media", "nova-publicitate-coperta.png"));
