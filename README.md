@@ -174,7 +174,13 @@ Toate instrumentele Nova folosesc aceeași versiune publică. Chatul și codul a
 
 Începând cu 1.5.1, abonații au acces și la generarea și editarea imaginilor, în limita cotei planului. Configurarea furnizorului AI, cheile API, verificările administrative și tabloul de administrare rămân disponibile exclusiv ownerului.
 
-În modul Afaceri online, Nova poate crea un MVP static complet (`index.html`, `styles.css`, `app.js`) și îl poate publica pe un URL public izolat sub `/p/.../`. Publicarea statică nu activează automat plăți, email tranzacțional, baze de date, conturi comerciale sau un domeniu propriu; acestea necesită servicii și credențiale externe.
+În **Afaceri online**, utilizatorul scrie doar ideea și apasă Trimite. Nova alege numele, oferta, structura și designul fără întrebări suplimentare, creează un proiect separat, verifică fișierele `index.html`, `styles.css` și `app.js`, încearcă repararea problemelor detectate și publică automat site-ul sub `/p/.../`. Linkul final apare numai după publicarea efectivă. Proiectul deschis și modificările nesalvate din editor sunt păstrate.
+
+Crearea rulează în fundal pe server, cel mult 15 minute. Reîncărcarea sau redeschiderea paginii din același browser reia urmărirea aceleiași cereri, fără un proiect duplicat sau o a doua unitate din cota Nova. Istoricul proiectului păstrează linkul rezultat. Administratorul nu consumă cotă Nova; disponibilitatea motorului AI și cotele furnizorului se aplică în continuare. Repornirea procesului serverului întrerupe o generare în curs.
+
+Site-ul include un formular funcțional pentru nume, email și mesaj. Cererile sunt salvate privat în proiect și se văd prin **Cereri clienți**, în Nova sau lângă linkul publicat; pot fi descărcate ca JSON. Vizitatorii nu au nevoie de un cont Nova. Formularul are validare și protecție împotriva trimiterilor repetate, iar oprirea publicării îi dezactivează endpointul. Datele folosesc același depozit persistent ca proiectele (`NOVA_DATA_DIR` sau PostgreSQL); fișierele private nu sunt expuse pe site.
+
+Rezultatul este un site public pentru prezentarea ofertei și primirea cererilor. Încasarea plăților, trimiterea automată a emailurilor, conturile comerciale, înființarea firmei și domeniul propriu necesită servicii și credențiale externe; Nova nu le declară activate prin simpla publicare.
 
 Versiunea 2.1.0 adaugă distribuire nativă din pagina de acces, metadate Open Graph/Twitter, imagine socială publică, pagină publică de prezentare la `/about`, `robots.txt`, sitemap XML și date structurate pentru descoperirea în Google. Publicarea efectivă în conturile Facebook, Instagram sau TikTok rămâne sub controlul proprietarului conturilor.
 

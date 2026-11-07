@@ -7,6 +7,7 @@ const dataStore = require("./data-store");
 const { createProviderStatus } = require("./provider-status");
 const providerStatus = createProviderStatus();
 const { creationPrompts } = require("./creation-prompts");
+const { requiredFiles: requiredBusinessFiles, businessProjectName, validateBusinessFiles, addBusinessContact, contactScript: businessContactScript, normalizeBusinessContact } = require("./business-site");
 const { accuracyPrompt, collectSources, answerWithSources, speechOptions, automaticWebSearch, needsWebRetry } = require("./ai-quality");
 const { createBilling, quotaFor, consumeQuota } = require("./billing");
 const { createGoogleAuth } = require("./google-auth");
@@ -1575,7 +1576,7 @@ async function servePublishedSite(req, res, id, requestedPath) {
     "cache-control": "no-cache",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
-    "content-security-policy": "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'unsafe-inline' https:; style-src 'unsafe-inline' https:; img-src data: https:; font-src data: https:; connect-src https:; form-action https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    "content-security-policy": "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals; default-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https:; form-action 'self' https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
   };
   res.writeHead(200, headers);
   if (req.method === "HEAD") return res.end();
@@ -1701,7 +1702,7 @@ function aiRequestLifecycle(res) {
   return { signal: controller.signal, dispose: () => res.off("close", cancel) };
 }
 
-async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false, signal) {
+async function runAgent(model, inputMessages, project, mode, allowChanges, task = "auto", principal = "owner", verifyWeb = false, signal, beforeTool) {
   const routing = {};
   verifyWeb = verifyWeb || automaticWebSearch(inputMessages);
   let webAttempted = false, retryWeb = false, webCalls = 0, webLimitNotified = false;
@@ -1761,6 +1762,7 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     let toolCount = 0, successfulTools = 0;
     for (const call of calls) {
       signal?.throwIfAborted();
+      await beforeTool?.();
       const name = call.function?.name;
       const isWebTool = ["web_search", "read_web_page"].includes(name);
       if (isWebTool) { webAttempted = true; webCalls += 1; }
@@ -1798,6 +1800,173 @@ async function runAgent(model, inputMessages, project, mode, allowChanges, task 
     if (events.some(event => event.ok && event.tool === "write_file")) error.partialEvents = events;
     throw error;
   }
+}
+
+const businessRuns = new Map();
+const businessContactRates = new Map();
+const businessPublishedContent = "Site-ul este publicat online și poate primi cereri de la clienți. Plățile și emailurile automate necesită conectarea serviciilor respective.";
+const businessRequestPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
+
+async function businessProjectForRequest(principal, requestId) {
+  const directory = workspacePaths(principal).projects;
+  const entries = await dataFs.promises.readdir(directory, { withFileTypes: true }).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error));
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !validProjectId(entry.name)) continue;
+    try {
+      const metadata = JSON.parse(await dataFs.promises.readFile(path.join(directory, entry.name, ".nova-project.json"), "utf8"));
+      if (metadata.businessRequestId === requestId) return { project: { id: entry.name, name: metadata.name }, metadata };
+    } catch (error) { if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error; }
+  }
+  return null;
+}
+
+async function writeProjectMetadata(filePath, metadata) {
+  const temporary = `${filePath}.${crypto.randomBytes(8).toString("hex")}.tmp`;
+  await dataFs.promises.writeFile(temporary, JSON.stringify(metadata, null, 2), { encoding: "utf8", mode: 0o600, flag: "wx" });
+  try { await dataFs.promises.rename(temporary, filePath); }
+  catch (error) { await dataFs.promises.unlink(temporary).catch(() => {}); throw error; }
+}
+
+async function updateBusinessProject(principal, project, requestId, values) {
+  return withAccountsLock(async () => {
+    await assertPrincipalActive(principal);
+    const filePath = path.join(projectRoot(project.id, principal), ".nova-project.json");
+    const metadata = JSON.parse(await dataFs.promises.readFile(filePath, "utf8"));
+    if (metadata.businessRequestId !== requestId) throw Object.assign(new Error("Proiectul afacerii nu mai este disponibil."), { status: 409 });
+    await writeProjectMetadata(filePath, { ...metadata, ...values });
+  });
+}
+
+async function businessStatus(principal, entry) {
+  const { project, metadata } = entry;
+  let state = metadata.businessState, error = metadata.businessError;
+  if (state === "building" && Date.now() > metadata.businessLeaseUntil) { state = "failed"; error = "Crearea site-ului a expirat. Ideea și proiectul au fost păstrate."; }
+  const publication = state === "published" || metadata.businessPhase === "publicare" ? await publicationFor(principal, project.id) : null;
+  if (publication) state = "published";
+  if (state === "published" && !publication) { state = "failed"; error = "Publicarea acestui site a fost oprită."; }
+  return {
+    requestId: metadata.businessRequestId, state, phase: metadata.businessPhase || "generare", project,
+    ...(state === "published" ? { content: businessPublishedContent, events: [], ...metadata.businessResult, publication: { published: true, id: publication.id, url: `/p/${publication.id}/`, project: project.id, business: true } } : {}),
+    ...(state === "failed" ? { error: error || "Site-ul nu a putut fi finalizat." } : {})
+  };
+}
+
+async function businessFiles(project, principal) {
+  const files = {};
+  for (const name of requiredBusinessFiles) {
+    try { files[name] = await readProjectFile(project.id, name, principal); }
+    catch (error) { if (error.code !== "ENOENT" && error.status !== 404) throw error; files[name] = ""; }
+  }
+  return files;
+}
+
+async function runBusinessBuild(principal, project, requestId, idea, model) {
+  const signal = AbortSignal.timeout(15 * 60 * 1000);
+  let phase = "generare";
+  const guard = async () => {
+    signal.throwIfAborted();
+    await assertPrincipalActive(principal);
+    const entry = JSON.parse(await dataFs.promises.readFile(path.join(projectRoot(project.id, principal), ".nova-project.json"), "utf8"));
+    if (entry.businessRequestId !== requestId || entry.businessState !== "building") throw Object.assign(new Error("Crearea afacerii a fost întreruptă."), { status: 409 });
+  };
+  try {
+    let generated;
+    try { generated = await runAgent(model, [{ role: "user", content: idea }], project.id, "build", true, "business", principal, false, signal, guard); }
+    catch (error) {
+      const files = await businessFiles(project, principal);
+      if (!error.partialEvents?.some(event => event.ok && event.tool === "write_file") || validateBusinessFiles(files).length) throw error;
+      generated = { events: error.partialEvents };
+    }
+    await guard();
+    phase = "verificare";
+    await updateBusinessProject(principal, project, requestId, { businessPhase: phase });
+    let files = await businessFiles(project, principal);
+    let issues = validateBusinessFiles(files);
+    if (issues.length) {
+      phase = "reparare";
+      await updateBusinessProject(principal, project, requestId, { businessPhase: phase });
+      const fixed = await runAgent(model, [{ role: "user", content: `Finalizează site-ul pentru ideea: ${idea}\nCorectează problemele de verificare: ${issues.join(" ")} Nu pune întrebări. Citește fișierele și salvează corecțiile cu write_file.` }], project.id, "build", true, "code", principal, false, signal, guard);
+      generated.events = [...(generated.events || []), ...(fixed.events || [])];
+      files = await businessFiles(project, principal);
+      issues = validateBusinessFiles(files);
+    }
+    if (issues.length) throw Object.assign(new Error("Site-ul nu a trecut verificarea fișierelor: " + issues.join(" ")), { businessValidation: true });
+    await guard();
+    await writeProjectFile(project.id, "index.html", addBusinessContact(files["index.html"]), principal);
+    await writeProjectFile(project.id, "nova-contact.js", businessContactScript, principal);
+    await guard();
+    phase = "publicare";
+    await updateBusinessProject(principal, project, requestId, { businessPhase: phase });
+    await publishProject(principal, project.id);
+    await updateBusinessProject(principal, project, requestId, {
+      businessState: "published", businessPhase: "finalizat",
+      businessResult: {
+        content: businessPublishedContent,
+        events: generated.events || [], model: generated.model, provider: generated.provider, providerName: generated.providerName
+      }
+    });
+  } catch (error) {
+    const profile = aiConfig.profiles[error.provider] || activeTextProfile();
+    const message = error.businessValidation ? error.message : phase === "generare" || phase === "reparare"
+      ? friendlyTextProviderError(error, profile, model) : "Site-ul nu a putut fi publicat. Proiectul și fișierele au fost păstrate.";
+    console.error("Nova Business failed:", { phase, status: error.status || 503, provider: profile?.id });
+    await updateBusinessProject(principal, project, requestId, { businessState: "failed", businessPhase: phase, businessError: message }).catch(() => {});
+  }
+}
+
+async function claimBusinessBuild(req, res, principal, account, idea, requestId) {
+  const ideaHash = crypto.createHash("sha256").update(idea).digest("hex");
+  return withAccountsLock(async () => {
+    await assertPrincipalActive(principal);
+    const existing = await businessProjectForRequest(principal, requestId);
+    if (existing) {
+      if (existing.metadata.businessIdeaHash !== ideaHash) throw Object.assign(new Error("Această cerere aparține altei idei."), { status: 409 });
+      return { ...existing, start: false };
+    }
+    const profile = activeTextProfile();
+    if (!isProfileConfigured(profile)) throw Object.assign(new Error("Configurează un motor AI pentru a crea afacerea."), { status: 503 });
+    let database, quota;
+    if (account.role === "subscriber") {
+      database = await readAccounts();
+      const record = database.users.find(user => user.id === principal);
+      if (!record || record.deleting) throw Object.assign(new Error("Contul nu este disponibil."), { status: 401 });
+      quota = consumeQuota(record, SUBSCRIBER_DAILY_AI_LIMIT, undefined, 1);
+      res.setHeader("x-nova-ai-remaining", String(quota.remaining)); res.setHeader("x-nova-ai-limit", String(quota.limit)); res.setHeader("x-nova-ai-interval", quota.interval);
+      if (!quota.allowed) throw Object.assign(new Error("Cota planului este epuizată. Încearcă după reînnoirea cotei."), { status: 429 });
+    }
+    const metadata = { businessRequestId: requestId, businessIdeaHash: ideaHash, businessState: "building", businessPhase: "generare", businessLeaseUntil: Date.now() + 15 * 60 * 1000 };
+    const project = await createProjectWorkspace(businessProjectName(idea), principal, { empty: true, subscriber: account.role === "subscriber", metadata });
+    if (database) await writeAccounts(database);
+    return { project, metadata, model: profile.textModel, start: true };
+  });
+}
+
+async function receiveBusinessContact(req, res, id) {
+  res.setHeader("access-control-allow-origin", "*");
+  res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+  res.setHeader("access-control-allow-headers", "content-type");
+  if (req.method === "OPTIONS") { res.writeHead(204); return res.end(); }
+  if (req.method !== "POST") return json(res, 405, { error: "Formularul acceptă numai trimiterea unei cereri." });
+  const site = (await readPublications()).sites[id];
+  if (!site || !validProjectId(site.project)) return json(res, 404, { error: "Site-ul nu mai este publicat." });
+  await assertPrincipalActive(site.principal);
+  const root = projectRoot(site.project, site.principal);
+  const metadata = JSON.parse(await dataFs.promises.readFile(path.join(root, ".nova-project.json"), "utf8"));
+  if (!metadata.businessRequestId) return json(res, 404, { error: "Formularul acestui site nu este activ." });
+  const source = String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0];
+  const rateKey = crypto.createHash("sha256").update(id + source).digest("hex");
+  const now = Date.now();
+  if (businessContactRates.size > 5000) for (const [key, rate] of businessContactRates) if (rate.until <= now) businessContactRates.delete(key);
+  const rate = businessContactRates.get(rateKey);
+  if (rate && rate.until > now && rate.count >= 20) return json(res, 429, { error: "Prea multe cereri. Încearcă din nou mai târziu." });
+  if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) return json(res, 415, { error: "Formularul acceptă numai JSON." });
+  const contact = normalizeBusinessContact(await readJson(req, 16384));
+  businessContactRates.set(rateKey, rate && rate.until > now ? { ...rate, count: rate.count + 1 } : { until: now + 3600000, count: 1 });
+  const directory = path.join(root, ".nova-leads");
+  const key = `${now}-${crypto.randomBytes(8).toString("hex")}`;
+  await dataFs.promises.mkdir(directory, { recursive: true });
+  await dataFs.promises.writeFile(path.join(directory, key + ".json"), JSON.stringify({ id: key, ...contact, createdAt: new Date(now).toISOString() }), { encoding: "utf8", mode: 0o600 });
+  return json(res, 201, { received: true });
 }
 
 async function probeTextProvider(profile, model, signal, timeout = 15000) {
@@ -1875,6 +2044,9 @@ async function handle(req, res) {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=900", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'self'; frame-ancestors 'none'", "x-content-type-options": "nosniff" });
     return res.end(req.method === "HEAD" ? undefined : page);
   }
+
+  const businessContact = url.pathname.match(/^\/p\/([a-f0-9]{24})\/contact$/);
+  if (businessContact) return receiveBusinessContact(req, res, businessContact[1]);
 
   const publishedSite = ["GET", "HEAD"].includes(req.method) && url.pathname.match(/^\/p\/([a-f0-9]{24})(?:\/(.*))?$/);
   if (publishedSite) return servePublishedSite(req, res, publishedSite[1], publishedSite[2] || "index.html");
@@ -2231,6 +2403,48 @@ async function handle(req, res) {
     return json(res, 200, { projects: projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.name.localeCompare(b.name)) });
   }
 
+  if (url.pathname === "/api/business") {
+    if (req.method === "GET") {
+      const requestId = url.searchParams.get("requestId") || "";
+      if (!businessRequestPattern.test(requestId)) return json(res, 400, { error: "Cererea afacerii nu este validă." });
+      const entry = await businessProjectForRequest(principal, requestId);
+      return entry ? json(res, 200, await businessStatus(principal, entry)) : json(res, 404, { error: "Cererea afacerii nu există." });
+    }
+    if (req.method !== "POST") return json(res, 405, { error: "Metodă neacceptată." });
+    if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de creare a afacerii respinsă." });
+    if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers["content-type"] || ""))) return json(res, 415, { error: "Crearea afacerii acceptă numai JSON." });
+    const body = await readCreationJson(req);
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json(res, 400, { error: "Descrie ideea de afacere într-un mesaj." });
+    const requestId = String(body.requestId || "");
+    if (!businessRequestPattern.test(requestId)) return json(res, 400, { error: "Identificatorul cererii nu este valid." });
+    if (body.idea == null && !Array.isArray(body.messages)) return json(res, 400, { error: "Descrie ideea de afacere într-un mesaj." });
+    const decoded = body.idea == null ? creationMessages(body.messages, account.role, body.messagesEncoding) : null;
+    const idea = typeof body.idea === "string" ? body.idea.trim() : decoded?.filter(message => message.role === "user").at(-1)?.content.trim();
+    if (!idea || account.role !== "owner" && idea.length > 6000) return json(res, 400, { error: "Descrie ideea de afacere într-un mesaj." });
+    const claim = await claimBusinessBuild(req, res, principal, account, idea, requestId);
+    if (claim.start) {
+      const key = principal + ":" + requestId;
+      const pending = runBusinessBuild(principal, claim.project, requestId, idea, claim.model);
+      businessRuns.set(key, pending);
+      pending.finally(() => businessRuns.delete(key)).catch(() => {});
+    }
+    const entry = await businessProjectForRequest(principal, requestId);
+    return json(res, claim.start || entry.metadata.businessState === "building" ? 202 : 200, await businessStatus(principal, entry));
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/business/leads") {
+    const project = url.searchParams.get("project");
+    const root = projectRoot(project, principal);
+    await assertProjectParent({ root, full: path.join(root, "index.html") });
+    const directory = path.join(root, ".nova-leads");
+    const before = url.searchParams.get("before") || "";
+    const names = (await dataFs.promises.readdir(directory).catch(error => error.code === "ENOENT" ? [] : Promise.reject(error)))
+      .filter(name => /^\d{13}-[a-f0-9]{16}\.json$/.test(name) && (!before || name < before)).sort().reverse();
+    const selected = names.slice(0, 50), leads = [];
+    for (const name of selected) leads.push(JSON.parse(await dataFs.promises.readFile(path.join(directory, name), "utf8")));
+    return json(res, 200, { leads, next: names.length > selected.length ? selected.at(-1) : null });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/cv") {
     if (!sameOrigin(req)) return json(res, 403, { error: "Cerere de creare CV respinsă." });
     const body = await readJson(req);
@@ -2261,7 +2475,13 @@ async function handle(req, res) {
     const body = await readJson(req);
     const root = projectRoot(body.project, principal);
     if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80) return json(res, 400, { error: "Numele trebuie să aibă între 1 și 80 de caractere." });
-    await dataFs.promises.writeFile(path.join(root, ".nova-project.json"), JSON.stringify({ name: body.name.trim() }, null, 2), "utf8");
+    await withAccountsLock(async () => {
+      const metadataPath = path.join(root, ".nova-project.json");
+      let metadata = {};
+      try { metadata = JSON.parse(await dataFs.promises.readFile(metadataPath, "utf8")); }
+      catch (error) { if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error; }
+      await writeProjectMetadata(metadataPath, { ...metadata, name: body.name.trim() });
+    });
     return json(res, 200, { id: body.project, name: body.name.trim() });
   }
 

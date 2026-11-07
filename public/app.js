@@ -889,6 +889,7 @@ function renderChat() {
       try { addImageCard(message.media.prompt, message.media.result); }
       catch { addBubble("assistant", "Imaginea salvată nu mai poate fi afișată."); }
     } else addBubble(message.role, visibleContent, message.events);
+    if (message.publication) { try { addPublishedSiteCard(message.publication); } catch {} }
   }
   box.scrollTop = box.scrollHeight;
   updateHomeHistory();
@@ -914,10 +915,12 @@ function setTask(task) {
     code: "Descrie aplicația sau unealta pe care vrei să o construiești…",
     text: "Ce text dorești? Spune publicul, scopul, tonul și lungimea…",
     lyrics: "Descrie tema, genul și emoția versurilor: strofe, refren și punte…",
-    business: "Descrie ideea de afacere; Nova va crea site-ul funcțional și îl va publica online…"
+    business: "Scrie doar ideea. Nova creează site-ul, activează formularul și îți dă linkul online…"
   };
   el("prompt").placeholder = prompts[selected];
   el("generateImageBtn").classList.toggle("active", selected === "image");
+  el("modeSelect").disabled = selected === "business";
+  el("allowChanges").disabled = selected === "business" || state.account?.role === "owner";
   if (selected === "business") {
     el("modeSelect").value = "build";
     el("allowChanges").checked = true;
@@ -1431,14 +1434,21 @@ async function refreshPublication() {
 }
 
 function addPublishedSiteCard(publication, type = "site") {
+  const target = new URL(publication.url, location.origin);
+  if (target.origin !== location.origin || !/^\/p\/[a-f0-9]{24}\/$/.test(target.pathname) || target.search || target.hash) throw new Error("Linkul publicat nu este valid.");
   const node = document.createElement("div"); node.className = "message assistant";
   const isCv = type === "cv";
   const meta = document.createElement("div"); meta.className = "message-meta"; meta.textContent = isCv ? "Nova CV · publicat online" : "Nova Business · site publicat";
   const textNode = document.createElement("div"); textNode.textContent = isCv ? "CV-ul este online. Deschide-l, descarcă-l ca PDF sau copiază linkul pentru a-l trimite." : "Site-ul este online. Îl poți actualiza oricând publicând din nou proiectul.";
-  const url = new URL(publication.url, location.origin).href;
+  const url = target.href;
   const link = document.createElement("a"); link.className = "btn small"; link.target = "_blank"; link.rel = "noopener noreferrer"; link.href = url; link.textContent = isCv ? "Deschide CV-ul" : "Deschide site-ul";
   const copy = document.createElement("button"); copy.className = "btn small"; copy.type = "button"; copy.textContent = "Copiază linkul"; copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(url); toast("Link copiat"); } catch { toast(`Link: ${url}`); } });
-  node.append(meta, textNode, link, copy); messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
+  node.append(meta, textNode, link, copy);
+  if (publication.business && publication.project) {
+    const leads = document.createElement("button"); leads.className = "btn small"; leads.type = "button"; leads.textContent = "Cereri clienți";
+    leads.addEventListener("click", () => openBusinessLeads(publication.project).catch(error => toast(error.message))); node.append(leads);
+  }
+  messageContainer().append(node); el("messages").scrollTop = el("messages").scrollHeight;
 }
 
 async function publishProject(openAfter = true) {
@@ -1527,6 +1537,95 @@ async function undoFile() {
   } catch (error) { toast(error.message); }
 }
 
+async function sendBusinessIdea(resume = false) {
+  if (state.busy) return;
+  const idea = el("prompt").value.trim();
+  if (!idea) return;
+  const draftKey = storageKey("nova-business-draft"), originChat = state.chat;
+  let draft;
+  try { draft = JSON.parse(readLocalCache(draftKey) || "null"); } catch {}
+  if (!draft?.requestId || draft.idea !== idea) draft = { idea, requestId: newCvRequestId() };
+  writeLocalCache(draftKey, JSON.stringify(draft));
+  state.busy = true; el("sendBtn").disabled = true;
+  setView("chat");
+  const userBubble = addBubble("user", idea);
+  const pending = document.createElement("div"); pending.className = "thinking"; pending.textContent = resume ? "Nova reia urmărirea afacerii…" : "Nova creează site-ul și îl publică online…";
+  messageContainer().append(pending); el("prompt").value = ""; resizePrompt();
+  let published = false;
+  try {
+    let job = await api("/api/business", jsonBody({ requestId: draft.requestId, messages: [{ role: "user", content: idea }] }));
+    const phases = { generare: "Nova construiește site-ul…", verificare: "Nova verifică fișierele site-ului…", reparare: "Nova corectează fișierele înainte de publicare…", publicare: "Nova publică site-ul…" };
+    while (job.state === "building") {
+      pending.textContent = phases[job.phase] || "Nova finalizează afacerea…";
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      job = await api(`/api/business?requestId=${encodeURIComponent(draft.requestId)}`);
+    }
+    if (job.project && !state.projects.some(project => project.id === job.project.id)) state.projects.push(job.project);
+    if (job.state !== "published" || !job.publication?.published) {
+      writeLocalCache(draftKey, "{}");
+      throw new Error(job.error || "Site-ul nu a putut fi publicat. Proiectul a fost păstrat.");
+    }
+    published = true;
+    const history = [{ role: "user", content: idea }, { role: "assistant", content: job.content, events: job.events || [], publication: job.publication }];
+    writeLocalCache(chatKey(job.project.id), JSON.stringify(history));
+    writeLocalCache(draftKey, "{}"); renderProjects();
+    if (state.chat === originChat) {
+      if (!state.dirty) {
+        try { await loadProject(job.project.id); writeLocalCache(storageKey("nova-project"), job.project.id); }
+        catch (error) { toast(error.message); }
+      }
+      if (state.project !== job.project.id) { addBubble("assistant", job.content, job.events); addPublishedSiteCard(job.publication); }
+      setView("chat");
+    } else toast("Afacerea a fost publicată. Deschide proiectul pentru linkul final.");
+  } catch (error) {
+    if (!published && state.chat === originChat) {
+      userBubble?.remove();
+      if (!el("prompt").value.trim()) { el("prompt").value = idea; resizePrompt(); }
+      addBubble("assistant", error.message || "Crearea nu a putut fi verificată. Ideea a fost păstrată.");
+    } else toast(error.message);
+  } finally {
+    pending.remove(); state.busy = false; el("sendBtn").disabled = false;
+    if (state.chat === originChat) el("prompt").focus();
+  }
+}
+
+async function resumeBusinessIdea() {
+  let draft;
+  try { draft = JSON.parse(readLocalCache(storageKey("nova-business-draft")) || "null"); } catch {}
+  if (!draft?.requestId || !draft.idea || state.busy) return;
+  setTask("business"); el("prompt").value = draft.idea;
+  await sendBusinessIdea(true);
+}
+
+async function openBusinessLeads(project = state.project) {
+  if (!project) { toast("Alege un proiect."); return; }
+  state.businessInbox = { project, leads: [], next: null };
+  el("businessLeadsList").replaceChildren();
+  el("businessLeadsDialog").showModal();
+  await loadBusinessLeadsPage();
+}
+
+async function loadBusinessLeadsPage() {
+  const inbox = state.businessInbox;
+  if (!inbox || inbox.loading) return;
+  inbox.loading = true; el("businessLeadsMore").disabled = true;
+  const status = el("businessLeadsStatus"); status.textContent = "Se încarcă cererile…";
+  try {
+    const data = await api(`/api/business/leads?project=${encodeURIComponent(inbox.project)}${inbox.next ? `&before=${encodeURIComponent(inbox.next)}` : ""}`);
+    if (state.businessInbox !== inbox) return;
+    for (const lead of data.leads || []) {
+      const row = document.createElement("article"); row.className = "provider-diagnostic";
+      const name = document.createElement("strong"); name.textContent = lead.name;
+      const contact = document.createElement("p"); contact.textContent = `${lead.email} · ${new Date(lead.createdAt).toLocaleString()}`;
+      const message = document.createElement("p"); message.textContent = lead.message;
+      row.append(name, contact, message); el("businessLeadsList").append(row); inbox.leads.push(lead);
+    }
+    inbox.next = data.next || null; el("businessLeadsMore").hidden = !inbox.next;
+    status.textContent = inbox.leads.length ? `${inbox.leads.length} cereri afișate. Datele sunt private în proiectul tău.` : "Nu există încă cereri pentru acest proiect.";
+  } catch (error) { status.textContent = error.message; }
+  finally { inbox.loading = false; if (state.businessInbox === inbox) el("businessLeadsMore").disabled = false; }
+}
+
 async function send() {
   if (state.busy) return;
   const promptDraft = el("prompt").value, promptText = promptDraft.trim(), model = el("modelSelect").value;
@@ -1538,6 +1637,7 @@ async function send() {
     await generateImageFromPrompt();
     return;
   }
+  if (el("taskSelect").value === "business") { await sendBusinessIdea(); return; }
   if (!model) { speakNextAssistant = false; toast("Configurează furnizorul AI și alege un model."); return; }
   setView("chat");
   const mode = el("modeSelect").value;
@@ -1821,7 +1921,9 @@ el("creatorHome").addEventListener("click", async event => {
   if (["chat", "code", "text", "lyrics", "business"].includes(action)) {
     const task = action === "chat" ? "auto" : action;
     setTask(task); if (draft) { el("prompt").value = draft; el("homePrompt").value = ""; resizePrompt(); }
-    setView("chat"); el("prompt").focus(); return;
+    setView("chat");
+    if (action === "business" && draft) { await sendBusinessIdea(); return; }
+    el("prompt").focus(); return;
   }
   if (action === "image") {
     setTask("image");
@@ -1847,6 +1949,10 @@ el("deleteProjectBtn").addEventListener("click", deleteProject);
 el("restoreProjectBtn").addEventListener("click", restoreProject);
 el("exportProjectBtn").addEventListener("click", exportProject);
 el("publishProjectBtn").addEventListener("click", () => publishProject(true).catch(error => toast(error.message)));
+el("businessLeadsBtn").addEventListener("click", () => openBusinessLeads().catch(error => toast(error.message)));
+el("businessLeadsMore").addEventListener("click", loadBusinessLeadsPage);
+el("businessLeadsDownload").addEventListener("click", () => downloadBlob(new Blob([JSON.stringify(state.businessInbox?.leads || [], null, 2)], { type: "application/json" }), "cereri-clienti.json"));
+
 el("unpublishProjectBtn").addEventListener("click", () => unpublishProject().catch(error => toast(error.message)));
 el("importProjectBtn").addEventListener("click", () => el("folderImport").click());
 el("folderImport").addEventListener("change", event => { importFolder(Array.from(event.target.files || [])).finally(() => { event.target.value = ""; }); });
@@ -1924,7 +2030,7 @@ loadAccount().then(() => Promise.all([loadProviderSettings(), loadProjects()])).
   if (state.account?.role === "owner" && new URLSearchParams(location.search).get("settings") === "ai") {
     const url = new URL(location.href); url.searchParams.delete("settings"); history.replaceState(null, "", url);
     el("providerSettingsBtn").click();
-  }
+  } else if (state.account) resumeBusinessIdea().catch(error => toast(error.message));
 });
 
 

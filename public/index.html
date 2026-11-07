@@ -441,7 +441,7 @@ body {background:#080b13;}
       <div class="project-card"><div class="project-icon">⌘</div><div><div class="project-name" id="projectName">Se încarcă proiectul…</div><div class="project-path" id="projectStorageLabel">Fișierele proiectului</div></div></div>
       <div class="project-actions">
         <button class="btn" id="importProjectBtn">Importă folder</button><button class="btn" id="exportProjectBtn">Exportă proiect</button>
-        <button class="btn" id="publishProjectBtn">Publică online</button><a class="btn" id="publishedSiteLink" target="_blank" rel="noopener noreferrer" hidden>Deschide site-ul</a><button class="btn" id="unpublishProjectBtn" hidden>Oprește publicarea</button>
+        <button class="btn" type="button" id="businessLeadsBtn">Cereri clienți</button><button class="btn" id="publishProjectBtn">Publică online</button><a class="btn" id="publishedSiteLink" target="_blank" rel="noopener noreferrer" hidden>Deschide site-ul</a><button class="btn" id="unpublishProjectBtn" hidden>Oprește publicarea</button>
         <button class="btn" id="deleteProjectBtn">Mută în coș</button><button class="btn" id="restoreProjectBtn">Restaurează</button>
         <input id="folderImport" type="file" webkitdirectory directory multiple hidden>
       </div>
@@ -462,7 +462,7 @@ body {background:#080b13;}
         <div class="home-content">
           <section class="dashboard-chat" aria-labelledby="dashboardChatTitle">
             <div class="dashboard-chat-head"><div><span class="mini-nova">N</span><h2 id="dashboardChatTitle">Chat Nova AI</h2></div><div class="dashboard-model-tabs" id="dashboardModelTabs" aria-label="Motoare AI active"></div></div>
-            <div class="dashboard-greeting"><span class="greeting-orb">N</span><h2><span>Salut!</span> Cu ce te pot ajuta astăzi?</h2><div class="quick-prompts"><button type="button" data-quick-task="image" data-quick-prompt="Creează o imagine futuristă">Creează o imagine futuristă</button><button type="button" data-quick-task="code" data-quick-prompt="Scrie codul pentru un site modern">Scrie cod pentru un site modern</button><button type="button" data-quick-task="business" data-quick-prompt="Creează un plan complet de afaceri">Creează un plan de afaceri</button></div></div>
+            <div class="dashboard-greeting"><span class="greeting-orb">N</span><h2><span>Salut!</span> Cu ce te pot ajuta astăzi?</h2><div class="quick-prompts"><button type="button" data-quick-task="image" data-quick-prompt="Creează o imagine futuristă">Creează o imagine futuristă</button><button type="button" data-quick-task="code" data-quick-prompt="Scrie codul pentru un site modern">Scrie cod pentru un site modern</button><button type="button" data-quick-task="business" data-quick-prompt="Servicii de curățenie la domiciliu">Lansează o afacere online</button></div></div>
             <div class="home-prompt-wrap"><span class="prompt-spark" aria-hidden="true">＋</span><label class="sr-only" for="homePrompt">Ce vrei să creezi?</label><textarea id="homePrompt" rows="1" placeholder="Scrie mesajul tău aici…"></textarea><button class="voice-chat-btn" id="homeVoiceChatBtn" type="button" aria-label="Vorbește cu Nova" title="Vorbește cu Nova">🎙</button><button class="btn primary home-send" id="homeSendBtn" type="button" aria-label="Trimite ideea către Nova"><svg class="arrow-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></button></div>
           </section>
 
@@ -667,8 +667,16 @@ body {background:#080b13;}
       <div class="provider-note" id="cvStatus" role="status" aria-live="polite" hidden></div>
     </form>
   </dialog>
+  <dialog class="provider-dialog" id="businessLeadsDialog" aria-labelledby="businessLeadsTitle">
+    <form method="dialog">
+      <div class="provider-head"><h2 id="businessLeadsTitle">Cereri clienți</h2><button class="btn iconbtn" value="cancel" aria-label="Închide">×</button></div>
+      <p class="provider-note" id="businessLeadsStatus" role="status" aria-live="polite"></p>
+      <div id="businessLeadsList" class="provider-diagnostics-list"></div>
+      <div class="provider-actions"><button class="btn" type="button" id="businessLeadsMore" hidden>Mai multe cereri</button><button class="btn" type="button" id="businessLeadsDownload">Descarcă cererile afișate</button><button class="btn" value="cancel">Închide</button></div>
+    </form>
+  </dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="./app.js?v=2.7.4-image-auto-recovery"></script>
+  <script src="./app.js?v=2.7.4-business-idea-to-link"></script>
 </body>
 </html>
 
