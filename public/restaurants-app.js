@@ -24,6 +24,7 @@
       point = location; locationLabel = label; restaurants = data.restaurants;
       el('selected-address').textContent = label;
       status('search-status', data.warning || (restaurants.length ? `${restaurants.length} rezultate${query ? ' pentru „' + query + '”' : ''} în apropiere.` : 'Nu am găsit rezultate pentru această căutare în apropiere. Încearcă alt preparat sau schimbă adresa.'), Boolean(data.warning));
+      if (data.interpretation?.translated) el('selected-address').textContent = label + ' · Am înțeles: ' + data.interpretation.term;
       renderRestaurants();
     } catch (error) { if (token === revision) status('search-status', error.message, true); }
   }

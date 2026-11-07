@@ -52,3 +52,16 @@ test('a food keyword finds nearby public map restaurants without any merchant en
   const data=await response.json();assert.equal(data.restaurants.length,1);assert.equal(data.restaurants[0].source,'OpenStreetMap');assert.equal(data.restaurants[0].orderable,false);assert.match(data.restaurants[0].name,/Pizzeria/);
   assert.equal((await fetch(app.base+'/api/restaurants/discover?q=pizza')).status,400);
 });
+
+test('multilingual HTTP search normalizes words and asks AI only for the free-form query text',async t=>{
+  const app=await startBusinessFixture(t);
+  for(const q of ['пицца','بيتزا','ピザ','披萨']){
+    const response=await fetch(app.base+'/api/restaurants/discover?lat=52.52&lon=13.405&q='+encodeURIComponent(q));assert.equal(response.status,200);
+    const data=await response.json();assert.equal(data.restaurants.length,1);assert.equal(data.interpretation.term,'pizza');
+  }
+  assert.equal(app.calls().length,0);
+  const q='Je voudrais une pizza près de moi';
+  const response=await fetch(app.base+'/api/restaurants/discover?lat=52.52&lon=13.405&q='+encodeURIComponent(q));assert.equal(response.status,200);
+  const data=await response.json();assert.equal(data.restaurants.length,1);assert.equal(data.interpretation.term,'pizza');
+  assert.equal(app.calls().length,1);assert.equal(app.calls()[0].messages.find(message=>message.role==='user').content,q);
+});
