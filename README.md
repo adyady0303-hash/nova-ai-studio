@@ -1,5 +1,11 @@
 # Nova AI Studio
 
+### Administrare Poftigo · date bancare
+
+Pagina separată `/restaurants/admin` permite autentificarea cu contul owner Nova existent și administrarea beneficiarului, IBAN-ului EUR, BIC/SWIFT și numelui băncii. API-ul `/api/restaurants/admin/bank-settings` este rezervat exclusiv rolului owner; modificările cer JSON și aceeași origine. IBAN-ul este normalizat și validat prin MOD-97, iar BIC-ul este verificat structural. Conturile restaurantelor și vizitatorii nu pot citi sau modifica setările.
+
+Datele sunt păstrate în depozitul persistent existent, separat de setările bancare ale abonamentelor Nova, și nu sunt expuse în catalogul public. Pagina nu salvează informații bancare în localStorage și nu este destinată indexării. Configurarea unui cont bancar nu activează încasări, comisioane, verificări de transfer sau emailuri automate; conectarea unui procesator de plăți este un pas separat. Nu introduce parole bancare, PIN-uri sau date de card.
+
 ### Restaurante și comenzi locale
 
 `/restaurants` este aplicația publică Poftigo. Clientul poate permite localizarea sau poate căuta și confirma adresa manual (OpenStreetMap / Nominatim, fără autocompletare, cu cache și coadă comună care limitează căutările de adrese și restaurante la cel mult o cerere pe secundă). Căutarea după preparat (pizza, burger, sushi sau nume) folosește și rezultate reale OpenStreetMap/Nominatim, într-o zonă de până la 5 km. Restaurantele de pe hartă pot apărea fără înscriere, cu distanță și linkuri oficiale când sunt disponibile; meniurile, prețurile și livrarea lor nu sunt confirmate. Restaurantele înscrise în Nova au suplimentar propriul meniu și comenzi, în raza de livrare declarată. Un răspuns gol real și indisponibilitatea serviciului au stări distincte.

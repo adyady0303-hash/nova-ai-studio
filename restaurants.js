@@ -2,6 +2,7 @@
 
 const crypto = require("node:crypto");
 const path = require("node:path");
+const { bankConfiguration } = require("./billing");
 const { createFoodInterpreter, normalize: normalizeFoodText } = require("./restaurant-query");
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const ID = /^[a-f0-9]{24}$/;
@@ -74,6 +75,20 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     } finally { await fs.unlink(temporary).catch(error => { if (error.code !== "ENOENT") throw error; }); }
   }
   const catalog = () => read(file, []);
+  const bankFile = path.join(root, 'data', 'poftigo-payment-settings.json');
+  async function adminBank() { return read(bankFile, null); }
+  async function saveAdminBank(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail(400, 'Completează datele bancare.');
+    const bank = bankConfiguration({ iban: body.iban, beneficiary: body.beneficiary });
+    if (!bank) throw fail(400, 'Completează beneficiarul și un IBAN valid pentru încasări în EUR.');
+    const bic = String(body.bic || '').replace(/\s/g, '').toUpperCase();
+    if (bic && !/^[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?$/.test(bic)) throw fail(400, 'Codul BIC/SWIFT trebuie să aibă 8 sau 11 caractere valide.');
+    const bankName = String(body.bankName || '').trim();
+    if (bankName.length > 120) throw fail(400, 'Numele băncii poate avea maximum 120 de caractere.');
+    const value = { ...bank, bic, bankName, currency: 'EUR', updatedAt: new Date().toISOString() };
+    return withLock(async () => { await write(bankFile, value); return value; });
+  }
+
   async function mine(owner) { return (await catalog()).find(row => row.owner === owner) || null; }
   async function save(owner, body) {
     const value = normalizeRestaurant(body);
@@ -252,6 +267,6 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     geocodes.set(query, { at: Date.now(), value });
     return value;
   }
-  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode, discover };
+  return { mine, save, search, order, orders, updateOrder, removeOwner, geocode, discover, adminBank, saveAdminBank };
 }
 module.exports = { createRestaurantService, normalizeRestaurant, distanceKm, isRestaurantMarketplaceIdea };
