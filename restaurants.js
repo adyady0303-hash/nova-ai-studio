@@ -275,14 +275,14 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     try { const url = new URL(value); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return url.href; } catch {}
     return '';
   }
-  async function nearby(point, query) {
+  async function nearby(point, query, radiusKm = 5) {
     const center = { lat: Number(point.lat.toFixed(4)), lon: Number(point.lon.toFixed(4)) };
-    const key = center.lat + ':' + center.lon + ':' + query.lookup;
+    const key = center.lat + ':' + center.lon + ':' + query.lookup + ':' + radiusKm;
     const cached = nearbyCache.get(key);
     if (cached && Date.now() - cached.at < 15 * 60000) return cached.rows;
     if (nearbyInFlight.has(key)) return nearbyInFlight.get(key);
     const operation = (async () => {
-      const latDelta = 5.2 / 111.2, lonDelta = 5.2 / (111.2 * Math.max(.01, Math.cos(center.lat * Math.PI / 180)));
+      const latDelta = (radiusKm + .2) / 111.2, lonDelta = (radiusKm + .2) / (111.2 * Math.max(.01, Math.cos(center.lat * Math.PI / 180)));
       const box = [Math.max(-180, center.lon - lonDelta), Math.min(90, center.lat + latDelta), Math.min(180, center.lon + lonDelta), Math.max(-90, center.lat - latDelta)].join(',');
       const url = new URL(nominatimEndpoint);
       url.search = new URLSearchParams({ q: query.lookup, format: 'jsonv2', limit: '30', extratags: '1', addressdetails: '1', bounded: '1', viewbox: box }).toString();
@@ -309,9 +309,11 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
   }
   async function discover(input) {
     const point = coordinates(input), query = await interpretQuery(input.q);
+    const radiusKm = Number(input.radiusKm || 5);
+    if (![5, 15, 30].includes(radiusKm)) throw fail(400, 'Alege o rază de 5, 15 sau 30 km.');
     const local = (await search(point)).restaurants.filter(row => matchesFood(row.name + ' ' + row.menu.map(item => item.name + ' ' + item.description).join(' '), query)).map(row => ({ ...row, orderable: true, source: 'Nova' }));
     let external, warning = query.warning || '';
-    try { external = await nearby(point, query); }
+    try { external = await nearby(point, query, radiusKm); }
     catch (error) {
       if (!local.length) throw error;
       external = []; warning = [warning, 'Căutarea pe hartă este indisponibilă temporar. Afișăm doar rezultatele înscrise în Poftigo.'].filter(Boolean).join(' ');
@@ -319,11 +321,11 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     const restaurants = [...local];
     for (const row of external) {
       const distance = distanceKm(point, row);
-      if (distance > 5 || local.some(local => normalizeQuery(local.name) === normalizeQuery(row.name) && distanceKm(local, row) < .2)) continue;
+      if (distance > radiusKm || local.some(local => normalizeQuery(local.name) === normalizeQuery(row.name) && distanceKm(local, row) < .2)) continue;
       restaurants.push({ ...row, distanceKm: Math.round(distance * 10) / 10 });
     }
     restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
-    return { restaurants: restaurants.slice(0, 50), query: query.query, interpretation: { original: query.original, term: query.interpreted, translated: query.translated }, radiusKm: 5, warning, source: 'Poftigo și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
+    return { restaurants: restaurants.slice(0, 50), query: query.query, interpretation: { original: query.original, term: query.interpreted, translated: query.translated }, radiusKm, warning, source: 'Poftigo și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
   }
   const geocodes = new Map();
   async function geocode(query) {
