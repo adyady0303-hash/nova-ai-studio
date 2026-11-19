@@ -275,6 +275,73 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     try { const url = new URL(value); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) return url.href; } catch {}
     return '';
   }
+  const commonsPhotos = new Map(), commonsPhotosInFlight = new Map();
+  function commonsFile(value) {
+    if (typeof value !== 'string') return '';
+    const match = value.trim().match(/^File:(.{1,300})$/i);
+    if (!match || /[\u0000-\u001f\u007f|]/.test(match[1])) return '';
+    const name = match[1].replace(/_/g, ' ').trim();
+    return name ? 'File:' + name : '';
+  }
+  function commonsImageUrl(value) {
+    try {
+      const url = new URL(value);
+      if (url.protocol === 'https:' && url.hostname === 'upload.wikimedia.org' && !url.port && !url.username && !url.password && url.pathname.startsWith('/wikipedia/commons/')) return url.href;
+    } catch {}
+    return '';
+  }
+  function commonsLicenseUrl(value) {
+    try {
+      const url = new URL(value);
+      if (!['https:', 'http:'].includes(url.protocol) || url.port || url.username || url.password) return '';
+      if (url.hostname === 'creativecommons.org' && /^\/(?:licenses\/by(?:-sa)?\/|publicdomain\/(?:zero|mark)\/)/.test(url.pathname)) { url.protocol = 'https:'; return url.href; }
+      if (['www.gnu.org', 'gnu.org'].includes(url.hostname) && /^\/licenses\/(?:old-licenses\/)?(?:fdl|gfdl)/.test(url.pathname)) { url.protocol = 'https:'; return url.href; }
+    } catch {}
+    return '';
+  }
+  function commonsPlainText(value) {
+    if (typeof value !== 'string') return '';
+    const entities = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+    return value.slice(0, 5000).replace(/&#(?:x([a-f0-9]+)|(\d+));/gi, (_, hex, decimal) => {
+      const code = Number.parseInt(hex || decimal, hex ? 16 : 10);
+      return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : '';
+    }).replace(/&(amp|lt|gt|quot|apos|nbsp);/gi, (_, name) => entities[name.toLowerCase()])
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<[^>]*>/g, ' ')
+      .replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+  }
+  async function commonsPhoto(title) {
+    const cached = commonsPhotos.get(title);
+    if (cached && Date.now() < cached.expires) return cached.value;
+    if (commonsPhotosInFlight.has(title)) return commonsPhotosInFlight.get(title);
+    if (commonsPhotosInFlight.size >= 6) return null;
+    const operation = (async () => {
+      const controller = new AbortController();
+      let timeout;
+      const request = (async () => {
+        const url = new URL('https://commons.wikimedia.org/w/api.php');
+        url.search = new URLSearchParams({ action: 'query', format: 'json', formatversion: '2', redirects: '1', titles: title, prop: 'imageinfo', iiprop: 'url|mime|thumbmime|extmetadata', iiurlwidth: '900', iiextmetadatafilter: 'Artist|LicenseShortName|LicenseUrl|AttributionRequired' }).toString();
+        const response = await fetchImpl(url, { redirect: 'error', signal: controller.signal, headers: { 'User-Agent': 'Ammafood/2.7.8 (https://www.nova-ai-studio.eu/about)', Accept: 'application/json' } });
+        if (!response.ok) return null;
+        const data = await response.json(), page = data?.query?.pages?.[0], info = page?.imageinfo?.[0];
+        const canonicalTitle = commonsFile(page?.title);
+        if (!info || page.ns !== 6 || !canonicalTitle) return null;
+        const raster = mime => ['image/jpeg', 'image/png', 'image/webp'].includes(mime);
+        const image = (raster(info.thumbmime) && commonsImageUrl(info.thumburl)) || (raster(info.mime) && commonsImageUrl(info.url));
+        const author = commonsPlainText(info.extmetadata?.Artist?.value), license = commonsPlainText(info.extmetadata?.LicenseShortName?.value);
+        const licenseUrl = commonsLicenseUrl(info.extmetadata?.LicenseUrl?.value);
+        if (!image || !author || !license || !licenseUrl) return null;
+        return { photo: image, photoSourceUrl: 'https://commons.wikimedia.org/wiki/File:' + encodeURIComponent(canonicalTitle.slice(5).replace(/ /g, '_')), photoAttribution: author + ' · ' + license, photoLicenseUrl: licenseUrl };
+      })().catch(() => null);
+      let value;
+      try { value = await Promise.race([request, new Promise(resolve => { timeout = setTimeout(() => { controller.abort(); resolve(null); }, 4000); })]); }
+      finally { clearTimeout(timeout); }
+      if (commonsPhotos.size >= 500) commonsPhotos.delete(commonsPhotos.keys().next().value);
+      commonsPhotos.set(title, { value, expires: Date.now() + (value ? 24 * 3600000 : 5 * 60000) });
+      return value;
+    })();
+    commonsPhotosInFlight.set(title, operation);
+    try { return await operation; } finally { commonsPhotosInFlight.delete(title); }
+  }
   async function nearby(point, query) {
     const center = { lat: Number(point.lat.toFixed(4)), lon: Number(point.lon.toFixed(4)) };
     const key = center.lat + ':' + center.lon + ':' + query.lookup;
@@ -286,7 +353,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       const box = [Math.max(-180, center.lon - lonDelta), Math.min(90, center.lat + latDelta), Math.min(180, center.lon + lonDelta), Math.max(-90, center.lat - latDelta)].join(',');
       const url = new URL(nominatimEndpoint);
       url.search = new URLSearchParams({ q: query.lookup, format: 'jsonv2', limit: '30', extratags: '1', addressdetails: '1', bounded: '1', viewbox: box }).toString();
-      const data = await nominatim(url), rows = [], seen = new Set();
+      const data = await nominatim(url), rows = [], seen = new Set(), photoCandidates = [];
       for (const item of data) {
         if (!item || !['restaurant', 'fast_food', 'cafe', 'food_court', 'pub', 'bar', 'biergarten'].includes(item.type) || !['node', 'way', 'relation'].includes(item.osm_type) || !Number.isSafeInteger(Number(item.osm_id)) || !item.name) continue;
         let location; try { location = coordinates(item); } catch { continue; }
@@ -298,8 +365,13 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
         const website = publicLink(tags.website || tags['contact:website']);
         const menuUrl = publicLink(tags['website:menu'] || tags['contact:menu'] || tags.menu);
         const photoUrl = publicLink(tags.image);
-        rows.push({ id, name: String(item.name).slice(0, 200), ...location, address: [address.road, address.house_number, address.city || address.town || address.village].filter(Boolean).join(', ') || String(item.display_name || '').slice(0, 400), cuisine, photo: photoUrl.startsWith('https:') ? photoUrl : '', menu: [], orderable: false, source: 'OpenStreetMap', website, menuUrl, mapUrl: 'https://www.openstreetmap.org/' + item.osm_type + '/' + item.osm_id });
+        const row = { id, name: String(item.name).slice(0, 200), ...location, address: [address.road, address.house_number, address.city || address.town || address.village].filter(Boolean).join(', ') || String(item.display_name || '').slice(0, 400), cuisine, photo: photoUrl.startsWith('https:') ? photoUrl : '', menu: [], orderable: false, source: 'OpenStreetMap', website, menuUrl, mapUrl: 'https://www.openstreetmap.org/' + item.osm_type + '/' + item.osm_id };
+        rows.push(row);
+        const title = commonsFile(tags.wikimedia_commons) || commonsFile(tags.image);
+        if (!row.photo && title && photoCandidates.length < 6 && distanceKm(point, location) <= 5) photoCandidates.push({ row, title });
       }
+      // Resolve only files explicitly linked by OSM; no guessed restaurant photos.
+      await Promise.all(photoCandidates.map(async ({ row, title }) => { const resolved = await commonsPhoto(title); if (resolved) Object.assign(row, resolved); }));
       if (nearbyCache.size >= 500) nearbyCache.delete(nearbyCache.keys().next().value);
       nearbyCache.set(key, { rows, at: Date.now() });
       return rows;

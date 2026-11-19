@@ -1,0 +1,24 @@
+{
+  "license": "https://unsplash.com/license",
+  "usage": "Photographs are genuine food photographs used only for general culinary presentation. They must not be presented as photographs of restaurants listed by Ammafood.",
+  "sources": [
+    {
+      "category": "pizza",
+      "source": "https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fm=jpg&fit=crop&w=1600&h=1200&q=90",
+      "provider": "Unsplash",
+      "kind": "real food photograph, generic illustration, not a listed restaurant photo"
+    },
+    {
+      "category": "burger",
+      "source": "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fm=jpg&fit=crop&w=900&h=900&q=88",
+      "provider": "Unsplash",
+      "kind": "real food photograph, generic illustration, not a listed restaurant photo"
+    },
+    {
+      "category": "sushi",
+      "source": "https://images.unsplash.com/photo-1579871494447-9811cf80d66c?auto=format&fm=jpg&fit=crop&w=900&h=900&q=88",
+      "provider": "Unsplash",
+      "kind": "real food photograph, generic illustration, not a listed restaurant photo"
+    }
+  ]
+}
