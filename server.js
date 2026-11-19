@@ -1953,7 +1953,7 @@ async function runBusinessBuild(principal, project, requestId, idea, model) {
     if (nativeRestaurant) {
       await guard();
       await installRestaurantProject(principal, project.id);
-      generated = { events: requiredBusinessFiles.map(path => ({ tool: "write_file", ok: true, path })), providerName: "Poftigo" };
+      generated = { events: requiredBusinessFiles.map(path => ({ tool: "write_file", ok: true, path })), providerName: "Ammafood" };
     } else try { generated = await runAgent(model, [{ role: "user", content: idea }], project.id, "build", true, "business", principal, false, signal, guard); }
     catch (error) {
       const files = await businessFiles(project, principal);
@@ -2105,7 +2105,7 @@ async function handle(req, res) {
     return res.end(req.method === "HEAD" ? "" : body);
   }
   if (["GET", "HEAD"].includes(req.method) && ["/sitemap.xml", "/poftigo-sitemap.xml"].includes(url.pathname)) {
-    // Public XML endpoints, before the login guard. A separate Poftigo sitemap
+    // Public XML endpoints, before the login guard. A separate Ammafood sitemap
     // avoids stale Google Search Console reports for the original sitemap URL.
     const origin = "https://www.nova-ai-studio.eu";
     const paths = url.pathname === "/poftigo-sitemap.xml"
@@ -2293,7 +2293,7 @@ async function handle(req, res) {
     }
   }
   if (req.method === "GET" && url.pathname === "/api/restaurants/admin/payments") return restaurantResponse(res, async () => {
-    if (account.role !== "owner") throw Object.assign(new Error("Doar administratorul poate verifica configurarea plăților Poftigo."), { status: 403 });
+    if (account.role !== "owner") throw Object.assign(new Error("Doar administratorul poate verifica configurarea plăților Ammafood."), { status: 403 });
     return poftigoPayments.summary();
   });
   if (url.pathname === "/api/restaurants/mine/payments") return restaurantResponse(res, async () => {
@@ -2304,7 +2304,7 @@ async function handle(req, res) {
     return restaurants.connect(principal, body.country, body.acceptedCommission);
   });
   if (url.pathname === "/api/restaurants/admin/bank-settings") return restaurantResponse(res, async () => {
-    if (account.role !== "owner") throw Object.assign(new Error("Această pagină este rezervată administratorului Poftigo."), { status: 403 });
+    if (account.role !== "owner") throw Object.assign(new Error("Această pagină este rezervată administratorului Ammafood."), { status: 403 });
     if (req.method === "GET") return { bank: await restaurants.adminBank(), automaticPayments: (await poftigoPayments.summary()).enabled && (await poftigoPayments.summary()).platformReady };
     if (req.method !== "PUT") throw Object.assign(new Error("Metodă neacceptată."), { status: 405 });
     if (!sameOrigin(req)) throw Object.assign(new Error("Modificarea datelor bancare a fost respinsă."), { status: 403 });

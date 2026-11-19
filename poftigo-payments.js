@@ -20,7 +20,7 @@ function createPoftigoPayments({env=process.env,request=(...args)=>fetch(...args
   return /^sk_(test|live)_[A-Za-z0-9_]+$/.test(key)?{key,webhook,origin,mode:key.startsWith('sk_live_')?'live':'test',enabled:env.POFTIGO_PAYMENTS_ENABLED==='true'}:null;
  }
  async function stripe(route,fields,idempotencyKey){
-  const c=config();if(!c)throw fail('Stripe nu este conectat pentru Poftigo.');
+  const c=config();if(!c)throw fail('Stripe nu este conectat pentru Ammafood.');
   const headers={authorization:'Bearer '+c.key,'Stripe-Version':'2024-06-20'};
   if(fields)headers['content-type']='application/x-www-form-urlencoded';if(idempotencyKey)headers['Idempotency-Key']=idempotencyKey;
   let response;try{response=await request('https://api.stripe.com/v1'+route,{method:fields?'POST':'GET',headers,...(fields?{body:new URLSearchParams(fields).toString()}:{}),signal:AbortSignal.timeout(12000)});}catch{throw fail('Conexiunea Stripe nu este disponibilă. Încearcă din nou.');}
@@ -33,10 +33,10 @@ function createPoftigoPayments({env=process.env,request=(...args)=>fetch(...args
   let ready=false,connectionError=false;try{const a=await platform();ready=Boolean(a.charges_enabled&&a.payouts_enabled);}catch{connectionError=true;}
   return{configured:true,enabled:Boolean(c.enabled&&c.webhook&&ready),requestedEnabled:c.enabled,mode:c.mode,commissionPercent:10,webhookConfigured:Boolean(c.webhook),platformReady:ready,connectionError,configurationIssue:null};
  }
- async function ensureEnabled(){const s=await summary();if(!s.configured||!s.enabled||!s.webhookConfigured||!s.platformReady)throw fail('Plățile Poftigo nu sunt activate sau contul Stripe nu este verificat.');return config();}
+ async function ensureEnabled(){const s=await summary();if(!s.configured||!s.enabled||!s.webhookConfigured||!s.platformReady)throw fail('Plățile Ammafood nu sunt activate sau contul Stripe nu este verificat.');return config();}
  async function connected(id){if(!accountId(id))throw fail('Restaurantul nu este conectat la Stripe.',409);return stripe('/accounts/'+id);}
  async function onboarding(owner,existing,country){
-  const c=config();if(!c)throw fail('Administratorul trebuie să conecteze mai întâi Stripe pentru Poftigo.');
+  const c=config();if(!c)throw fail('Administratorul trebuie să conecteze mai întâi Stripe pentru Ammafood.');
   if(!/^[A-Z]{2}$/.test(country||''))throw fail('Introdu codul țării firmei restaurantului, de exemplu RO sau DE.',400);
   const account=existing?await connected(existing):await stripe('/accounts',{type:'express',country,'capabilities[card_payments][requested]':'true','capabilities[transfers][requested]':'true','metadata[poftigo_owner]':owner},'poftigo-connect-'+c.mode+'-'+crypto.createHash('sha256').update(owner).digest('hex'));
   return account;
