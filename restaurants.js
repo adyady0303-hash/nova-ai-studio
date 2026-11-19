@@ -84,7 +84,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     return{configured:Boolean(payments?.config()),connected:Boolean(entry),ready,mode:payments?.config()?.mode||null,configurationIssue:payments?.configurationIssue?.()||null};
   }
   async function connect(owner,country,acceptedCommission){
-    if(acceptedCommission!==true)throw fail(400,'Confirmă comisionul Poftigo de 10% înainte de conectare.');
+    if(acceptedCommission!==true)throw fail(400,'Confirmă comisionul Ammafood de 10% înainte de conectare.');
     if(!payments)throw fail(503,'Stripe nu este conectat.');
     if(!await mine(owner))throw fail(409,'Salvează mai întâi profilul restaurantului.');
     let id;await withLock(async()=>{await assertPrincipalActive(owner);const previous=await connection(owner);const account=await payments.onboarding(owner,previous?.id,String(country||'').toUpperCase());id=account.id;await write(connectFile(owner),{id,ready:false,commissionPercent:10,acceptedAt:new Date().toISOString()});});
@@ -162,7 +162,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       if (distance <= row.radiusKm) restaurants.push({ ...publicRestaurant(row), cardPaymentsAvailable: await paymentOption(row.owner), distanceKm: Math.round(distance * 10) / 10 });
     }
     restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
-    return { restaurants: restaurants.slice(0, 50), source: "Restaurante înscrise în Poftigo", coverage: "Zona de livrare este declarată de fiecare restaurant." };
+    return { restaurants: restaurants.slice(0, 50), source: "Restaurante înscrise în Ammafood", coverage: "Zona de livrare este declarată de fiecare restaurant." };
   }
   async function order(id, body) {
     if (!ID.test(id)) throw fail(404, "Restaurantul nu există.");
@@ -256,7 +256,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait));
       lastNominatim = Date.now();
       let response;
-      try { response = await fetchImpl(url, { headers: { "User-Agent": "Poftigo/2.7.7 (https://www.nova-ai-studio.eu/about)", "Accept": "application/json" }, signal: AbortSignal.timeout(10000) }); }
+      try { response = await fetchImpl(url, { headers: { "User-Agent": "Ammafood/2.7.7 (https://www.nova-ai-studio.eu/about)", "Accept": "application/json" }, signal: AbortSignal.timeout(10000) }); }
       catch { throw fail(503, "Serviciul OpenStreetMap este indisponibil temporar. Încearcă din nou."); }
       if (!response.ok) throw fail(503, "Serviciul OpenStreetMap este indisponibil temporar. Încearcă din nou.");
       let data;
@@ -314,7 +314,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     try { external = await nearby(point, query); }
     catch (error) {
       if (!local.length) throw error;
-      external = []; warning = [warning, 'Căutarea pe hartă este indisponibilă temporar. Afișăm doar rezultatele înscrise în Poftigo.'].filter(Boolean).join(' ');
+      external = []; warning = [warning, 'Căutarea pe hartă este indisponibilă temporar. Afișăm doar rezultatele înscrise în Ammafood.'].filter(Boolean).join(' ');
     }
     const restaurants = [...local];
     for (const row of external) {
@@ -323,7 +323,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       restaurants.push({ ...row, distanceKm: Math.round(distance * 10) / 10 });
     }
     restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
-    return { restaurants: restaurants.slice(0, 50), query: query.query, interpretation: { original: query.original, term: query.interpreted, translated: query.translated }, radiusKm: 5, warning, source: 'Poftigo și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
+    return { restaurants: restaurants.slice(0, 50), query: query.query, interpretation: { original: query.original, term: query.interpreted, translated: query.translated }, radiusKm: 5, warning, source: 'Ammafood și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
   }
   const geocodes = new Map();
   async function geocode(query) {
