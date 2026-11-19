@@ -2154,6 +2154,18 @@ async function handle(req, res) {
     return res.end(req.method === "HEAD" ? undefined : page);
   }
 
+  const restaurantImage = {
+    "/images/ammafood-hero.webp": "ammafood-hero.webp",
+    "/images/ammafood-pizza.webp": "ammafood-pizza.webp",
+    "/images/ammafood-burger.webp": "ammafood-burger.webp",
+    "/images/ammafood-sushi.webp": "ammafood-sushi.webp"
+  }[url.pathname];
+  if (["GET", "HEAD"].includes(req.method) && restaurantImage) {
+    const image = await fs.promises.readFile(path.join(PUBLIC_DIR, "images", restaurantImage));
+    res.writeHead(200, { "content-type": "image/webp", "content-length": image.length, "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" });
+    return res.end(req.method === "HEAD" ? undefined : image);
+  }
+
   const restaurantAsset = {
     "/restaurants": ["restaurants.html", "text/html; charset=utf-8"],
     "/restaurants/": ["restaurants.html", "text/html; charset=utf-8"],

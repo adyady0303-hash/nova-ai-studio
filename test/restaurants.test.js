@@ -82,3 +82,101 @@ test('map outage never masquerades as no nearby restaurants, with honest local f
   await assert.rejects(()=>app.discover({lat:'',lon:13.405,q:'pizza'}),{status:400});
   await assert.rejects(()=>app.discover({lat:52.52,lon:13.405,q:'a'.repeat(81)}),{status:400});
 });
+
+function mapPlace(id, extratags, extra = {}) {
+  return { osm_type:'node', osm_id:id, name:'Pizzeria Commons TEST '+id, type:'restaurant', lat:'52.521', lon:'13.406', extratags:{cuisine:'pizza',...extratags}, ...extra };
+}
+function commonsResponse(title, changes = {}) {
+  return new Response(JSON.stringify({query:{pages:[{ns:6,title,imageinfo:[{
+    url:'https://upload.wikimedia.org/wikipedia/commons/a/ab/Pizzeria_TEST.jpg', mime:'image/jpeg',
+    thumburl:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/Pizzeria_TEST.jpg/900px-Pizzeria_TEST.jpg', thumbmime:'image/jpeg',
+    extmetadata:{ Artist:{value:'<a href="https://commons.wikimedia.org/wiki/User:TEST">Jane &amp; John</a><script>hidden()</script>'}, LicenseShortName:{value:'CC BY-SA 4.0'}, LicenseUrl:{value:'http://creativecommons.org/licenses/by-sa/4.0/'} }, ...changes
+  }]}]}}));
+}
+test('map photos resolve only linked Commons files with plain credits, reuse in-flight/cache, and prefer existing HTTPS images',async t=>{
+  let mapCalls=0, commonsCalls=0;
+  const {app}=service(t,{fetchImpl:async(url,options)=>{
+    if(url.hostname==='nominatim.openstreetmap.org'){
+      mapCalls++;
+      return new Response(JSON.stringify([
+        mapPlace(11,{wikimedia_commons:'File:Pizzeria_TEST.jpg'}),
+        mapPlace(12,{image:'File:Pizzeria TEST.jpg'}),
+        mapPlace(13,{image:'https://restaurant.example.test/facade.jpg',wikimedia_commons:'File:Do_not_fetch.jpg'})
+      ]));
+    }
+    commonsCalls++;assert.equal(url.origin,'https://commons.wikimedia.org');assert.equal(url.pathname,'/w/api.php');
+    assert.equal(url.searchParams.get('titles'),'File:Pizzeria TEST.jpg');assert.equal(url.searchParams.get('prop'),'imageinfo');
+    assert.match(url.searchParams.get('iiprop'),/thumbmime/);assert.equal(options.redirect,'error');
+    return commonsResponse('File:Pizzeria TEST.jpg');
+  }});
+  const result=await app.discover({lat:52.52,lon:13.405,q:'pizza'});
+  assert.equal(commonsCalls,1,'Two OSM records for the same file share one metadata lookup');
+  const resolved=result.restaurants.filter(row=>row.id!=='osm-node-13');
+  assert.equal(resolved.length,2);assert.ok(resolved.every(row=>row.orderable===false&&row.menu.length===0));
+  for(const row of resolved){
+    assert.match(row.photo,/^https:\/\/upload\.wikimedia\.org\/wikipedia\/commons\/thumb\//);
+    assert.equal(row.photoSourceUrl,'https://commons.wikimedia.org/wiki/File:Pizzeria_TEST.jpg');
+    assert.equal(row.photoAttribution,'Jane & John · CC BY-SA 4.0');
+    assert.equal(row.photoLicenseUrl,'https://creativecommons.org/licenses/by-sa/4.0/');
+  }
+  assert.equal(result.restaurants.find(row=>row.id==='osm-node-13').photo,'https://restaurant.example.test/facade.jpg');
+  await app.discover({lat:52.5203,lon:13.405,q:'pizza'});
+  assert.equal(mapCalls,2);assert.equal(commonsCalls,1,'A different map search reuses cached Commons metadata');
+});
+test('Commons enrichment is bounded to six nearby matching places and never invents photos for other map results',async t=>{
+  const fetched=[];
+  const {app}=service(t,{fetchImpl:async url=>{
+    if(url.hostname==='nominatim.openstreetmap.org')return new Response(JSON.stringify([
+      mapPlace(20,{wikimedia_commons:'File:Far_away.jpg'},{lat:'53'}),
+      mapPlace(21,{wikimedia_commons:'File:Not_a_restaurant.jpg'},{type:'hotel'}),
+      mapPlace(22,{wikimedia_commons:'File:Sushi.jpg'},{name:'Sushi TEST',extratags:{cuisine:'sushi',wikimedia_commons:'File:Sushi.jpg'}}),
+      ...Array.from({length:9},(_,index)=>mapPlace(30+index,{wikimedia_commons:'File:Pizzeria_'+index+'.jpg'}))
+    ]));
+    assert.equal(url.hostname,'commons.wikimedia.org');fetched.push(url.searchParams.get('titles'));
+    return commonsResponse(url.searchParams.get('titles'));
+  }});
+  const result=await app.discover({lat:52.52,lon:13.405,q:'pizza'});
+  assert.equal(fetched.length,6);assert.ok(fetched.every(title=>/^File:Pizzeria \d\.jpg$/.test(title)));
+  assert.equal(result.restaurants.length,9);assert.equal(result.restaurants.filter(row=>row.photo).length,6);
+  assert.ok(result.restaurants.every(row=>row.orderable===false&&row.source==='OpenStreetMap'));
+});
+test('hostile photo metadata and incomplete credits leave actual map restaurants discoverable without server-side URL fetches',async t=>{
+  let commonsCalls=0;
+  const {app}=service(t,{fetchImpl:async(url,options)=>{
+    if(url.hostname==='nominatim.openstreetmap.org')return new Response(JSON.stringify([
+      mapPlace(41,{wikimedia_commons:'https://127.0.0.1/private'}),
+      mapPlace(42,{wikimedia_commons:'Category:Restaurants'}),
+      mapPlace(43,{wikimedia_commons:'File:One.jpg|File:Two.jpg'}),
+      mapPlace(44,{wikimedia_commons:'File:Unsafe.jpg'}),
+      mapPlace(45,{wikimedia_commons:'File:No_credit.jpg'}),
+      mapPlace(46,{wikimedia_commons:'File:Redirect.jpg'})
+    ]));
+    commonsCalls++;assert.equal(url.origin,'https://commons.wikimedia.org');assert.equal(options.redirect,'error');
+    const title=url.searchParams.get('titles');
+    if(title==='File:Unsafe.jpg')return commonsResponse(title,{thumburl:'https://upload.wikimedia.org.attacker.example.test/photo.jpg',url:'https://127.0.0.1/private'});
+    if(title==='File:No credit.jpg')return commonsResponse(title,{extmetadata:{Artist:{value:''},LicenseShortName:{value:'CC BY-SA 4.0'},LicenseUrl:{value:'https://creativecommons.org/licenses/by-sa/4.0/'}}});
+    return new Response(null,{status:302,headers:{location:'http://169.254.169.254/private'}});
+  }});
+  const result=await app.discover({lat:52.52,lon:13.405,q:'pizza'});
+  assert.equal(commonsCalls,3);assert.equal(result.restaurants.length,6);
+  assert.ok(result.restaurants.every(row=>row.photo===''&&row.orderable===false&&!row.photoAttribution));
+  assert.equal(result.warning,'');
+  await app.discover({lat:52.5203,lon:13.405,q:'pizza'});
+  assert.equal(commonsCalls,3,'Negative results are cached rather than repeatedly calling an unavailable source');
+});
+test('slow Commons metadata times out without hiding restaurants or waiting for a stalled response body',async t=>{
+  t.mock.timers.enable({apis:['setTimeout']});
+  let startMetadata, metadataSignal;
+  const started=new Promise(resolve=>{startMetadata=resolve;});
+  const {app}=service(t,{fetchImpl:async(url,options)=>{
+    if(url.hostname==='nominatim.openstreetmap.org')return new Response(JSON.stringify([mapPlace(51,{wikimedia_commons:'File:Slow.jpg'})]));
+    metadataSignal=options.signal;startMetadata();
+    return {ok:true,json:()=>new Promise(()=>{})};
+  }});
+  const pending=app.discover({lat:52.52,lon:13.405,q:'pizza'});
+  await started;await Promise.resolve();t.mock.timers.tick(4000);
+  const result=await pending;
+  assert.equal(metadataSignal.aborted,true);assert.equal(result.restaurants.length,1);
+  assert.equal(result.restaurants[0].id,'osm-node-51');assert.equal(result.restaurants[0].photo,'');
+  assert.equal(result.restaurants[0].orderable,false);assert.equal(result.warning,'');
+});

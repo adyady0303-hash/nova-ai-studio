@@ -34,6 +34,12 @@
     else el('locate').click();
   });
   document.querySelectorAll('[data-food]').forEach(button => button.addEventListener('click', () => { el('food-query').value = button.dataset.food; el('food-form').requestSubmit(); }));
+  document.querySelectorAll('a[href="#manual-location"]').forEach(link => link.addEventListener('click', event => {
+    event.preventDefault();
+    el('manual-location').open = true;
+    el('manual-location').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el('address-input').focus({ preventScroll: true });
+  }));
   el('address-form').addEventListener('submit', async event => {
     event.preventDefault(); invalidate(); const token = revision;
     el('address-results').replaceChildren(); status('search-status', 'Căutăm adresa…');
@@ -74,24 +80,69 @@
     img.addEventListener('error', () => img.remove(), { once: true });
     return img;
   }
+  function photoPlaceholder() {
+    const placeholder = node('div', null, 'restaurant-photo-placeholder');
+    const icon = node('span', '⌖'); icon.setAttribute('aria-hidden', 'true');
+    placeholder.append(icon, node('span', 'Fotografie indisponibilă'));
+    return placeholder;
+  }
+  function externalArrow() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('class', 'arrow-icon'); svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '1.8');
+    svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M6 18 18 6M6 6h12v12'); svg.append(path);
+    return svg;
+  }
+  function photoCredit(restaurant) {
+    if (!restaurant.photo || !restaurant.photoSourceUrl) return null;
+    let source; try { source = new URL(restaurant.photoSourceUrl); } catch { return null; }
+    if (source.protocol !== 'https:' || source.username || source.password) return null;
+    const credit = node('p', null, 'photo-credit');
+    const link = node('a', restaurant.photoAttribution || 'Sursa fotografiei');
+    link.href = source.href; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    credit.append(link);
+    if (restaurant.photoLicenseUrl) {
+      let license; try { license = new URL(restaurant.photoLicenseUrl); } catch { return credit; }
+      if (license.protocol === 'https:' && !license.username && !license.password) {
+        const licenseLink = node('a', restaurant.photoLicense || 'Licență');
+        licenseLink.href = license.href; licenseLink.target = '_blank'; licenseLink.rel = 'noopener noreferrer';
+        credit.append(document.createTextNode(' · '), licenseLink);
+      }
+    }
+    return credit;
+  }
   function renderRestaurants() {
     const list = el('restaurants-list'); list.replaceChildren();
     if (!restaurants.length) { list.append(node('p', 'Încearcă un preparat precum pizza, burger sau sushi, ori verifică adresa selectată. Rezultatele depind de datele disponibile în OpenStreetMap.', 'empty')); return; }
     for (const restaurant of restaurants) {
-      const card = node('article', null, 'restaurant-card'), cover = image(restaurant.photo, restaurant.name), body = node('div', null, 'card-body');
-      if (cover) card.append(cover);
-      body.append(node('h3', restaurant.name), node('p', restaurant.address));
+      const card = node('article', null, 'restaurant-card'), cover = node('div', null, 'card-cover'), body = node('div', null, 'card-body');
+      const photo = image(restaurant.photo, restaurant.name), credit = photoCredit(restaurant);
+      const badge = node('span', restaurant.orderable === false ? 'Pe hartă · OpenStreetMap' : 'Restaurant înscris', 'restaurant-badge');
+      if (photo) {
+        photo.addEventListener('error', () => { cover.replaceChildren(photoPlaceholder(), badge); if (credit) credit.hidden = true; }, { once: true });
+        cover.append(photo);
+      } else cover.append(photoPlaceholder());
+      cover.append(badge);
+      card.append(cover);
+      if (credit) card.append(credit);
+      const meta = node('div', null, 'restaurant-meta');
+      meta.append(node('span', `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 1 }).format(restaurant.distanceKm)} km`));
+      if (restaurant.cuisine) meta.append(node('span', restaurant.cuisine.replaceAll(';', ' · ')));
+      body.append(meta, node('h3', restaurant.name), node('p', restaurant.address, 'restaurant-address'));
       if (restaurant.orderable === false) {
-        body.append(node('p', `${restaurant.distanceKm} km · OpenStreetMap`), node('p', 'Consultă restaurantul pentru meniu, prețuri și livrare.'));
-        for (const [url, label] of [[restaurant.menuUrl, 'Meniu pe site-ul restaurantului'], [restaurant.website, 'Site-ul restaurantului'], [restaurant.mapUrl, 'Vezi pe hartă ↗']]) {
+        body.append(node('p', 'Consultă restaurantul pentru meniu, prețuri și livrare.', 'restaurant-note'));
+        const actions = node('div', null, 'card-actions');
+        for (const [url, label] of [[restaurant.menuUrl, 'Meniu pe site-ul restaurantului'], [restaurant.website, 'Site-ul restaurantului'], [restaurant.mapUrl, 'Vezi pe hartă']]) {
           if (!url) continue;
           let parsed; try { parsed = new URL(url); } catch { continue; }
           if (!['http:', 'https:'].includes(parsed.protocol)) continue;
-          const link = node('a', label, 'external-place-link'); link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; body.append(link);
+          const link = node('a', label, 'external-place-link'); link.href = parsed.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.append(externalArrow()); actions.append(link);
         }
-        card.append(body); list.append(card); continue;
+        body.append(actions); card.append(body); list.append(card); continue;
       }
-      body.append(node('p', `${restaurant.distanceKm} km · ${restaurant.menu.length} preparate · EUR · Comandă prin Ammafood`));
+      body.append(node('p', `${restaurant.menu.length} preparate în meniu · Prețuri în EUR`, 'restaurant-note'));
       const button = node('button', 'Vezi meniul'); button.type = 'button';
       button.addEventListener('click', () => { selected = restaurant; renderMenu(); el('menu-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
       body.append(button); card.append(body); list.append(card);
