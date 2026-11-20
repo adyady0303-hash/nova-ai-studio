@@ -6,6 +6,7 @@ const { bankConfiguration } = require("./billing");
 const { createFoodInterpreter, normalize: normalizeFoodText } = require("./restaurant-query");
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const ID = /^[a-f0-9]{24}$/;
+const DISCOVERY_RADIUS_KM = 20;
 function text(value, name, max = 200) {
   if (typeof value !== "string" || !value.trim() || value.trim().length > max) throw fail(400, `Completează ${name} (maximum ${max} caractere).`);
   return value.trim();
@@ -153,13 +154,16 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
       return row;
     });
   }
-  async function search(point) {
+  async function search(point, { discovery = false } = {}) {
     point = coordinates(point);
     const rows = await catalog(), restaurants = [];
     for (const row of rows) {
       if (!row.acceptingOrders) continue;
       const distance = distanceKm(point, row);
-      if (distance <= row.radiusKm) restaurants.push({ ...publicRestaurant(row), cardPaymentsAvailable: await paymentOption(row.owner), distanceKm: Math.round(distance * 10) / 10 });
+      const deliverable = distance <= row.radiusKm;
+      if (distance <= (discovery ? DISCOVERY_RADIUS_KM : row.radiusKm)) {
+        restaurants.push({ ...publicRestaurant(row), cardPaymentsAvailable: deliverable && await paymentOption(row.owner), distanceKm: Math.round(distance * 10) / 10, ...(discovery ? { orderable: deliverable } : {}) });
+      }
     }
     restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
     return { restaurants: restaurants.slice(0, 50), source: "Restaurante înscrise în Ammafood", coverage: "Zona de livrare este declarată de fiecare restaurant." };
@@ -349,7 +353,8 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     if (cached && Date.now() - cached.at < 15 * 60000) return cached.rows;
     if (nearbyInFlight.has(key)) return nearbyInFlight.get(key);
     const operation = (async () => {
-      const latDelta = 5.2 / 111.2, lonDelta = 5.2 / (111.2 * Math.max(.01, Math.cos(center.lat * Math.PI / 180)));
+      const extentKm = DISCOVERY_RADIUS_KM + .2;
+      const latDelta = extentKm / 111.2, lonDelta = extentKm / (111.2 * Math.max(.01, Math.cos(center.lat * Math.PI / 180)));
       const box = [Math.max(-180, center.lon - lonDelta), Math.min(90, center.lat + latDelta), Math.min(180, center.lon + lonDelta), Math.max(-90, center.lat - latDelta)].join(',');
       const url = new URL(nominatimEndpoint);
       url.search = new URLSearchParams({ q: query.lookup, format: 'jsonv2', limit: '30', extratags: '1', addressdetails: '1', bounded: '1', viewbox: box }).toString();
@@ -368,7 +373,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
         const row = { id, name: String(item.name).slice(0, 200), ...location, address: [address.road, address.house_number, address.city || address.town || address.village].filter(Boolean).join(', ') || String(item.display_name || '').slice(0, 400), cuisine, photo: photoUrl.startsWith('https:') ? photoUrl : '', menu: [], orderable: false, source: 'OpenStreetMap', website, menuUrl, mapUrl: 'https://www.openstreetmap.org/' + item.osm_type + '/' + item.osm_id };
         rows.push(row);
         const title = commonsFile(tags.wikimedia_commons) || commonsFile(tags.image);
-        if (!row.photo && title && photoCandidates.length < 6 && distanceKm(point, location) <= 5) photoCandidates.push({ row, title });
+        if (!row.photo && title && photoCandidates.length < 6 && distanceKm(point, location) <= DISCOVERY_RADIUS_KM) photoCandidates.push({ row, title });
       }
       // Resolve only files explicitly linked by OSM; no guessed restaurant photos.
       await Promise.all(photoCandidates.map(async ({ row, title }) => { const resolved = await commonsPhoto(title); if (resolved) Object.assign(row, resolved); }));
@@ -381,7 +386,7 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
   }
   async function discover(input) {
     const point = coordinates(input), query = await interpretQuery(input.q);
-    const local = (await search(point)).restaurants.filter(row => matchesFood(row.name + ' ' + row.menu.map(item => item.name + ' ' + item.description).join(' '), query)).map(row => ({ ...row, orderable: true, source: 'Nova' }));
+    const local = (await search(point, { discovery: true })).restaurants.filter(row => matchesFood(row.name + ' ' + row.menu.map(item => item.name + ' ' + item.description).join(' '), query)).map(row => ({ ...row, source: 'Nova' }));
     let external, warning = query.warning || '';
     try { external = await nearby(point, query); }
     catch (error) {
@@ -391,11 +396,11 @@ function createRestaurantService({ filesystem, root, withLock, assertPrincipalAc
     const restaurants = [...local];
     for (const row of external) {
       const distance = distanceKm(point, row);
-      if (distance > 5 || local.some(local => normalizeQuery(local.name) === normalizeQuery(row.name) && distanceKm(local, row) < .2)) continue;
+      if (distance > DISCOVERY_RADIUS_KM || local.some(local => normalizeQuery(local.name) === normalizeQuery(row.name) && distanceKm(local, row) < .2)) continue;
       restaurants.push({ ...row, distanceKm: Math.round(distance * 10) / 10 });
     }
     restaurants.sort((a, b) => a.distanceKm - b.distanceKm);
-    return { restaurants: restaurants.slice(0, 50), query: query.query, interpretation: { original: query.original, term: query.interpreted, translated: query.translated }, radiusKm: 5, warning, source: 'Ammafood și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
+    return { restaurants: restaurants.slice(0, 50), query: query.query, interpretation: { original: query.original, term: query.interpreted, translated: query.translated }, radiusKm: DISCOVERY_RADIUS_KM, warning, source: 'Ammafood și OpenStreetMap', attribution: '© OpenStreetMap contributors', coverage: 'Rezultatele de pe hartă nu confirmă livrarea, meniurile sau prețurile.' };
   }
   const geocodes = new Map();
   async function geocode(query) {
