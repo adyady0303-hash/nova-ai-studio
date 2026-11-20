@@ -71,8 +71,64 @@ test('pizza discovery includes real nearby map places without enrollment, filter
   assert.equal(one.restaurants.filter(row=>row.orderable).length,1);
   const places=one.restaurants.filter(row=>!row.orderable);assert.equal(places.length,2);assert.ok(places.every(row=>!row.owner&&row.menu.length===0));
   assert.equal(places.find(row=>row.id==='osm-node-4').website,'');
-  assert.ok(places.every(row=>row.distanceKm<=5));assert.match(one.attribution,/OpenStreetMap/);
+  assert.ok(places.every(row=>row.distanceKm<=20));assert.match(one.attribution,/OpenStreetMap/);
   await app.discover({lat:52.52,lon:13.405,q:'pizza'});assert.equal(calls,1);
+});
+test('discovery covers twenty kilometres in both map bounds and results, including linked photos beyond five kilometres',async t=>{
+  const center={lat:52.52,lon:13.405};
+  const north=km=>({...center,lat:center.lat+km/6371*180/Math.PI});
+  const metadataTitles=[];
+  const {app}=service(t,{fetchImpl:async url=>{
+    if(url.hostname==='nominatim.openstreetmap.org'){
+      const [west,top,east,bottom]=url.searchParams.get('viewbox').split(',').map(Number);
+      assert.equal(url.searchParams.get('bounded'),'1');
+      assert.ok(top>=north(20).lat&&bottom<=north(-20).lat,'The upstream bounds must cover twenty kilometres north and south');
+      const longitudeDelta=20/(111.2*Math.cos(center.lat*Math.PI/180));
+      assert.ok(west<=center.lon-longitudeDelta&&east>=center.lon+longitudeDelta,'The upstream bounds must cover twenty kilometres east and west');
+      return new Response(JSON.stringify([
+        mapPlace(101,{wikimedia_commons:'File:Pizzeria_10km.jpg'},north(10)),
+        mapPlace(102,{},north(19.9)),
+        mapPlace(103,{wikimedia_commons:'File:Outside_20km.jpg'},north(20.1))
+      ]));
+    }
+    assert.equal(url.origin,'https://commons.wikimedia.org');
+    metadataTitles.push(url.searchParams.get('titles'));
+    return commonsResponse(url.searchParams.get('titles'));
+  }});
+  const result=await app.discover({...center,q:'pizza'});
+  assert.equal(result.radiusKm,20);
+  assert.deepEqual(result.restaurants.map(row=>row.id),['osm-node-101','osm-node-102']);
+  assert.deepEqual(result.restaurants.map(row=>row.distanceKm),[10,19.9]);
+  assert.ok(result.restaurants.every(row=>row.orderable===false&&row.source==='OpenStreetMap'));
+  assert.deepEqual(metadataTitles,['File:Pizzeria 10km.jpg'],'Photo enrichment must share the discovery radius without looking up places outside it');
+  assert.match(result.restaurants[0].photo,/^https:\/\/upload\.wikimedia\.org\//);
+  assert.equal(result.restaurants[1].photo,'');
+});
+test('registered restaurants remain discoverable beyond their delivery area without widening delivery or enabling checkout',async t=>{
+  const payments={
+    config:()=>({mode:'test',enabled:true,webhook:'fixture-webhook'}),
+    onboarding:async()=>({id:'acct_discovery_fixture'}),
+    onboardingLink:async()=>({url:'https://connect.stripe.com/fixture'}),
+    ready:async()=>true
+  };
+  const {app}=service(t,{payments,fetchImpl:async url=>{assert.equal(url.hostname,'nominatim.openstreetmap.org');return new Response('[]');}});
+  const owner='merchant-discovery-private';
+  const row=await app.save(owner,{...restaurant(),menu:[...restaurant().menu,{name:'Preparat ascuns TEST',price:'20.00',available:false}]});
+  await app.connect(owner,'DE',true);await app.connectStatus(owner);
+  const outside={lat:row.lat+10/6371*180/Math.PI,lon:row.lon};
+  const far=await app.discover({...outside,q:'pizza'}), visible=far.restaurants.find(item=>item.id===row.id);
+  assert.equal(far.radiusKm,20);assert.ok(visible,'An active merchant ten kilometres away remains discoverable');
+  assert.equal(visible.source,'Nova');assert.equal(visible.distanceKm,10);assert.equal(visible.radiusKm,5);
+  assert.equal(visible.orderable,false);assert.equal(visible.cardPaymentsAvailable,false);
+  assert.equal(visible.owner,undefined);assert.equal(visible.version,undefined);
+  assert.deepEqual(visible.menu.map(item=>item.name),['Pizza TEST']);
+  assert.doesNotMatch(JSON.stringify(visible),/merchant-discovery-private|Preparat ascuns TEST/);
+  assert.equal((await app.search(outside)).restaurants.length,0,'The delivery-oriented search keeps its existing radius semantics');
+  const body={requestId:'d'.repeat(24),name:'Client TEST',email:'test@example.test',address:'Livrare TEST',...outside,items:[{id:row.menu[0].id,quantity:1}],expectedTotalCents:1250};
+  await assert.rejects(()=>app.order(row.id,body),error=>error.status===409&&/afara zonei de livrare/.test(error.message));
+  assert.equal((await app.mine(owner)).radiusKm,5);assert.deepEqual(await app.orders(owner),[]);
+  const near=await app.discover({lat:row.lat,lon:row.lon,q:'pizza'}), nearby=near.restaurants.find(item=>item.id===row.id);
+  assert.equal(nearby.orderable,true);assert.equal(nearby.cardPaymentsAvailable,true,'The same connected merchant can take payment within its declared delivery area');
 });
 test('map outage never masquerades as no nearby restaurants, with honest local fallback',async t=>{
   const {app}=service(t,{fetchImpl:async()=>new Response('unavailable',{status:503})});

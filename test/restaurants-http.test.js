@@ -25,6 +25,31 @@ test('native restaurant HTTP flow persists a real menu and a private order, with
   const empty=await (await fetch(app.base+'/api/restaurants/search?lat=52.52&lon=13.405')).json();assert.equal(empty.restaurants.length,0);
 });
 
+test('public discovery reaches twenty kilometres while a registered restaurant retains its private five-kilometre delivery limit',async t=>{
+  const app=await startBusinessFixture(t);
+  const signup=await app.request()('/api/auth/register',{username:'radius-merchant',password:'pass1234'});
+  assert.equal(signup.status,201);
+  const merchant=app.request(signup.headers.get('set-cookie').split(';',1)[0]);
+  const value={name:'Pizzeria înscrisă TEST',address:'Adresă TEST',lat:52.52,lon:13.405,radiusKm:5,photo,currency:'EUR',acceptingOrders:true,menu:[{name:'Pizza TEST',price:9.95,photo},{name:'Preparat ascuns TEST',price:12,available:false}]};
+  const saved=await merchant('/api/restaurants/mine',value,'PUT');assert.equal(saved.status,200);
+  const row=(await saved.json()).restaurant;
+  const outside={lat:value.lat+10/6371*180/Math.PI,lon:value.lon};
+  const response=await fetch(app.base+'/api/restaurants/discover?'+new URLSearchParams({...outside,q:'pizza'}));
+  assert.equal(response.status,200);const data=await response.json();assert.equal(data.radiusKm,20);
+  const visible=data.restaurants.find(item=>item.id===row.id);
+  assert.ok(visible);assert.equal(visible.source,'Nova');assert.equal(visible.orderable,false);assert.equal(visible.cardPaymentsAvailable,false);
+  assert.equal(visible.radiusKm,5);assert.equal(visible.distanceKm,10);assert.equal(visible.owner,undefined);assert.equal(visible.version,undefined);
+  assert.deepEqual(visible.menu.map(item=>item.name),['Pizza TEST']);
+  const deliveryOnly=await (await fetch(app.base+'/api/restaurants/search?'+new URLSearchParams(outside))).json();
+  assert.equal(deliveryOnly.restaurants.some(item=>item.id===row.id),false);
+  const rejected=await app.request()('/api/restaurants/'+row.id+'/orders',{requestId:'e'.repeat(24),name:'Client TEST',email:'client@example.test',address:'Adresă TEST',...outside,items:[{id:row.menu[0].id,quantity:1}],expectedTotalCents:995});
+  assert.equal(rejected.status,409);assert.match((await rejected.json()).error,/afara zonei de livrare/);
+  const mine=await (await merchant('/api/restaurants/mine',undefined,'GET')).json();assert.equal(mine.restaurant.radiusKm,5);
+  const inbox=await (await merchant('/api/restaurants/mine/orders',undefined,'GET')).json();assert.equal(inbox.orders.length,0);
+  const near=await (await fetch(app.base+'/api/restaurants/discover?lat=52.52&lon=13.405&q=pizza')).json();
+  assert.equal(near.radiusKm,20);assert.equal(near.restaurants.find(item=>item.id===row.id).orderable,true);
+});
+
 test('the reported incomplete publication upgrades with backups while unrelated sites stay isolated',async t=>{
   const fs=require('node:fs'),path=require('node:path');let root;
   const id='e90b8660cff0e648a383bda3',other='f'.repeat(24);
@@ -49,7 +74,7 @@ test('the reported incomplete publication upgrades with backups while unrelated 
 test('a food keyword finds nearby public map restaurants without any merchant enrollment',async t=>{
   const app=await startBusinessFixture(t);
   const response=await fetch(app.base+'/api/restaurants/discover?lat=52.52&lon=13.405&q=pizza');assert.equal(response.status,200);
-  const data=await response.json();assert.equal(data.restaurants.length,1);assert.equal(data.restaurants[0].source,'OpenStreetMap');assert.equal(data.restaurants[0].orderable,false);assert.match(data.restaurants[0].name,/Pizzeria/);
+  const data=await response.json();assert.equal(data.radiusKm,20);assert.equal(data.restaurants.length,1);assert.equal(data.restaurants[0].source,'OpenStreetMap');assert.equal(data.restaurants[0].orderable,false);assert.match(data.restaurants[0].name,/Pizzeria/);
   assert.equal((await fetch(app.base+'/api/restaurants/discover?q=pizza')).status,400);
 });
 

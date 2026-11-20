@@ -2,6 +2,7 @@
 (() => {
   const el = id => document.getElementById(id);
   const money = cents => new Intl.NumberFormat('ro-RO', { style: 'currency', currency: 'EUR' }).format(cents / 100);
+  const outsideDeliveryMessage = 'Adresa aleasă este în afara zonei de livrare declarate.';
   const node = (tag, text, cls) => { const element = document.createElement(tag); if (text != null) element.textContent = text; if (cls) element.className = cls; return element; };
   const status = (id, message, error = false) => { el(id).textContent = message; el(id).className = error ? 'error' : ''; };
   let locationLabel = "", point = null, restaurants = [], selected = null, cartRestaurant = null, cart = new Map(), revision = 0, sending = false, lastOrder = null;
@@ -119,7 +120,8 @@
     for (const restaurant of restaurants) {
       const card = node('article', null, 'restaurant-card'), cover = node('div', null, 'card-cover'), body = node('div', null, 'card-body');
       const photo = image(restaurant.photo, restaurant.name), credit = photoCredit(restaurant);
-      const badge = node('span', restaurant.orderable === false ? 'Pe hartă · OpenStreetMap' : 'Restaurant înscris', 'restaurant-badge');
+      const mapOnly = restaurant.source === 'OpenStreetMap';
+      const badge = node('span', mapOnly ? 'Pe hartă · OpenStreetMap' : 'Restaurant înscris', 'restaurant-badge');
       if (photo) {
         photo.addEventListener('error', () => { cover.replaceChildren(photoPlaceholder(), badge); if (credit) credit.hidden = true; }, { once: true });
         cover.append(photo);
@@ -131,7 +133,7 @@
       meta.append(node('span', `${new Intl.NumberFormat('ro-RO', { maximumFractionDigits: 1 }).format(restaurant.distanceKm)} km`));
       if (restaurant.cuisine) meta.append(node('span', restaurant.cuisine.replaceAll(';', ' · ')));
       body.append(meta, node('h3', restaurant.name), node('p', restaurant.address, 'restaurant-address'));
-      if (restaurant.orderable === false) {
+      if (mapOnly) {
         body.append(node('p', 'Consultă restaurantul pentru meniu, prețuri și livrare.', 'restaurant-note'));
         const actions = node('div', null, 'card-actions');
         for (const [url, label] of [[restaurant.menuUrl, 'Meniu pe site-ul restaurantului'], [restaurant.website, 'Site-ul restaurantului'], [restaurant.mapUrl, 'Vezi pe hartă']]) {
@@ -143,6 +145,7 @@
         body.append(actions); card.append(body); list.append(card); continue;
       }
       body.append(node('p', `${restaurant.menu.length} preparate în meniu · Prețuri în EUR`, 'restaurant-note'));
+      if (restaurant.orderable === false) body.append(node('p', outsideDeliveryMessage, 'restaurant-note'));
       const button = node('button', 'Vezi meniul'); button.type = 'button';
       button.addEventListener('click', () => { selected = restaurant; renderMenu(); el('menu-section').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
       body.append(button); card.append(body); list.append(card);
@@ -151,13 +154,16 @@
   function renderMenu() {
     el('menu-section').hidden = !selected; if (!selected) return;
     el('menu-title').textContent = selected.name + ' · Meniu'; const grid = el('menu-grid'); grid.replaceChildren();
+    const outsideDelivery = selected.orderable === false;
+    if (outsideDelivery) grid.append(node('p', outsideDeliveryMessage, 'empty'));
     for (const dish of selected.menu) {
       const card = node('article', null, 'dish-card'), photo = image(dish.photo, dish.name), body = node('div', null, 'card-body');
       if (photo) card.append(photo);
       body.append(node('h3', dish.name), node('p', dish.description), node('strong', money(dish.priceCents)));
       const button = node('button', 'Adaugă în coș'); button.type = 'button';
+      button.disabled = outsideDelivery;
       button.addEventListener('click', () => {
-        if (sending) return;
+        if (sending || selected.orderable === false) return;
         if (cartRestaurant && cartRestaurant.id !== selected.id) return status('order-status', 'Coșul conține preparate de la alt restaurant. Golește-l înainte de a schimba restaurantul.', true);
         const quantity = cart.get(dish.id) || 0;
         if (quantity >= 30) return status('order-status', 'Maximum 30 de porții dintr-un preparat.', true);
